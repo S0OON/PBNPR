@@ -1,0 +1,19 @@
+{
+  "workbench.colorCustomizations": {
+    "editor.foldBackground": "#00000000"
+  },
+
+  "editor.tokenColorCustomizations": {
+    "textMateRules": [
+      {
+        "scope": "comment.line.number-sign.python",
+        "settings": {
+          "foreground": "#6A6A6A"
+        }
+      }
+    ]
+  },
+
+  "_comment_replace_scope": "Replace the scope value above with the scope reported by 'Developer: Inspect Editor Tokens and Scopes' if different.",
+  "_comment_note": "If the highlight comes from an extension decoration (not a token scope), disable or configure that extension instead of using token customizations."
+}
