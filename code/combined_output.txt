@@ -1,0 +1,413 @@
+
+========================================
+D:\soon\projects\PBNPR\code\export_folder_tree_to_txt.py
+========================================
+import os
+
+# Define which file extensions to include
+INCLUDE_EXTENSIONS = {'.py', '.glsl', '.txt', '.md'}
+
+# Output file name
+OUTPUT_FILE = 'combined_output.txt'
+
+def collect_files(base_dir):
+    """Recursively collect files with target extensions."""
+    collected = []
+    for root, _, files in os.walk(base_dir):
+        for file in files:
+            if os.path.splitext(file)[1] in INCLUDE_EXTENSIONS:
+                collected.append(os.path.join(root, file))
+    return collected
+
+def write_combined_output(files, output_path):
+    """Write contents of all files into one output file."""
+    with open(output_path, 'w', encoding='utf-8') as out:
+        for file_path in files:
+            out.write(f"\n{'='*40}\n{file_path}\n{'='*40}\n")
+            try:
+                with open(file_path, 'r', encoding='utf-8') as f:
+                    out.write(f.read())
+            except Exception as e:
+                out.write(f"[Error reading {file_path}: {e}]\n")
+
+if __name__ == "__main__":
+    current_dir = os.path.dirname(os.path.abspath(__file__))
+    subfolder = os.path.join(current_dir)  # or specify a subfolder like 'src'
+    files = collect_files(subfolder)
+    write_combined_output(files, os.path.join(current_dir, OUTPUT_FILE))
+    print(f"✅ Combined {len(files)} files into {OUTPUT_FILE}")
+
+========================================
+D:\soon\projects\PBNPR\code\bpy_glsl_manager\main.py
+========================================
+import sys
+import os 
+project_root = r"D:\soon\projects\PBNPR\code\bpy_glsl_manager"
+
+if project_root not in sys.path:
+    sys.path.append(project_root)
+
+def main():
+    from src import init_containers as LOADER
+    import importlib
+    from bpy_ui import ui_tab as UI
+    modules= [LOADER,UI]
+    for mod in modules:
+        importlib.reload(mod)
+        #mod.set_rootDir(project_root)
+
+    LOADER.reload_shaders()
+    UI.unregister()
+    UI.register()
+
+if __name__ == "__main__":
+    main()
+
+========================================
+D:\soon\projects\PBNPR\code\bpy_glsl_manager\bpy_gl\GLSLbase.py
+========================================
+import bpy
+
+
+
+========================================
+D:\soon\projects\PBNPR\code\bpy_glsl_manager\bpy_ui\ui_tab.py
+========================================
+ID_OP_ADD_INSTANCE    = "pbnpr.add_instance"
+ID_OP_REMOVE_INSTANCE = "pbnpr.remove_instance"
+ID_INSTANCE_name       = "name"
+ID_INSTANCE_shaderType = "shaderType"
+ID_INSTANCE_enabled    = "enable"
+ID_INSTANCE_expanded   = "expand"
+ID_INSTANCE_params     = "params"
+
+project_root = r""
+def set_rootDir(PATH:str):
+    project_root = PATH
+    import sys
+    if project_root not in sys.path:
+        sys.path.append(project_root)
+
+import bpy
+import gpu
+GPUobjs = [] # [ [batch,Use_Handler,handler], ... ]
+# ------------------------------------------------------------
+# Data block (equivalent to Modifier struct)
+# ------------------------------------------------------------
+class gl_Instance_data_base(bpy.types.PropertyGroup):
+    name:       bpy.props.StringProperty(default= "Shader")
+    shaderType: bpy.props.StringProperty(default= "XAXA")
+    enable:     bpy.props.BoolProperty(default= False)
+    expand:     bpy.props.BoolProperty(default= True)
+
+# ------------------------------------------------------------
+# Operators
+# ------------------------------------------------------------
+def insert_batch(shaderType:str):
+    desc = bpy.gl_descs[shaderType]
+    batch = desc[0].CALL_BATCH(desc[1])
+
+    GPUobjs.append(
+            [batch,False,None] #[batch,Use_Handler,handler]
+        ) 
+    return
+class gl_OP_MenuButton(bpy.types.Operator):
+    bl_idname = ID_OP_ADD_INSTANCE
+    bl_label = "Add Shader"
+    shader: bpy.props.EnumProperty( #-X
+        name="Shader",
+        items=lambda self, ctx: [
+                                    (k, k, "") for k in bpy.gl_descs.keys()
+                                ] 
+                                or [("NONE", "No shaders", "")]
+            )
+
+    def invoke(self, context, event):
+        wm = context.window_manager
+        return wm.invoke_props_dialog(self)
+
+    def execute(self, context):
+        block            = context.scene.pbnpr_stack.add()
+        block.shaderType = self.shader
+        block.name       = self.shader
+        insert_batch(self.shader)
+        return {'FINISHED'}
+
+class gl_OP_RemoveInstance(bpy.types.Operator):
+    bl_idname = ID_OP_REMOVE_INSTANCE
+    bl_label = "Remove Shader"
+
+    index: bpy.props.IntProperty()#-X
+
+    def execute(self, context):
+        context.scene.pbnpr_stack.remove(self.index)
+        del GPUobjs[self.index]
+        return {'FINISHED'}
+
+# ------------------------------------------------------------
+# Panel (Modifier-style stack)[ [],[] ]
+# ------------------------------------------------------------
+def manage_shaderActivation(i:int, block):
+    GPUobjs[i][1] = block.enable
+    if block.enable:
+        if GPUobjs[i][2] is None:
+            desc = bpy.gl_descs[block.shaderType]
+            handler = bpy.types.SpaceView3D.draw_handler_add(
+                desc[0].CALL_EXEC,
+                (desc[1], GPUobjs[i][0], getattr(block, f"ptr_{block.shaderType}")),
+                desc[0].DRAW_REGION,
+                desc[0].DRAW_TYPE
+            )
+            GPUobjs[i][2] = handler
+    else:
+        try:
+            bpy.types.SpaceView3D.draw_handler_remove(
+                GPUobjs[i][2],
+                'WINDOW'
+            )
+        except: pass
+        GPUobjs[i][2] = None
+
+class gl_Panel(bpy.types.Panel):
+    bl_label = "PBNPR Shaders"
+    bl_space_type = 'VIEW_3D'
+    bl_region_type = 'UI'
+    bl_category = 'PBNPR'
+
+    def draw(self, context):
+        layout = self.layout
+        scene = context.scene
+
+        layout.operator(ID_OP_ADD_INSTANCE, 
+                        icon='ADD')
+ 
+        for i, block in enumerate(scene.pbnpr_stack):
+            box = layout.box()
+            row = box.row(align=True)
+
+            row.prop(block, ID_INSTANCE_expanded,
+                icon='TRIA_DOWN' if block.expand else 'TRIA_RIGHT',
+                icon_only=True, emboss=False
+            )
+            row.label(text=block.name, 
+                      icon='SHADING_RENDERED')
+            row.prop(block, ID_INSTANCE_enabled, 
+                     text="")
+
+            op_R = row.operator(ID_OP_REMOVE_INSTANCE, 
+                              text="", icon='X')
+            op_R.index = i # Index Save
+
+            if block.expand: 
+                col = box.column(align=True) 
+                active_ptr_name = f"ptr_{block.shaderType}"
+                params = getattr(block, active_ptr_name, None) 
+                
+                for prop in params.bl_rna.properties: 
+                    col.prop(params, prop.identifier) 
+            manage_shaderActivation(i,block)
+
+# ------------------------------------------------------------
+# Registration
+# ------------------------------------------------------------
+
+classes = (
+    gl_Instance_data_base,
+    gl_OP_MenuButton,
+    gl_OP_RemoveInstance,
+    gl_Panel
+)
+
+def register():
+    
+    bpy.utils.register_class(gl_Instance_data_base)
+    
+    for desc in bpy.gl_descs.values():
+        desc = desc[0]
+        bpy.utils.register_class(desc.UI_DATA)
+        
+        attr_name = f"ptr_{desc.NAME}" # e.g., ptr_TEMPLATE
+
+        setattr(
+            gl_Instance_data_base, 
+            attr_name, 
+            bpy.props.PointerProperty(type=desc.UI_DATA)
+        )
+    for cl in classes:
+        try:
+            bpy.utils.register_class(cl)
+        except:
+            continue    
+    bpy.types.Scene.pbnpr_stack = bpy.props.CollectionProperty(type=gl_Instance_data_base)
+    
+def unregister():
+    GPUobjs.clear()
+    try:
+        for i in bpy.gl_descs.values():
+            bpy.utils.unregister_class(i[0].UI_DATA)
+    except:
+        pass
+    try:
+        del bpy.types.Scene.pbnpr_stack
+
+        for cls in reversed(classes):
+            bpy.utils.unregister_class(cls)
+    except:
+        pass
+    for h in bpy.gl_GPUobj:
+        if h[2] is not None:
+            try:bpy.types.SpaceView3D.draw_handler_remove(h[2])
+            except:pass
+========================================
+D:\soon\projects\PBNPR\code\bpy_glsl_manager\core\basic_cls.py
+========================================
+import bpy
+
+
+class gl_ParamsBase():
+    pass
+========================================
+D:\soon\projects\PBNPR\code\bpy_glsl_manager\python_helper\HardScriptReloadRunner.py
+========================================
+import bpy
+
+NAME = "pipeLine.py"
+PATH = r"D:\soon\projects\06_pythonShaders\code\pipeLine.py"
+
+
+if NAME in bpy.data.texts:
+    bpy.data.texts.remove(bpy.data.texts[NAME]) 
+    
+bpy.data.texts.load(PATH) 
+
+exec(bpy.data.texts[NAME].as_string())  
+========================================
+D:\soon\projects\PBNPR\code\bpy_glsl_manager\src\init_containers.py
+========================================
+import bpy
+import importlib
+
+
+#-----------------------------------------------------
+from src.template import template as GLSL_TEMP
+
+libs = [GLSL_TEMP]
+
+def reload_shaders():
+    if not hasattr(bpy, "gl_descs"):
+        bpy.gl_descs = {}
+    if not hasattr(bpy, "gl_GPUobj"):
+        bpy.gl_GPUobj = {}
+
+    bpy.gl_descs.clear()
+    bpy.gl_GPUobj.clear()
+    
+    for i in libs:
+        importlib.reload(i)
+        i.register()
+        
+        
+
+========================================
+D:\soon\projects\PBNPR\code\bpy_glsl_manager\src\template\frag.glsl
+========================================
+
+out vec4 fragCol;
+
+void main() {
+    fragCol = vec4(1.0);
+}
+========================================
+D:\soon\projects\PBNPR\code\bpy_glsl_manager\src\template\template.py
+========================================
+import os
+import bpy
+import gpu
+from gpu_extras.batch import batch_for_shader
+from dataclasses import dataclass
+from typing import Callable, Type
+
+SHADER_NAME = "TEMPLATE"
+V = "vert.glsl"
+F = "frag.glsl"
+BASE_DIR = os.path.dirname(__file__)
+# ------------------ ------------------ -----------
+#typical changes to:
+# these 4 dudes under.
+
+class UI_table(bpy.types.PropertyGroup):
+    intensity: bpy.props.FloatProperty(default=1.0)
+
+def uniforms_bind(shader: gpu.types.GPUShader,block:UI_table):
+    shader.bind()
+    shader.uniform_float("u_f", block.intensity)
+
+def batch_make(shader: gpu.types.GPUShader, drawShape: str = "TRIS"):
+    coords = [ 
+        (-0.5, -0.5), 
+        ( 0.5, -0.5), 
+        ( 0.0, 0.5)
+        ]
+    return batch_for_shader(shader, drawShape, {"pos": coords})
+
+def exec(shader: gpu.types.GPUShader, batch: gpu.types.GPUBatch,block:UI_table):
+    #Provided that, shader+batch
+    shader.bind()
+    uniforms_bind(shader,block)
+    batch.draw(shader)
+
+#-------------------------------------
+
+def register():
+    with open(Desc.PATH_VERT, "r", encoding="utf-8") as f: vert_src = f.read()
+    with open(Desc.PATH_FRAG, "r", encoding="utf-8") as f: frag_src = f.read()
+    shader = gpu.types.GPUShader(vert_src, frag_src)
+    
+    bpy.gl_descs[SHADER_NAME] = [Desc, shader]
+
+def unregister():
+    try:
+        bpy.types.SpaceView3D.draw_handler_remove(
+                bpy.gl_descs[Desc.NAME][2],
+                Desc.DRAW_REGION
+            )
+    except: pass
+    try:
+        del bpy.gl_descs[Desc.NAME]
+    except: pass
+
+@dataclass
+class ShaderDesc:
+    NAME: str
+    PATH_VERT: str
+    PATH_FRAG: str
+    DRAW_REGION: str
+    DRAW_TYPE: str
+    DRAW_PRIMITIVE_METHOD:str
+    CALL_UNI: Callable
+    CALL_BATCH: Callable
+    CALL_EXEC: Callable
+    UI_DATA: Type
+    CALL_REG:Callable
+Desc = ShaderDesc(
+    NAME=SHADER_NAME,
+    PATH_VERT=os.path.join(BASE_DIR, V),
+    PATH_FRAG=os.path.join(BASE_DIR, F),
+    DRAW_REGION = "WINDOW", 
+    DRAW_TYPE = "POST_VIEW", 
+    DRAW_PRIMITIVE_METHOD = "TRIS",
+    CALL_UNI =uniforms_bind,
+    CALL_BATCH =batch_make,
+    CALL_EXEC =exec,
+    UI_DATA =UI_table,
+    CALL_REG=register
+)
+
+========================================
+D:\soon\projects\PBNPR\code\bpy_glsl_manager\src\template\vert.glsl
+========================================
+in vec2 pos;
+void main() {
+    vec3 P = vec3(pos,1.0);
+    gl_Position = vec4(P, 1.0);
+}
