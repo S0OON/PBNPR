@@ -5,10 +5,13 @@ from gpu_extras.batch import batch_for_shader
 from dataclasses import dataclass
 from typing import Callable, Type
 
+BASE_DIR = os.path.dirname(__file__)
 SHADER_NAME = "TEMPLATE"
 V = "vert.glsl"
 F = "frag.glsl"
-BASE_DIR = os.path.dirname(__file__)
+DRAW_REGION = "WINDOW"
+DRAW_TYPE = "POST_VIEW"
+DRAW_PRIMITIVE_METHOD = "TRIS"
 # ------------------ ------------------ -----------
 #typical changes to:
 # these 4 dudes under.
@@ -20,7 +23,7 @@ def uniforms_bind(shader: gpu.types.GPUShader,block:UI_table):
     shader.bind()
     shader.uniform_float("u_f", block.intensity)
 
-def batch_make(shader: gpu.types.GPUShader, drawShape: str = "TRIS"):
+def batch_make(shader: gpu.types.GPUShader,block:UI_table, drawShape: str = "TRIS"):
     coords = [ 
         (-0.5, -0.5), 
         ( 0.5, -0.5), 
@@ -71,9 +74,9 @@ Desc = ShaderDesc(
     NAME=SHADER_NAME,
     PATH_VERT=os.path.join(BASE_DIR, V),
     PATH_FRAG=os.path.join(BASE_DIR, F),
-    DRAW_REGION = "WINDOW", 
-    DRAW_TYPE = "POST_VIEW", 
-    DRAW_PRIMITIVE_METHOD = "TRIS",
+    DRAW_REGION = DRAW_REGION, 
+    DRAW_TYPE = DRAW_TYPE, 
+    DRAW_PRIMITIVE_METHOD = DRAW_PRIMITIVE_METHOD,
     CALL_UNI =uniforms_bind,
     CALL_BATCH =batch_make,
     CALL_EXEC =exec,

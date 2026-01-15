@@ -54,7 +54,6 @@ def main():
     modules= [LOADER,UI]
     for mod in modules:
         importlib.reload(mod)
-        #mod.set_rootDir(project_root)
 
     LOADER.reload_shaders()
     UI.unregister()
@@ -75,45 +74,66 @@ D:\soon\projects\PBNPR\code\bpy_glsl_manager\bpy_ui\ui_tab.py
 ========================================
 ID_OP_ADD_INSTANCE    = "pbnpr.add_instance"
 ID_OP_REMOVE_INSTANCE = "pbnpr.remove_instance"
+ID_OP_SHOW_STATS      = "pbnpr.show_stats"
 ID_INSTANCE_name       = "name"
 ID_INSTANCE_shaderType = "shaderType"
 ID_INSTANCE_enabled    = "enable"
 ID_INSTANCE_expanded   = "expand"
 ID_INSTANCE_params     = "params"
 
-project_root = r""
-def set_rootDir(PATH:str):
-    project_root = PATH
-    import sys
-    if project_root not in sys.path:
-        sys.path.append(project_root)
-
 import bpy
-import gpu
-GPUobjs = [] # [ [batch,Use_Handler,handler], ... ]
+#stack  = [a, b, c]
+#GPUobj = [[],[],[]]
+GPUobjs = []
 # ------------------------------------------------------------
-# Data block (equivalent to Modifier struct)
-# ------------------------------------------------------------
+def toggle_gpu_handler(self, context):
+    """Constructor/Destructor for the GPU handler triggered by the 'enable' prop."""
+    desc_data = bpy.gl_descs[self.shaderType]
+    desc = desc_data[0]
+    shader = desc_data[1]
+    ui_spec = getattr(
+            self, 
+            f"ptr_{self.shaderType}", 
+            None
+        ) # This contains 'obj_name'
+    batch = desc.CALL_BATCH(shader, ui_spec)
+        
+    #get index
+    for i, b in enumerate(bpy.context.scene.pbnpr_stack):
+        if b == self:
+            block_index = i
+            break
+
+    if self.enable or self.handler_id == -1:
+        while len(GPUobjs) <= block_index:
+            GPUobjs.append(None)
+        handler = bpy.types.SpaceView3D.draw_handler_add(
+           desc.CALL_EXEC, 
+           (shader, batch, ui_spec), 
+           desc.DRAW_REGION, desc.DRAW_TYPE
+        )
+        GPUobjs[block_index] = handler
+        self.handler_id = block_index
+    else:
+        try: 
+            bpy.types.SpaceView3D.draw_handler_remove(
+                    GPUobjs[self.handler_id],
+                    desc.DRAW_REGION
+                )
+            GPUobjs[self.handler_id] = None
+        except: pass
+
 class gl_Instance_data_base(bpy.types.PropertyGroup):
-    name:       bpy.props.StringProperty(default= "Shader")
-    shaderType: bpy.props.StringProperty(default= "XAXA")
-    enable:     bpy.props.BoolProperty(default= False)
-    expand:     bpy.props.BoolProperty(default= True)
+    name:       bpy.props.StringProperty(default="Shader")
+    shaderType: bpy.props.StringProperty(default="XAXA")
+    enable:     bpy.props.BoolProperty(default=False, update=toggle_gpu_handler)
+    expand:     bpy.props.BoolProperty(default=True)
+    handler_id: bpy.props.IntProperty(default=-1)
 
 # ------------------------------------------------------------
-# Operators
-# ------------------------------------------------------------
-def insert_batch(shaderType:str):
-    desc = bpy.gl_descs[shaderType]
-    batch = desc[0].CALL_BATCH(desc[1])
-
-    GPUobjs.append(
-            [batch,False,None] #[batch,Use_Handler,handler]
-        ) 
-    return
 class gl_OP_MenuButton(bpy.types.Operator):
     bl_idname = ID_OP_ADD_INSTANCE
-    bl_label = "Add Shader"
+    bl_label = "Add GLSL Shader"
     shader: bpy.props.EnumProperty( #-X
         name="Shader",
         items=lambda self, ctx: [
@@ -130,7 +150,6 @@ class gl_OP_MenuButton(bpy.types.Operator):
         block            = context.scene.pbnpr_stack.add()
         block.shaderType = self.shader
         block.name       = self.shader
-        insert_batch(self.shader)
         return {'FINISHED'}
 
 class gl_OP_RemoveInstance(bpy.types.Operator):
@@ -140,47 +159,35 @@ class gl_OP_RemoveInstance(bpy.types.Operator):
     index: bpy.props.IntProperty()#-X
 
     def execute(self, context):
+        block = context.scene.pbnpr_stack[self.index]
+        block.enable = False
         context.scene.pbnpr_stack.remove(self.index)
-        del GPUobjs[self.index]
         return {'FINISHED'}
 
-# ------------------------------------------------------------
-# Panel (Modifier-style stack)[ [],[] ]
-# ------------------------------------------------------------
-def manage_shaderActivation(i:int, block):
-    GPUobjs[i][1] = block.enable
-    if block.enable:
-        if GPUobjs[i][2] is None:
-            desc = bpy.gl_descs[block.shaderType]
-            handler = bpy.types.SpaceView3D.draw_handler_add(
-                desc[0].CALL_EXEC,
-                (desc[1], GPUobjs[i][0], getattr(block, f"ptr_{block.shaderType}")),
-                desc[0].DRAW_REGION,
-                desc[0].DRAW_TYPE
-            )
-            GPUobjs[i][2] = handler
-    else:
-        try:
-            bpy.types.SpaceView3D.draw_handler_remove(
-                GPUobjs[i][2],
-                'WINDOW'
-            )
-        except: pass
-        GPUobjs[i][2] = None
+class gl_OP_showStats(bpy.types.Operator):
+    bl_idname = ID_OP_SHOW_STATS
+    bl_label = ""
 
+    def execute(self, context):
+        print(f"--- PBNPR GLSL Manager Stats ---\n GPUobjs:{GPUobjs}\n Stack: {context.scene.pbnpr_stack}\n")
+        return {'FINISHED'}
+#------------------------------------------------------------
 class gl_Panel(bpy.types.Panel):
-    bl_label = "PBNPR Shaders"
-    bl_space_type = 'VIEW_3D'
+    bl_label       = "PBNPR Shaders"
+    bl_space_type  = 'VIEW_3D'
     bl_region_type = 'UI'
-    bl_category = 'PBNPR'
+    bl_category    = 'PBNPR'
 
     def draw(self, context):
         layout = self.layout
         scene = context.scene
 
-        layout.operator(ID_OP_ADD_INSTANCE, 
+        box = layout.box()
+        row = box.row(align=True)
+        row.operator(ID_OP_ADD_INSTANCE, 
                         icon='ADD')
- 
+        row.operator(ID_OP_SHOW_STATS, 
+                     icon="INFO")
         for i, block in enumerate(scene.pbnpr_stack):
             box = layout.box()
             row = box.row(align=True)
@@ -204,22 +211,18 @@ class gl_Panel(bpy.types.Panel):
                 params = getattr(block, active_ptr_name, None) 
                 
                 for prop in params.bl_rna.properties: 
-                    col.prop(params, prop.identifier) 
-            manage_shaderActivation(i,block)
+                    col.prop(params, prop.identifier)
 
 # ------------------------------------------------------------
-# Registration
-# ------------------------------------------------------------
-
 classes = (
     gl_Instance_data_base,
     gl_OP_MenuButton,
     gl_OP_RemoveInstance,
+    gl_OP_showStats,
     gl_Panel
 )
 
 def register():
-    
     bpy.utils.register_class(gl_Instance_data_base)
     
     for desc in bpy.gl_descs.values():
@@ -245,18 +248,17 @@ def unregister():
     try:
         for i in bpy.gl_descs.values():
             bpy.utils.unregister_class(i[0].UI_DATA)
-    except:
-        pass
+    except: pass
+
     try:
         del bpy.types.Scene.pbnpr_stack
-
         for cls in reversed(classes):
             bpy.utils.unregister_class(cls)
-    except:
-        pass
-    for h in bpy.gl_GPUobj:
-        if h[2] is not None:
-            try:bpy.types.SpaceView3D.draw_handler_remove(h[2])
+    except: pass
+
+    for h in GPUobjs:
+        if h is not None:
+            try:bpy.types.SpaceView3D.draw_handler_remove(h, 'WINDOW')
             except:pass
 ========================================
 D:\soon\projects\PBNPR\code\bpy_glsl_manager\core\basic_cls.py
@@ -288,19 +290,15 @@ import bpy
 import importlib
 
 
-#-----------------------------------------------------
 from src.template import template as GLSL_TEMP
-
-libs = [GLSL_TEMP]
-
+from src.paint_obj import paint as GLSL_PAINTobj
+libs = [GLSL_TEMP, GLSL_PAINTobj]
+#-----------------------------------------------------
 def reload_shaders():
     if not hasattr(bpy, "gl_descs"):
         bpy.gl_descs = {}
-    if not hasattr(bpy, "gl_GPUobj"):
-        bpy.gl_GPUobj = {}
 
     bpy.gl_descs.clear()
-    bpy.gl_GPUobj.clear()
     
     for i in libs:
         importlib.reload(i)
@@ -309,13 +307,196 @@ def reload_shaders():
         
 
 ========================================
+D:\soon\projects\PBNPR\code\bpy_glsl_manager\src\paint_obj\frag.glsl
+========================================
+in vec3 v_world_pos;
+
+uniform vec3 uColor;
+uniform float uLight;
+uniform vec3 uLightPos;
+
+
+void main() {
+    float d = distance(v_world_pos, uLightPos);
+    
+    // Example: Make it darker as it gets further away
+    float intensity = 1.0 / (d * d + 1.0); 
+    gl_FragColor = vec4(vec3(uColor*intensity*uLight), 1.0);
+}
+========================================
+D:\soon\projects\PBNPR\code\bpy_glsl_manager\src\paint_obj\paint.py
+========================================
+import os
+import bpy
+import gpu
+from gpu_extras.batch import batch_for_shader
+from dataclasses import dataclass
+from typing import Callable, Type
+import numpy as np
+from mathutils import Matrix
+
+BASE_DIR = os.path.dirname(__file__)
+SHADER_NAME = "PAINT_OBJ_SHADER"
+V = "vert.glsl"
+F = "frag.glsl"
+DRAW_REGION = "WINDOW"
+DRAW_TYPE = "POST_VIEW"
+DRAW_PRIMITIVE_METHOD = "TRIS"
+# ------------------ ------------------ -----------
+#typical changes to:
+# these 4 dudes under.
+
+class UI_table(bpy.types.PropertyGroup):
+    cam_name: bpy.props.StringProperty(default="Camera")
+    obj_name: bpy.props.StringProperty(default="PaintObject")
+    Point_name: bpy.props.StringProperty(default="Point")
+    color: bpy.props.FloatVectorProperty( 
+        name="Color", 
+        subtype='COLOR', 
+        size=4, min=0.0, max=1.0, 
+        default=(0.2, 0.6, 1.0, 1.0) 
+        ) 
+    
+
+def uniforms_bind(shader: gpu.types.GPUShader, block):
+    shader.bind()
+    # Use the depsgraph from the viewport context passed to the handler if available
+    dep = bpy.context.evaluated_depsgraph_get() 
+    obj = bpy.data.objects[block.obj_name]
+    obj_eval = obj.evaluated_get(dep)
+    cam = bpy.data.objects[block.cam_name]
+
+    matObj = obj_eval.matrix_world
+    matCam = cam.matrix_world.inverted()
+
+    # Projection Matrix logic
+    if cam and cam.type == 'CAMERA':
+        width  = bpy.context.region.width if bpy.context.region else 1.0
+        height = bpy.context.region.height if bpy.context.region else 1.0
+        proj   = cam.calc_matrix_camera(dep, x=width, y=height)
+    else:
+        proj = Matrix.Identity(4)
+
+    shader.uniform_float("uModel", matObj)
+    shader.uniform_float("uView",  matCam)
+    shader.uniform_float("uProj",  proj)
+    
+    obj_eval.to_mesh_clear()
+    #PointLight-----------------------------------------------------------------
+    shader.uniform_float("uLight", bpy.data.lights[block.Point_name].energy)
+    shader.uniform_float("uLightPos", bpy.data.objects[block.Point_name].location)
+    #col -----------------------------------------------------------------------
+    x = [block.color[0], block.color[1], block.color[2]]
+    shader.uniform_float("uColor", x)
+
+def batch_make(shader, block, drawShape:str="TRIS"):
+    if block.obj_name not in bpy.data.objects:
+        # Fallback 2D Triangle
+        coords = np.array([
+                (-0.5, -0.5, 0.0), 
+                (0.5, -0.5, 0.0), 
+                (0.0, 0.5, 0.0)], 
+                dtype=np.float32
+            )
+        return batch_for_shader(shader, drawShape, {"pos": coords})
+    
+    deps = bpy.context.evaluated_depsgraph_get()
+    obj = bpy.data.objects[block.obj_name]
+    obj_eval = obj.evaluated_get(deps)
+    mesh = obj_eval.to_mesh()
+    mesh.calc_loop_triangles()
+
+    # Get Vertices
+    vertices = np.empty((len(mesh.vertices), 3), 'f')
+    mesh.vertices.foreach_get("co", vertices.reshape(-1))
+
+    # Get Triangle Indices (Crucial for a Cube)
+    indices = np.empty((len(mesh.loop_triangles), 3), 'i')
+    mesh.loop_triangles.foreach_get("vertices", indices.reshape(-1))
+
+    obj_eval.to_mesh_clear()
+    
+    # Pass both pos and indices to the batch
+    return batch_for_shader(shader, drawShape, {"pos": vertices}, indices=indices)
+
+def exec(shader: gpu.types.GPUShader, batch: gpu.types.GPUBatch,block):
+    #Provided that, shader+batch
+    shader.bind()
+    uniforms_bind(shader,block)
+    batch.draw(shader)
+
+#-------------------------------------
+
+def register():
+    with open(Desc.PATH_VERT, "r", encoding="utf-8") as f: vert_src = f.read()
+    with open(Desc.PATH_FRAG, "r", encoding="utf-8") as f: frag_src = f.read()
+    shader = gpu.types.GPUShader(vert_src, frag_src)
+    
+    bpy.gl_descs[SHADER_NAME] = [Desc, shader]
+
+def unregister():
+    try:
+        bpy.types.SpaceView3D.draw_handler_remove(
+                bpy.gl_descs[Desc.NAME][2],
+                Desc.DRAW_REGION
+            )
+    except: pass
+    try:
+        del bpy.gl_descs[Desc.NAME]
+    except: pass
+
+@dataclass
+class ShaderDesc:
+    NAME: str
+    PATH_VERT: str
+    PATH_FRAG: str
+    DRAW_REGION: str
+    DRAW_TYPE: str
+    DRAW_PRIMITIVE_METHOD:str
+    CALL_UNI: Callable
+    CALL_BATCH: Callable
+    CALL_EXEC: Callable
+    UI_DATA: Type
+    CALL_REG:Callable
+Desc = ShaderDesc(
+    NAME=SHADER_NAME,
+    PATH_VERT=os.path.join(BASE_DIR, V),
+    PATH_FRAG=os.path.join(BASE_DIR, F),
+    DRAW_REGION = DRAW_REGION, 
+    DRAW_TYPE = DRAW_TYPE, 
+    DRAW_PRIMITIVE_METHOD = DRAW_PRIMITIVE_METHOD,
+    CALL_UNI =uniforms_bind,
+    CALL_BATCH =batch_make,
+    CALL_EXEC =exec,
+    UI_DATA =UI_table,
+    CALL_REG=register
+)
+
+========================================
+D:\soon\projects\PBNPR\code\bpy_glsl_manager\src\paint_obj\vert.glsl
+========================================
+in vec3 pos;
+uniform mat4 uModel;
+uniform mat4 uView;
+uniform mat4 uProj;
+
+out vec3 v_world_pos; // Send this to fragment shader
+
+void main() {
+    vec4 world_pos = uModel * vec4(pos, 1.0);
+    v_world_pos = world_pos.xyz;
+    
+    gl_Position = uProj * uView * world_pos;
+}
+========================================
 D:\soon\projects\PBNPR\code\bpy_glsl_manager\src\template\frag.glsl
 ========================================
-
+uniform float u_f;
 out vec4 fragCol;
 
 void main() {
-    fragCol = vec4(1.0);
+    vec3 F = vec3(u_f);
+    fragCol = vec4(F, 1.0);
 }
 ========================================
 D:\soon\projects\PBNPR\code\bpy_glsl_manager\src\template\template.py
@@ -327,10 +508,13 @@ from gpu_extras.batch import batch_for_shader
 from dataclasses import dataclass
 from typing import Callable, Type
 
+BASE_DIR = os.path.dirname(__file__)
 SHADER_NAME = "TEMPLATE"
 V = "vert.glsl"
 F = "frag.glsl"
-BASE_DIR = os.path.dirname(__file__)
+DRAW_REGION = "WINDOW"
+DRAW_TYPE = "POST_VIEW"
+DRAW_PRIMITIVE_METHOD = "TRIS"
 # ------------------ ------------------ -----------
 #typical changes to:
 # these 4 dudes under.
@@ -342,7 +526,7 @@ def uniforms_bind(shader: gpu.types.GPUShader,block:UI_table):
     shader.bind()
     shader.uniform_float("u_f", block.intensity)
 
-def batch_make(shader: gpu.types.GPUShader, drawShape: str = "TRIS"):
+def batch_make(shader: gpu.types.GPUShader,block:UI_table, drawShape: str = "TRIS"):
     coords = [ 
         (-0.5, -0.5), 
         ( 0.5, -0.5), 
@@ -393,9 +577,9 @@ Desc = ShaderDesc(
     NAME=SHADER_NAME,
     PATH_VERT=os.path.join(BASE_DIR, V),
     PATH_FRAG=os.path.join(BASE_DIR, F),
-    DRAW_REGION = "WINDOW", 
-    DRAW_TYPE = "POST_VIEW", 
-    DRAW_PRIMITIVE_METHOD = "TRIS",
+    DRAW_REGION = DRAW_REGION, 
+    DRAW_TYPE = DRAW_TYPE, 
+    DRAW_PRIMITIVE_METHOD = DRAW_PRIMITIVE_METHOD,
     CALL_UNI =uniforms_bind,
     CALL_BATCH =batch_make,
     CALL_EXEC =exec,
