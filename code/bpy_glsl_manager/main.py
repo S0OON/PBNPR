@@ -2,21 +2,23 @@
 
 def main():
     import sys
+    import importlib
     project_root = r"D:\soon\projects\PBNPR\code\bpy_glsl_manager"
 
     if project_root not in sys.path:
         sys.path.append(project_root)
     
-    from src import init_containers as LOADER
-    import importlib
+    from bpy_gl import GLSLbase
     from bpy_ui import ui_tab as UI
     
-    modules= [LOADER,UI]
+    modules= [
+        GLSLbase,
+        UI
+    ]
     for mod in modules:
         importlib.reload(mod)
 
-    LOADER.reload_shaders()
-    UI.unregister()
+    GLSLbase.register()
     UI.register()
 
 if __name__ == "__main__":

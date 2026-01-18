@@ -1,5 +1,6 @@
-in vec2 pos;
+
+in vec3 pos;
+
 void main() {
-    vec3 P = vec3(pos,1.0);
-    gl_Position = vec4(P, 1.0);
+    gl_Position = vec4(pos, 1.0);
 }

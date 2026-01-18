@@ -1,188 +1,157 @@
-ID_OP_ADD_INSTANCE    = "pbnpr.add_instance"
-ID_OP_REMOVE_INSTANCE = "pbnpr.remove_instance"
-ID_OP_SHOW_STATS      = "pbnpr.show_stats"
-ID_INSTANCE_name       = "name"
-ID_INSTANCE_shaderType = "shaderType"
-ID_INSTANCE_enabled    = "enable"
-ID_INSTANCE_expanded   = "expand"
-ID_INSTANCE_params     = "params"
-
 import bpy
-#stack  = [a, b, c]
-#GPUobj = [[],[],[]]
+
+ID_OP_ADD = "gl.add_instance"
+ID_OP_REMOVE = "gl.remove_instance"
+ID_INSTANCE_enable = "enabled"
+ID_INSTANCE_expand = "expanded"
+
+def _get_GPU():
+    from bpy_gl import GLSLbase
+    return GLSLbase
 GPUobjs = []
-# ------------------------------------------------------------
-def toggle_gpu_handler(self, context):
-    """Constructor/Destructor for the GPU handler triggered by the 'enable' prop."""
-    desc_data = bpy.gl_descs[self.shaderType]
-    desc = desc_data[0]
-    shader = desc_data[1]
-    ui_spec = getattr(
-            self, 
-            f"ptr_{self.shaderType}", 
-            None
-        ) # This contains 'obj_name'
-    batch = desc.CALL_BATCH(shader, ui_spec)
-        
-    #get index
-    for i, b in enumerate(bpy.context.scene.pbnpr_stack):
-        if b == self:
-            block_index = i
-            break
+# ---------------------------------------------------------
+def toggle(self, context):
+    GL = _get_GPU()
+    GL.load_shader(self.shaderType)
 
-    if self.enable or self.handler_id == -1:
-        while len(GPUobjs) <= block_index:
+    if self.enabled and self.handler_id == -1:
+        i=0
+        for d in bpy.context.scene.gl_stack:
+            if self == d:
+                self.handler_id = i
+                break
+            else:
+                i+=1
+
+        while GPUobjs.__len__() <= self.handler_id:
             GPUobjs.append(None)
-        handler = bpy.types.SpaceView3D.draw_handler_add(
-           desc.CALL_EXEC, 
-           (shader, batch, ui_spec), 
-           desc.DRAW_REGION, desc.DRAW_TYPE
+
+        pair = bpy.gl_stream[self.shaderType]
+        shader = pair[1]
+        desc = pair[0]
+        ui_spec = getattr(
+            self, 
+            self.shaderType, 
+            None
         )
-        GPUobjs[block_index] = handler
-        self.handler_id = block_index
-    else:
-        try: 
-            bpy.types.SpaceView3D.draw_handler_remove(
-                    GPUobjs[self.handler_id],
-                    desc.DRAW_REGION
-                )
-            GPUobjs[self.handler_id] = None
-        except: pass
 
-class gl_Instance_data_base(bpy.types.PropertyGroup):
-    name:       bpy.props.StringProperty(default="Shader")
-    shaderType: bpy.props.StringProperty(default="XAXA")
-    enable:     bpy.props.BoolProperty(default=False, update=toggle_gpu_handler)
-    expand:     bpy.props.BoolProperty(default=True)
-    handler_id: bpy.props.IntProperty(default=-1)
+        args = (
+            shader,
+            desc.CALL_BATCH(shader,ui_spec),
+            ui_spec
+        )
 
-# ------------------------------------------------------------
-class gl_OP_MenuButton(bpy.types.Operator):
-    bl_idname = ID_OP_ADD_INSTANCE
-    bl_label = "Add GLSL Shader"
-    shader: bpy.props.EnumProperty( #-X
-        name="Shader",
-        items=lambda self, ctx: [
-                                    (k, k, "") for k in bpy.gl_descs.keys()
-                                ] 
-                                or [("NONE", "No shaders", "")]
-            )
+        handler = bpy.types.SpaceView3D.draw_handler_add(
+            desc.CALL_EXEC, args,
+            desc.DRAW_REGION, desc.DRAW_TYPE
+        )
+        GPUobjs[self.handler_id]=handler
+    
+    elif not self.enabled and self.handler_id != -1:
+        pair = bpy.gl_stream[self.shaderType]
+        desc = pair[0]
+        bpy.types.SpaceView3D.draw_handler_remove(
+            GPUobjs[self.handler_id], desc.DRAW_REGION
+        )
+        GPUobjs[self.handler_id] = None
+        self.handler_id = -1
+
+class gl_instance_sk(bpy.types.PropertyGroup):
+    shaderType: bpy.props.StringProperty(name="shader", default="")
+    enabled: bpy.props.BoolProperty(default=False, update=toggle)
+    expanded: bpy.props.BoolProperty(default=True)
+    handler_id : bpy.props.IntProperty(default=-1)
+
+#-------------------------------------------------------------
+
+def get_items(self, context):
+    return [(key, key, "") for key in bpy.gl_stream.keys()]
+class gl_OP_add_instance(bpy.types.Operator):
+    bl_idname = ID_OP_ADD
+    bl_label = "Add GLSL Instance"
+
+    selected_type: bpy.props.EnumProperty(
+        name="shaders",
+        items=get_items
+    )
 
     def invoke(self, context, event):
-        wm = context.window_manager
-        return wm.invoke_props_dialog(self)
+            wm = context.window_manager
+            return wm.invoke_props_dialog(self)
 
     def execute(self, context):
-        block            = context.scene.pbnpr_stack.add()
-        block.shaderType = self.shader
-        block.name       = self.shader
+        new_i = context.scene.gl_stack.add()
+        new_i.shaderType = self.selected_type
         return {'FINISHED'}
 
-class gl_OP_RemoveInstance(bpy.types.Operator):
-    bl_idname = ID_OP_REMOVE_INSTANCE
-    bl_label = "Remove Shader"
-
-    index: bpy.props.IntProperty()#-X
-
-    def execute(self, context):
-        block = context.scene.pbnpr_stack[self.index]
-        block.enable = False
-        context.scene.pbnpr_stack.remove(self.index)
-        return {'FINISHED'}
-
-class gl_OP_showStats(bpy.types.Operator):
-    bl_idname = ID_OP_SHOW_STATS
+class gl_OP_remove_instance(bpy.types.Operator):
+    bl_idname = ID_OP_REMOVE
     bl_label = ""
+    index_i : bpy.props.IntProperty(default=-1)
 
     def execute(self, context):
-        print(f"--- PBNPR GLSL Manager Stats ---\n GPUobjs:{GPUobjs}\n Stack: {context.scene.pbnpr_stack}\n")
+        if self.index_i < 0:
+            return {'CANCELED'}
+        x = bpy.context.scene.gl_stack[self.index_i]
+        x.enabled = False
+        bpy.context.scene.gl_stack.remove(self.index_i)
         return {'FINISHED'}
-#------------------------------------------------------------
-class gl_Panel(bpy.types.Panel):
-    bl_label       = "PBNPR Shaders"
-    bl_space_type  = 'VIEW_3D'
+#-------------------------------------------------------------
+class gl_panel(bpy.types.Panel):
+    bl_label = "GLSL"
+    bl_space_type = 'VIEW_3D'
     bl_region_type = 'UI'
-    bl_category    = 'PBNPR'
+    bl_category = 'GLSL manager'
 
     def draw(self, context):
         layout = self.layout
-        scene = context.scene
 
         box = layout.box()
         row = box.row(align=True)
-        row.operator(ID_OP_ADD_INSTANCE, 
-                        icon='ADD')
-        row.operator(ID_OP_SHOW_STATS, 
-                     icon="INFO")
-        for i, block in enumerate(scene.pbnpr_stack):
+
+        row.operator(ID_OP_ADD, text="Add Instance")
+
+        i = 0
+        for item in context.scene.gl_stack:
             box = layout.box()
             row = box.row(align=True)
-
-            row.prop(block, ID_INSTANCE_expanded,
-                icon='TRIA_DOWN' if block.expand else 'TRIA_RIGHT',
+            
+            row.prop(item, ID_INSTANCE_expand,
+                icon='TRIA_DOWN' if item.expanded else 'TRIA_RIGHT',
                 icon_only=True, emboss=False
             )
-            row.label(text=block.name, 
-                      icon='SHADING_RENDERED')
-            row.prop(block, ID_INSTANCE_enabled, 
-                     text="")
-
-            op_R = row.operator(ID_OP_REMOVE_INSTANCE, 
+            row.label(text=item.shaderType, 
+                icon='SHADING_RENDERED')
+            row.prop(item, ID_INSTANCE_enable, text="")
+            
+            op_R = row.operator(ID_OP_REMOVE, 
                               text="", icon='X')
-            op_R.index = i # Index Save
+            op_R.index_i = i # Index Save
 
-            if block.expand: 
-                col = box.column(align=True) 
-                active_ptr_name = f"ptr_{block.shaderType}"
-                params = getattr(block, active_ptr_name, None) 
-                
-                for prop in params.bl_rna.properties: 
-                    col.prop(params, prop.identifier)
+            if not item.expanded:
+                continue
 
-# ------------------------------------------------------------
-classes = (
-    gl_Instance_data_base,
-    gl_OP_MenuButton,
-    gl_OP_RemoveInstance,
-    gl_OP_showStats,
-    gl_Panel
-)
+            custom_params = getattr(item,item.shaderType)
+            for prop in custom_params.bl_rna.properties:
+                row=box.row(align=True)
+                row.prop(custom_params,prop.identifier)
+            i+=1
+
+classes = [
+    gl_instance_sk, 
+    gl_OP_add_instance,
+    gl_OP_remove_instance,
+    gl_panel
+]
 
 def register():
-    bpy.utils.register_class(gl_Instance_data_base)
-    
-    for desc in bpy.gl_descs.values():
-        desc = desc[0]
-        bpy.utils.register_class(desc.UI_DATA)
-        
-        attr_name = f"ptr_{desc.NAME}" # e.g., ptr_TEMPLATE
-
+    for cls in classes:
+        bpy.utils.register_class(cls)
+    for pair in bpy.gl_stream.values():
+        desc = pair[0]
+        bpy.utils.register_class(desc.PARAMS)
         setattr(
-            gl_Instance_data_base, 
-            attr_name, 
-            bpy.props.PointerProperty(type=desc.UI_DATA)
+            gl_instance_sk, desc.NAME,
+            bpy.props.PointerProperty(type=desc.PARAMS)
         )
-    for cl in classes:
-        try:
-            bpy.utils.register_class(cl)
-        except:
-            continue    
-    bpy.types.Scene.pbnpr_stack = bpy.props.CollectionProperty(type=gl_Instance_data_base)
-    
-def unregister():
-    GPUobjs.clear()
-    try:
-        for i in bpy.gl_descs.values():
-            bpy.utils.unregister_class(i[0].UI_DATA)
-    except: pass
-
-    try:
-        del bpy.types.Scene.pbnpr_stack
-        for cls in reversed(classes):
-            bpy.utils.unregister_class(cls)
-    except: pass
-
-    for h in GPUobjs:
-        if h is not None:
-            try:bpy.types.SpaceView3D.draw_handler_remove(h, 'WINDOW')
-            except:pass
+    bpy.types.Scene.gl_stack = bpy.props.CollectionProperty(type=gl_instance_sk)
