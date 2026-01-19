@@ -4,16 +4,17 @@ import gpu
 from gpu_extras.batch import batch_for_shader
 from dataclasses import dataclass
 from typing import Callable, Type
+import numpy as np
+from mathutils import Matrix
 
 BASE_DIR = os.path.dirname(__file__)
-SHADER_NAME = "TEMPLATE"
+SHADER_NAME = "NORMALS"
 V = "vert.glsl"
 F = "frag.glsl"
 DRAW_REGION = "WINDOW"
 DRAW_TYPE = "POST_VIEW"
 DRAW_PRIMITIVE_METHOD = "TRIS"
-# ------------------ ------------------ -----------
-
+# ------------------ ------------------ ----------- 
 def toggle(self,context):
     img = bpy.data.images.get(self.image)
     if not img: return
@@ -36,28 +37,64 @@ def toggle(self,context):
     img.update() 
     
     offscreen.free() 
+
 class shader_params(bpy.types.PropertyGroup):
-    intensity: bpy.props.FloatProperty(default=1.0)
-    image : bpy.props.StringProperty(default="GLSL_layer",update=toggle) #Bake on update the name
+    cam_name: bpy.props.StringProperty(default="Camera")
+    obj_name: bpy.props.StringProperty(default="Cube")
+    
+    image : bpy.props.StringProperty(default="GLSL_layer",update=toggle)
 
 def uniforms_bind(
         shader: gpu.types.GPUShader,
         block:shader_params
     ):
     shader.bind()
-    shader.uniform_float("u_f", block.intensity)
 
+    
 def batch_make(
         shader: gpu.types.GPUShader,
         block:shader_params, 
         drawShape: str = DRAW_PRIMITIVE_METHOD
     ):
-    coords = [ 
-        (-0.5, -0.5), 
-        ( 0.5, -0.5), 
-        ( 0.0, 0.5)
-        ]
-    return batch_for_shader(shader, drawShape, {"pos": coords})
+    if block.obj_name not in bpy.data.objects:
+        # Fallback 2D Triangle
+        coords = np.array([
+                (-0.5, -0.5, 0.0), 
+                (0.5, -0.5, 0.0), 
+                (0.0, 0.5, 0.0)], 
+                dtype=np.float32
+            )
+        return batch_for_shader(shader, drawShape, {"pos": coords})
+    
+    deps = bpy.context.evaluated_depsgraph_get()
+    obj = bpy.data.objects[block.obj_name]
+    obj_eval = obj.evaluated_get(deps)
+    mesh = obj_eval.to_mesh()
+    mesh.calc_loop_triangles()
+
+    # Get Vertices
+    vertices = np.empty((len(mesh.vertices), 3), 'f')
+    mesh.vertices.foreach_get("co", vertices.reshape(-1))
+
+    # Get Triangle Indices (Crucial for a Cube)
+    indices = np.empty((len(mesh.loop_triangles), 3), 'i')
+    mesh.loop_triangles.foreach_get("vertices", indices.reshape(-1))
+
+    
+    mesh.calc_normals_split()
+    normals = np.empty((len(mesh.vertices), 3), 'f')
+    mesh.vertices.foreach_get("normal", normals.reshape(-1))
+
+    obj_eval.to_mesh_clear()
+    return batch_for_shader(
+        shader,
+        drawShape,
+        {
+            "pos": vertices,
+            "normal": normals
+        },
+        indices=indices
+    )
 
 def exec(
         shader: gpu.types.GPUShader,

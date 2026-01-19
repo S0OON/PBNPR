@@ -4,10 +4,12 @@ import bpy
 def load_modules()->list:
     from src.template import template as GLSL_TEMP
     from src.paint_obj import paint as GLSL_PAINT_OBJ
+    from src.normals import normals as GLSL_NRMS
     
     return[
         GLSL_TEMP,
-        GLSL_PAINT_OBJ
+        GLSL_PAINT_OBJ,
+        GLSL_NRMS
     ]
 
 def init_stream():

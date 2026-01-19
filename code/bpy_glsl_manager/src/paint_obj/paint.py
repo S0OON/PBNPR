@@ -14,7 +14,29 @@ F = "frag.glsl"
 DRAW_REGION = "WINDOW"
 DRAW_TYPE = "POST_VIEW"
 DRAW_PRIMITIVE_METHOD = "TRIS"
-# ------------------ ------------------ -----------
+# ------------------ ------------------ ----------- 
+def toggle(self,context):
+    img = bpy.data.images.get(self.image)
+    if not img: return
+
+    W, H = img.size
+    
+    pair = bpy.gl_stream[SHADER_NAME]
+    desc = pair[0]
+    shader = pair[1]
+    batch = desc.CALL_BATCH(shader,self)
+    
+    offscreen = gpu.types.GPUOffScreen(W, H) 
+    with offscreen.bind():
+        gpu.state.viewport_set(0, 0, W, H)
+        desc.CALL_EXEC(shader,batch,self)
+        buffer = gpu.state.active_framebuffer_get().read_color(0, 0, W, H, 4, 0, 'FLOAT')
+
+    buffer.dimensions = W * H * 4 
+    img.pixels.foreach_set(buffer) 
+    img.update() 
+    
+    offscreen.free() 
 
 class shader_params(bpy.types.PropertyGroup):
     cam_name: bpy.props.StringProperty(default="Camera")
@@ -26,6 +48,7 @@ class shader_params(bpy.types.PropertyGroup):
         size=4, min=0.0, max=1.0, 
         default=(0.2, 0.6, 1.0, 1.0) 
         ) 
+    image : bpy.props.StringProperty(default="GLSL_layer",update=toggle)
 
 def uniforms_bind(
         shader: gpu.types.GPUShader,

@@ -1,43 +1,5 @@
 
 ========================================
-D:\soon\projects\PBNPR\code\export_folder_tree_to_txt.py
-========================================
-import os
-
-# Define which file extensions to include
-INCLUDE_EXTENSIONS = {'.py', '.glsl', '.txt', '.md'}
-
-# Output file name
-OUTPUT_FILE = 'combined_output.txt'
-
-def collect_files(base_dir):
-    """Recursively collect files with target extensions."""
-    collected = []
-    for root, _, files in os.walk(base_dir):
-        for file in files:
-            if os.path.splitext(file)[1] in INCLUDE_EXTENSIONS:
-                collected.append(os.path.join(root, file))
-    return collected
-
-def write_combined_output(files, output_path):
-    """Write contents of all files into one output file."""
-    with open(output_path, 'w', encoding='utf-8') as out:
-        for file_path in files:
-            out.write(f"\n{'='*40}\n{file_path}\n{'='*40}\n")
-            try:
-                with open(file_path, 'r', encoding='utf-8') as f:
-                    out.write(f.read())
-            except Exception as e:
-                out.write(f"[Error reading {file_path}: {e}]\n")
-
-if __name__ == "__main__":
-    current_dir = os.path.dirname(os.path.abspath(__file__))
-    subfolder = os.path.join(current_dir)  # or specify a subfolder like 'src'
-    files = collect_files(subfolder)
-    write_combined_output(files, os.path.join(current_dir, OUTPUT_FILE))
-    print(f"✅ Combined {len(files)} files into {OUTPUT_FILE}")
-
-========================================
 D:\soon\projects\PBNPR\code\bpy_glsl_manager\main.py
 ========================================
 
@@ -75,10 +37,12 @@ import bpy
 def load_modules()->list:
     from src.template import template as GLSL_TEMP
     from src.paint_obj import paint as GLSL_PAINT_OBJ
+    from src.normals import normals as GLSL_NRMS
     
     return[
         GLSL_TEMP,
-        GLSL_PAINT_OBJ
+        GLSL_PAINT_OBJ,
+        GLSL_NRMS
     ]
 
 def init_stream():
@@ -264,11 +228,205 @@ def register():
     bpy.types.Scene.gl_stack = bpy.props.CollectionProperty(type=gl_instance_sk)
 
 ========================================
+D:\soon\projects\PBNPR\code\bpy_glsl_manager\src\normals\frag.glsl
+========================================
+
+out vec4 fragColor;
+
+void main() {
+    vec3 N = normalize(v_normal);
+    vec3 V = normalize(uCamPos - v_world_pos);
+
+    float rim = 1.0 - max(dot(N, V), 0.0);
+
+    // Shape the rim
+    rim = smoothstep(0.4, 1.0, rim);
+
+    vec3 baseColor = vec3(0.6);
+    vec3 rimColor  = vec3(1.0);
+
+    fragColor = vec4(baseColor + rim * rimColor, 1.0);
+}
+
+========================================
+D:\soon\projects\PBNPR\code\bpy_glsl_manager\src\normals\normals.py
+========================================
+import os
+import bpy
+import gpu
+from gpu_extras.batch import batch_for_shader
+from dataclasses import dataclass
+from typing import Callable, Type
+import numpy as np
+from mathutils import Matrix
+
+BASE_DIR = os.path.dirname(__file__)
+SHADER_NAME = "NORMALS"
+V = "vert.glsl"
+F = "frag.glsl"
+DRAW_REGION = "WINDOW"
+DRAW_TYPE = "POST_VIEW"
+DRAW_PRIMITIVE_METHOD = "TRIS"
+# ------------------ ------------------ ----------- 
+def toggle(self,context):
+    img = bpy.data.images.get(self.image)
+    if not img: return
+
+    W, H = img.size
+    
+    pair = bpy.gl_stream[SHADER_NAME]
+    desc = pair[0]
+    shader = pair[1]
+    batch = desc.CALL_BATCH(shader,self)
+    
+    offscreen = gpu.types.GPUOffScreen(W, H) 
+    with offscreen.bind():
+        gpu.state.viewport_set(0, 0, W, H)
+        desc.CALL_EXEC(shader,batch,self)
+        buffer = gpu.state.active_framebuffer_get().read_color(0, 0, W, H, 4, 0, 'FLOAT')
+
+    buffer.dimensions = W * H * 4 
+    img.pixels.foreach_set(buffer) 
+    img.update() 
+    
+    offscreen.free() 
+
+class shader_params(bpy.types.PropertyGroup):
+    cam_name: bpy.props.StringProperty(default="Camera")
+    obj_name: bpy.props.StringProperty(default="Cube")
+    
+    image : bpy.props.StringProperty(default="GLSL_layer",update=toggle)
+
+def uniforms_bind(
+        shader: gpu.types.GPUShader,
+        block:shader_params
+    ):
+    shader.bind()
+
+    
+def batch_make(
+        shader: gpu.types.GPUShader,
+        block:shader_params, 
+        drawShape: str = DRAW_PRIMITIVE_METHOD
+    ):
+    if block.obj_name not in bpy.data.objects:
+        # Fallback 2D Triangle
+        coords = np.array([
+                (-0.5, -0.5, 0.0), 
+                (0.5, -0.5, 0.0), 
+                (0.0, 0.5, 0.0)], 
+                dtype=np.float32
+            )
+        return batch_for_shader(shader, drawShape, {"pos": coords})
+    
+    deps = bpy.context.evaluated_depsgraph_get()
+    obj = bpy.data.objects[block.obj_name]
+    obj_eval = obj.evaluated_get(deps)
+    mesh = obj_eval.to_mesh()
+    mesh.calc_loop_triangles()
+
+    # Get Vertices
+    vertices = np.empty((len(mesh.vertices), 3), 'f')
+    mesh.vertices.foreach_get("co", vertices.reshape(-1))
+
+    # Get Triangle Indices (Crucial for a Cube)
+    indices = np.empty((len(mesh.loop_triangles), 3), 'i')
+    mesh.loop_triangles.foreach_get("vertices", indices.reshape(-1))
+
+    
+    mesh.calc_normals_split()
+    normals = np.empty((len(mesh.vertices), 3), 'f')
+    mesh.vertices.foreach_get("normal", normals.reshape(-1))
+
+    obj_eval.to_mesh_clear()
+    return batch_for_shader(
+        shader,
+        drawShape,
+        {
+            "pos": vertices,
+            "normal": normals
+        },
+        indices=indices
+    )
+
+def exec(
+        shader: gpu.types.GPUShader,
+        batch: gpu.types.GPUBatch,
+        block:shader_params
+    ):
+    #Provided that, shader+batch
+    shader.bind()
+    uniforms_bind(shader,block)
+    batch.draw(shader)
+
+#-------------------------------------
+
+def compile_n_register():
+    """
+    Compiles a shader, saves tp bpy.gl_stream[1] after refreshing the whole key-value
+    """
+    stream = bpy.gl_stream[SHADER_NAME]
+    if stream[1] is not None:
+        return #already compiled
+    Desc = stream[0]
+
+    with open(Desc.PATH_VERT, "r", encoding="utf-8") as f: 
+        vert_src = f.read()
+    with open(Desc.PATH_FRAG, "r", encoding="utf-8") as f:
+        frag_src = f.read()
+    shader = gpu.types.GPUShader(vert_src, frag_src)
+    
+    bpy.gl_stream[SHADER_NAME][1] = shader
+
+def unregister():
+    bpy.gl_descs.pop(SHADER_NAME)
+
+@dataclass
+class ShaderDesc:
+    NAME: str
+    PATH_VERT: str
+    PATH_FRAG: str
+    DRAW_REGION: str
+    DRAW_TYPE: str
+    DRAW_PRIMITIVE_METHOD:str
+    CALL_UNI: Callable
+    CALL_BATCH: Callable
+    CALL_EXEC: Callable
+    PARAMS: Type
+    CALL_REG:Callable
+    CALL_UNREG:Callable
+DESCRIPTION = ShaderDesc(
+    NAME                  =SHADER_NAME,
+    PATH_VERT             =os.path.join(BASE_DIR, V),
+    PATH_FRAG             =os.path.join(BASE_DIR, F),
+    DRAW_REGION           = DRAW_REGION, 
+    DRAW_TYPE             = DRAW_TYPE, 
+    DRAW_PRIMITIVE_METHOD = DRAW_PRIMITIVE_METHOD,
+    CALL_UNI              =uniforms_bind,
+    CALL_BATCH            =batch_make,
+    CALL_EXEC             =exec,
+    PARAMS                =shader_params,
+    CALL_REG              =compile_n_register,
+    CALL_UNREG            =unregister
+)
+
+========================================
+D:\soon\projects\PBNPR\code\bpy_glsl_manager\src\normals\vert.glsl
+========================================
+in vec3 pos;
+in vec3 normal;
+
+
+void main() {
+    
+}
+
+========================================
 D:\soon\projects\PBNPR\code\bpy_glsl_manager\src\paint_obj\frag.glsl
 ========================================
 in vec3 v_world_pos;
 
-uniform vec3 uColor;
+uniform vec4 uColor;
 uniform float uLight;
 uniform vec3 uLightPos;
 
@@ -278,7 +436,7 @@ void main() {
     
     // Example: Make it darker as it gets further away
     float intensity = 1.0 / (d * d + 1.0); 
-    gl_FragColor = vec4(vec3(uColor*intensity*uLight), 1.0);
+    gl_FragColor = uColor*intensity*uLight;
 }
 ========================================
 D:\soon\projects\PBNPR\code\bpy_glsl_manager\src\paint_obj\paint.py
@@ -299,7 +457,29 @@ F = "frag.glsl"
 DRAW_REGION = "WINDOW"
 DRAW_TYPE = "POST_VIEW"
 DRAW_PRIMITIVE_METHOD = "TRIS"
-# ------------------ ------------------ -----------
+# ------------------ ------------------ ----------- 
+def toggle(self,context):
+    img = bpy.data.images.get(self.image)
+    if not img: return
+
+    W, H = img.size
+    
+    pair = bpy.gl_stream[SHADER_NAME]
+    desc = pair[0]
+    shader = pair[1]
+    batch = desc.CALL_BATCH(shader,self)
+    
+    offscreen = gpu.types.GPUOffScreen(W, H) 
+    with offscreen.bind():
+        gpu.state.viewport_set(0, 0, W, H)
+        desc.CALL_EXEC(shader,batch,self)
+        buffer = gpu.state.active_framebuffer_get().read_color(0, 0, W, H, 4, 0, 'FLOAT')
+
+    buffer.dimensions = W * H * 4 
+    img.pixels.foreach_set(buffer) 
+    img.update() 
+    
+    offscreen.free() 
 
 class shader_params(bpy.types.PropertyGroup):
     cam_name: bpy.props.StringProperty(default="Camera")
@@ -311,6 +491,7 @@ class shader_params(bpy.types.PropertyGroup):
         size=4, min=0.0, max=1.0, 
         default=(0.2, 0.6, 1.0, 1.0) 
         ) 
+    image : bpy.props.StringProperty(default="GLSL_layer",update=toggle)
 
 def uniforms_bind(
         shader: gpu.types.GPUShader,
@@ -340,7 +521,7 @@ def uniforms_bind(
     shader.uniform_float("uLight", bpy.data.lights[block.Point_name].energy)
     shader.uniform_float("uLightPos", bpy.data.objects[block.Point_name].location)
     #col -----------------------------------------------------------------------
-    x = [block.color[0], block.color[1], block.color[2]]
+    x = [block.color[0], block.color[1], block.color[2], block.color[3]]
     shader.uniform_float("uColor", x)
     
 def batch_make(
@@ -483,8 +664,31 @@ DRAW_TYPE = "POST_VIEW"
 DRAW_PRIMITIVE_METHOD = "TRIS"
 # ------------------ ------------------ -----------
 
+def toggle(self,context):
+    img = bpy.data.images.get(self.image)
+    if not img: return
+
+    W, H = img.size
+    
+    pair = bpy.gl_stream[SHADER_NAME]
+    desc = pair[0]
+    shader = pair[1]
+    batch = desc.CALL_BATCH(shader,self)
+    
+    offscreen = gpu.types.GPUOffScreen(W, H) 
+    with offscreen.bind():
+        gpu.state.viewport_set(0, 0, W, H)
+        desc.CALL_EXEC(shader,batch,self)
+        buffer = gpu.state.active_framebuffer_get().read_color(0, 0, W, H, 4, 0, 'FLOAT')
+
+    buffer.dimensions = W * H * 4 
+    img.pixels.foreach_set(buffer) 
+    img.update() 
+    
+    offscreen.free() 
 class shader_params(bpy.types.PropertyGroup):
     intensity: bpy.props.FloatProperty(default=1.0)
+    image : bpy.props.StringProperty(default="GLSL_layer",update=toggle) #Bake on update the name
 
 def uniforms_bind(
         shader: gpu.types.GPUShader,
