@@ -1,7 +1,7 @@
 import bpy
 
-ID_OP_ADD = "gl.add_instance"
 ID_OP_REMOVE = "gl.remove_instance"
+ID_INSTANCE_dropdown = "selected_type"
 ID_INSTANCE_enable = "enabled"
 ID_INSTANCE_expand = "expanded"
 
@@ -63,26 +63,22 @@ class gl_instance_sk(bpy.types.PropertyGroup):
     handler_id : bpy.props.IntProperty(default=-1)
 
 #-------------------------------------------------------------
-
 def get_items(self, context):
-    return [(key, key, "") for key in bpy.gl_stream.keys()]
-class gl_OP_add_instance(bpy.types.Operator):
-    bl_idname = ID_OP_ADD
-    bl_label = "Add GLSL Instance"
-
-    selected_type: bpy.props.EnumProperty(
-        name="shaders",
-        items=get_items
-    )
-
-    def invoke(self, context, event):
-            wm = context.window_manager
-            return wm.invoke_props_dialog(self)
-
-    def execute(self, context):
+    list = [(key, key, "") for key in bpy.gl_stream.keys()]
+    list.append(("Select","Select",""))
+    return list
+def tog(self,context):
+        if self.selected_type == "Select":
+            return
         new_i = context.scene.gl_stack.add()
         new_i.shaderType = self.selected_type
-        return {'FINISHED'}
+        self.selected_type = "Select" 
+class gl_Instances_dropDown(bpy.types.PropertyGroup):
+    selected_type: bpy.props.EnumProperty(
+        name="",
+        items=get_items,
+        update=tog
+    ) 
 
 class gl_OP_remove_instance(bpy.types.Operator):
     bl_idname = ID_OP_REMOVE
@@ -106,10 +102,9 @@ class gl_panel(bpy.types.Panel):
     def draw(self, context):
         layout = self.layout
 
-        box = layout.box()
-        row = box.row(align=True)
+        row = layout.row(align=True)
 
-        row.operator(ID_OP_ADD, text="Add Instance")
+        row.prop(context.scene.drop_down,ID_INSTANCE_dropdown)
 
         i = 0
         for item in context.scene.gl_stack:
@@ -139,7 +134,7 @@ class gl_panel(bpy.types.Panel):
 
 classes = [
     gl_instance_sk, 
-    gl_OP_add_instance,
+    gl_Instances_dropDown,
     gl_OP_remove_instance,
     gl_panel
 ]
@@ -155,3 +150,4 @@ def register():
             bpy.props.PointerProperty(type=desc.PARAMS)
         )
     bpy.types.Scene.gl_stack = bpy.props.CollectionProperty(type=gl_instance_sk)
+    bpy.types.Scene.drop_down = bpy.props.PointerProperty(type=gl_Instances_dropDown)
