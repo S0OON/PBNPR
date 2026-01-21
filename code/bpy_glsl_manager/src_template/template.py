@@ -12,20 +12,18 @@ F = "frag.glsl"
 DRAW_REGION = "WINDOW"
 DRAW_TYPE = "POST_VIEW"
 DRAW_PRIMITIVE_METHOD = "TRIS"
-# ------------------ ------------------ -----------
-
+#===========================================================
 def toggle(self,context):
     img = bpy.data.images.get(self.image)
     if not img: return
 
     W, H = img.size
-    
     pair = bpy.gl_stream[SHADER_NAME]
     desc = pair[0]
     shader = pair[1]
     batch = desc.CALL_BATCH(shader,self)
-    
     offscreen = gpu.types.GPUOffScreen(W, H) 
+ 
     with offscreen.bind():
         gpu.state.viewport_set(0, 0, W, H)
         desc.CALL_EXEC(shader,batch,self)
@@ -37,60 +35,70 @@ def toggle(self,context):
     
     offscreen.free() 
 class shader_params(bpy.types.PropertyGroup):
-    intensity: bpy.props.FloatProperty(default=1.0)
     image : bpy.props.StringProperty(default="GLSL_layer",update=toggle) #Bake on update the name
+    intensity: bpy.props.FloatProperty(default=1.0)
 
 def uniforms_bind(
         shader: gpu.types.GPUShader,
-        block:shader_params
-    ):
+        block:  shader_params
+):
     shader.bind()
     shader.uniform_float("u_f", block.intensity)
 
 def batch_make(
         shader: gpu.types.GPUShader,
-        block:shader_params, 
-        drawShape: str = DRAW_PRIMITIVE_METHOD
-    ):
+        block:  shader_params
+):
     coords = [ 
         (-0.5, -0.5), 
         ( 0.5, -0.5), 
         ( 0.0, 0.5)
-        ]
-    return batch_for_shader(shader, drawShape, {"pos": coords})
+    ]
+    return batch_for_shader(shader, DRAW_PRIMITIVE_METHOD, {"pos": coords})
 
-def exec(
+def safe_exec(
         shader: gpu.types.GPUShader,
-        batch: gpu.types.GPUBatch,
-        block:shader_params
-    ):
-    #Provided that, shader+batch
-    shader.bind()
-    uniforms_bind(shader,block)
-    batch.draw(shader)
-
-#-------------------------------------
-
+        batch:  gpu.types.GPUBatch,
+        block:  shader_params
+):
+    if not shader or not batch:
+        return
+        
+    try:
+        shader.bind()
+        uniforms_bind(shader,block)
+        batch.draw(shader)
+    except Exception as e:
+        # If it fails once, we stop drawing it to prevent a loop of errors
+        print(f"Drawing Error in {shader}: {e}")
+        # Option: context.scene.gl_stack[active_index].enabled = False
+#===========================================================
 def compile_n_register():
     """
     Compiles a shader, saves tp bpy.gl_stream[1] after refreshing the whole key-value
     """
+    #Getter
     stream = bpy.gl_stream[SHADER_NAME]
     if stream[1] is not None:
         return #already compiled
     Desc = stream[0]
 
+    #Compile
     with open(Desc.PATH_VERT, "r", encoding="utf-8") as f: 
         vert_src = f.read()
     with open(Desc.PATH_FRAG, "r", encoding="utf-8") as f:
         frag_src = f.read()
     shader = gpu.types.GPUShader(vert_src, frag_src)
     
+    #Assign
     bpy.gl_stream[SHADER_NAME][1] = shader
+
+    return shader
 
 def unregister():
     bpy.gl_descs.pop(SHADER_NAME)
 
+#===========================================================
 @dataclass
 class ShaderDesc:
     NAME: str
@@ -106,16 +114,16 @@ class ShaderDesc:
     CALL_REG:Callable
     CALL_UNREG:Callable
 DESCRIPTION = ShaderDesc(
-    NAME                  =SHADER_NAME,
-    PATH_VERT             =os.path.join(BASE_DIR, V),
-    PATH_FRAG             =os.path.join(BASE_DIR, F),
+    NAME                  = SHADER_NAME,
+    PATH_VERT             = os.path.join(BASE_DIR, V),
+    PATH_FRAG             = os.path.join(BASE_DIR, F),
     DRAW_REGION           = DRAW_REGION, 
     DRAW_TYPE             = DRAW_TYPE, 
     DRAW_PRIMITIVE_METHOD = DRAW_PRIMITIVE_METHOD,
-    CALL_UNI              =uniforms_bind,
-    CALL_BATCH            =batch_make,
-    CALL_EXEC             =exec,
-    PARAMS                =shader_params,
-    CALL_REG              =compile_n_register,
-    CALL_UNREG            =unregister
+    CALL_UNI              = uniforms_bind,
+    CALL_BATCH            = batch_make,
+    CALL_EXEC             = safe_exec,
+    PARAMS                = shader_params,
+    CALL_REG              = compile_n_register,
+    CALL_UNREG            = unregister
 )

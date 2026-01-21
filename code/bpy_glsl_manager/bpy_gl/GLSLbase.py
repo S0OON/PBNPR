@@ -1,35 +1,14 @@
 import bpy
 
-#Hot~
-def load_modules()->list:
-    from src.template import template as GLSL_TEMP
-    from src.paint_obj import paint as GLSL_PAINT_OBJ
-    from src.normals import normals as GLSL_NRMS
+
+#===========================================================
+def register(template):
+    # Init streams,
+    if not hasattr(bpy,"gl_stream"):
+        bpy.gl_stream = {} 
+    if not hasattr(bpy,"gl_Hs"):
+        bpy.gl_Hs = []
+
     
-    return[
-        GLSL_TEMP,
-        GLSL_PAINT_OBJ,
-        GLSL_NRMS
-    ]
-
-def init_stream():
-    if not hasattr(
-            bpy,"gl_stream"
-        ):
-        bpy.gl_stream = {}
-
-def load_mods_to_stream():
-    from importlib import reload
-    mods = load_modules()
-    for mod in mods:
-        reload(mod)
-        bpy.gl_stream[mod.SHADER_NAME]=[
-            mod.DESCRIPTION,None
-        ]
-
-def load_shader(name:str):
-    bpy.gl_stream[name][0].CALL_REG()
-
-def register():
-    init_stream()
-    load_mods_to_stream()
+    bpy.gl_stream[template.SHADER_NAME] = [template.DESCRIPTION,None]
+        
