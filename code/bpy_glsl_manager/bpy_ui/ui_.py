@@ -16,6 +16,8 @@ def _get_streamKeys(self, context):
 ID_OP_ADD_MOD_FROM_DIR = "gl.import_shader"
 ID_OP_ADD_TEMP_MOD     = "gl.export_shader_template"
 ID_OP_REMOVE           = "gl.remove_instance"
+ID_INST_add_shader_i   = "selected_type_add"
+ID_INST_rem_shader_i   = "selected_type_remove"
 #===========================================================
 def toggle(self, context):
     if self.enabled and self.handler_id == -1:
@@ -29,7 +31,8 @@ def toggle(self, context):
         while bpy.gl_Hs.__len__() <= self.handler_id:
             bpy.gl_Hs.append(None)
 
-        pair =    bpy.gl_stream[self.shaderType]
+        pair =    bpy.gl_stream.get(self.shaderType)
+        if not pair: return
         desc =    pair[0]
         desc.CALL_REG()
         shader =  pair[1]
@@ -53,7 +56,8 @@ def toggle(self, context):
         bpy.gl_Hs[self.handler_id]=handler
     
     elif not self.enabled and self.handler_id != -1:
-        pair = bpy.gl_stream[self.shaderType]
+        pair =    bpy.gl_stream.get(self.shaderType)
+        if not pair: return
         desc = pair[0]
         
         bpy.types.SpaceView3D.draw_handler_remove(
@@ -68,19 +72,36 @@ class gl_instance_sk(bpy.types.PropertyGroup):
     shaderType:  bpy.props.StringProperty(name="shader", default="")
     handler_id : bpy.props.IntProperty(default=-1)
 
-#=========================================================== 
-def tog_enum(self, context):
-    if self.selected_type == "Select": 
+#===========================================================
+def tog_enum_add(self, context):
+    if self.selected_type_add == "Select": 
         return
-    new_i = context.scene.gl_stack.add()
-    new_i.shaderType = self.selected_type
-    self.selected_type = "Select" 
+    STACK = context.scene.gl_stack
+    new_i = STACK.add()
+    new_i.shaderType = self.selected_type_add
+    self.selected_type_add = "Select" 
+def tog_enum_remove(self, context):
+    if self.selected_type_remove == "Select": 
+        return
+    STACK = context.scene.gl_stack
+    i=0
+    for block in STACK:
+        if block.shaderType == self.selected_type_remove:
+            block.enabled = False
+            STACK.remove(i)
+        i+=1
+    bpy.gl_stream.pop(self.selected_type_remove)
+    self.selected_type_add = "Select" 
 class gl_mainSettings(bpy.types.PropertyGroup):
-    selected_type: bpy.props.EnumProperty(
-        name="", items=_get_streamKeys, update=tog_enum
-    ) 
+    selected_type_add: bpy.props.EnumProperty(
+        name="", items=_get_streamKeys, update=tog_enum_add
+    )
+    selected_type_remove: bpy.props.EnumProperty(
+        name="", items=_get_streamKeys, update=tog_enum_remove
+    )
+    
 
-#=========================================================== 
+#===========================================================
 class gl_OP_remove_instance(bpy.types.Operator):
     bl_idname = ID_OP_REMOVE
     bl_label = ""
@@ -156,7 +177,7 @@ class gl_panel(bpy.types.Panel):
     bl_category = 'PBNPR'
 
     def draw(self, context):
-        layout = self.layout
+        layout   = self.layout
         SETTINGS = context.scene.settings
 
         box = layout.box()
@@ -165,7 +186,9 @@ class gl_panel(bpy.types.Panel):
         row.operator(ID_OP_ADD_MOD_FROM_DIR, icon='FILE_NEW', text='Import')
 
         row = box.row()
-        row.prop(SETTINGS, "selected_type")
+        row.prop(SETTINGS, ID_INST_add_shader_i,text="Add a shader type block")
+        row = box.row()
+        row.prop(SETTINGS, ID_INST_rem_shader_i,text="Remove a shader type")
 
         for i, INST in enumerate(context.scene.gl_stack):
             box = layout.box()
@@ -220,3 +243,4 @@ def unregister():
         bpy.utils.unregister_class(cl)
     del bpy.types.Scene.settings
     del bpy.types.Scene.gl_stack
+    

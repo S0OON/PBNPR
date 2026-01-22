@@ -12,9 +12,6 @@ import bpy
 import importlib
 import sys
 
-# Stop Python from creating __pycache__ folders to keep the directory clean
-sys.dont_write_bytecode = True
-
 # List your modules in order of dependency
 # (Base logic first, UI last)
 from .bpy_gl import GLSLbase
@@ -47,8 +44,8 @@ def unregister():
         del bpy.gl_stack
     if hasattr(bpy, "gl_Hs"):
         del bpy.gl_Hs
-    if hasattr(bpy.types.Scene, "settings"):
-        del bpy.types.Scene.settings
+    if hasattr(bpy.types.Scene, "gl_settings"):
+        del bpy.types.Scene.gl_settings
 
     print("PBNPR: Unregistered")
 

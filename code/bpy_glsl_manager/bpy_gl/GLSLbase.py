@@ -9,6 +9,18 @@ def register(template):
     if not hasattr(bpy,"gl_Hs"):
         bpy.gl_Hs = []
 
-    
     bpy.gl_stream[template.SHADER_NAME] = [template.DESCRIPTION,None]
-        
+
+def unregister():
+    try:
+        for h in bpy.gl_Hs:
+            if h == None: 
+                continue
+            else:
+                bpy.types.SpaceView3D.draw_handler_remove(
+                    h,'WINDOW'
+                )
+    except: pass
+
+    del bpy.gl_stream
+    del bpy.gl_Hs

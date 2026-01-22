@@ -1,6 +1,7 @@
 import os
 import bpy
 import gpu
+import struct
 from gpu_extras.batch import batch_for_shader
 from dataclasses import dataclass
 from typing import Callable, Type
@@ -12,6 +13,8 @@ F = "frag.glsl"
 DRAW_REGION = "WINDOW"
 DRAW_TYPE = "POST_VIEW"
 DRAW_PRIMITIVE_METHOD = "TRIS"
+#===========================================================
+UBO_1 = None
 #===========================================================
 def toggle(self,context):
     img = bpy.data.images.get(self.image)
@@ -38,12 +41,30 @@ class shader_params(bpy.types.PropertyGroup):
     image : bpy.props.StringProperty(default="GLSL_layer",update=toggle) #Bake on update the name
     intensity: bpy.props.FloatProperty(default=1.0)
 
+
+import gpu
+import struct
+
 def uniforms_bind(
         shader: gpu.types.GPUShader,
         block:  shader_params
 ):
+    #For simples:
+    # shader.bind()
+    # shader.uniform_float('name',float)
+    # . . .
+    # return
+
+    #For complex performance depending thingies we bundle data:     
+    #'f' is a 4-byte float. We add padding to reach 16 bytes for std140 alignment.
+    Data = struct.pack('ffff', block.intensity, 0.2, 0.5, 0.7)
+    
+    # Uniform Buffer Object (UBO) 
+    global UBO_1
+    UBO_1 = gpu.types.GPUUniformBuf(data=Data)# aka bundled data
+    
     shader.bind()
-    shader.uniform_float("u_f", block.intensity)
+    shader.uniform_block("MyShaderParams", UBO_1)
 
 def batch_make(
         shader: gpu.types.GPUShader,
@@ -78,10 +99,14 @@ def compile_n_register():
     Compiles a shader, saves tp bpy.gl_stream[1] after refreshing the whole key-value
     """
     #Getter
-    stream = bpy.gl_stream[SHADER_NAME]
-    if stream[1] is not None:
+    pair = bpy.gl_stream.get(SHADER_NAME)
+    if pair is None:
+        print(f"gl_stream, SHDAER: {SHADER_NAME} FAILED TO COMPILE DUE ABSENCE OF gl_Stream key (None)\n")
+        return
+    if pair[1] is not None:
+        print(f"gl_stream: SHADER {SHADER_NAME} Stopped compiliation due presance on another object at gl_stream[{SHADER_NAME}][1]")
         return #already compiled
-    Desc = stream[0]
+    Desc = pair[0]
 
     #Compile
     with open(Desc.PATH_VERT, "r", encoding="utf-8") as f: 
@@ -91,7 +116,7 @@ def compile_n_register():
     shader = gpu.types.GPUShader(vert_src, frag_src)
     
     #Assign
-    bpy.gl_stream[SHADER_NAME][1] = shader
+    pair[1] = shader
 
     return shader
 
