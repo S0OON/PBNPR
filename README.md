@@ -11,6 +11,7 @@ Ultimate customizability. Ultimate performance.
 
 for developers: One pholosophy used here is that any .py has the same access when ever, and thus the cusomizablilty is all up to you, like even spawining a cube middle of registeration, who cares!
 Another phOlosphy here is the DESCRIPTION data class, its a contract to register your shader instructions in, aka target edit.
+Another phOlosophy is KISS technology, "KISS (Keep It Simple, Stupid) to Hardware phOlosophy." (i made that up)
 
 how to use:
 load the addon 'bpy_gl_manager.zip' -> view 3d (N-Menu) -> PBNPR -> GLSL manager,
