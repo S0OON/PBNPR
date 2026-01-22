@@ -90,7 +90,7 @@ def tog_enum_remove(self, context):
             block.enabled = False
             STACK.remove(i)
         i+=1
-    bpy.gl_stream.pop(self.selected_type_remove)
+    bpy.gl_stream[self.selected_type_remove][0].CALL_UNREG()
     self.selected_type_add = "Select" 
 class gl_mainSettings(bpy.types.PropertyGroup):
     selected_type_add: bpy.props.EnumProperty(
@@ -100,7 +100,6 @@ class gl_mainSettings(bpy.types.PropertyGroup):
         name="", items=_get_streamKeys, update=tog_enum_remove
     )
     
-
 #===========================================================
 class gl_OP_remove_instance(bpy.types.Operator):
     bl_idname = ID_OP_REMOVE

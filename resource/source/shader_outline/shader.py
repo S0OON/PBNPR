@@ -5,9 +5,11 @@ import struct
 from gpu_extras.batch import batch_for_shader
 from dataclasses import dataclass
 from typing import Callable, Type
+import numpy as np
+import mathutils
 
 BASE_DIR = os.path.dirname(__file__)
-SHADER_NAME = "TEMPLATE"
+SHADER_NAME = "Outline"
 V = "vert.glsl"
 F = "frag.glsl"
 DRAW_REGION = "WINDOW"
@@ -39,26 +41,40 @@ def toggle(self,context):
     offscreen.free() 
 class shader_params(bpy.types.PropertyGroup):
     image : bpy.props.StringProperty(default="GLSL_layer",update=toggle) #Bake on update the name
-    intensity: bpy.props.FloatProperty(default=1.0)
+    thickness: bpy.props.FloatProperty(default=0.0)
+    Object_name:bpy.props.StringProperty(default="Cube")
+    color : bpy.props.FloatVectorProperty(
+        subtype='COLOR',
+        size=4, min=0.0, max=1.0, 
+        default=(0.2, 0.6, 1.0, 1.0) 
+        )
 
 def uniforms_bind(
         shader: gpu.types.GPUShader,
         block:  shader_params
 ):
-    #For simples:
-    # shader.bind()
-    # shader.uniform_float('name',float)
-    # . . .
-    # return
-
-    #For complex performance depending thingies we bundle data:     
-    #'f' is a 4-byte float. We add padding to reach 16 bytes for std140 alignment.
-    Data = struct.pack('ffff', block.intensity, 0.2, 0.5, 0.7)
+    cam = bpy.context.scene.camera
+    obj = bpy.data.objects[block.Object_name]
+    deps = bpy.context.evaluated_depsgraph_get()
+    w,h = [bpy.context.scene.render.resolution_x,bpy.context.scene.render.resolution_y]
     
-    # Uniform Buffer Object (UBO) 
+    m_world = np.array(obj.matrix_world.transposed(),                     dtype=np.float32).flatten()
+    m_view  = np.array(cam.matrix_world.inverted().transposed(),          dtype=np.float32).flatten()
+    m_proj  = np.array(cam.calc_matrix_camera(deps,x=w,y=h).transposed(), dtype=np.float32).flatten()
+    u_col   = np.array(block.color,   dtype=np.float32).flatten() 
+    u_Thic  = np.array([block.thickness,0.0,0.0,0.0],  dtype=np.float32).flatten()
+    # =======================================
+ 
+    # =======================================
+    Data = np.concatenate([m_world, m_view, m_proj, u_col, u_Thic])
+    # =======================================
+    
     global UBO_1
-    UBO_1 = gpu.types.GPUUniformBuf(data=Data)# aka bundled data
-    
+    if UBO_1 is None:
+        UBO_1 = gpu.types.GPUUniformBuf(data=Data)
+    else:
+        UBO_1.update(Data)
+
     shader.bind()
     shader.uniform_block("MyShaderParams", UBO_1)
 
@@ -66,12 +82,32 @@ def batch_make(
         shader: gpu.types.GPUShader,
         block:  shader_params
 ):
-    coords = [ 
-        (-0.5, -0.5), 
-        ( 0.5, -0.5), 
-        ( 0.0, 0.5)
-    ]
-    return batch_for_shader(shader, DRAW_PRIMITIVE_METHOD, {"pos": coords})
+    deps = bpy.context.evaluated_depsgraph_get()
+    obj = bpy.data.objects[block.Object_name]
+    obj_eval = obj.evaluated_get(deps)
+    mesh = obj_eval.to_mesh()
+    mesh.calc_loop_triangles()
+
+    # Get Vertices
+    vertices = np.empty((len(mesh.vertices), 3), dtype=np.float32)
+    mesh.vertices.foreach_get("co", vertices.reshape(-1))
+
+    # Get Triangle Indices
+    indices = np.empty((len(mesh.loop_triangles), 3), 'i')
+    mesh.loop_triangles.foreach_get("vertices", indices.reshape(-1))
+
+    # Get Normals
+    normals = np.empty((len(mesh.vertices), 3), dtype=np.float32)
+    mesh.vertices.foreach_get("normal", normals.reshape(-1))
+
+    obj_eval.to_mesh_clear()
+    
+    # Pass both pos and indices to the batch
+    return batch_for_shader(shader, DRAW_PRIMITIVE_METHOD, 
+                            {"pos": vertices,
+                             "normal":normals}, 
+        indices=indices
+    )
 
 def safe_exec(
         shader: gpu.types.GPUShader,
@@ -83,12 +119,14 @@ def safe_exec(
         
     try:
         shader.bind()
+        gpu.state.face_culling_set('FRONT')
         uniforms_bind(shader,block)
         batch.draw(shader)
     except Exception as e:
         # If it fails once, we stop drawing it to prevent a loop of errors
         print(f"Drawing Error in {shader}: {e}")
         # Option: context.scene.gl_stack[active_index].enabled = False
+
 #===========================================================
 def compile_n_register():
     """
@@ -99,9 +137,7 @@ def compile_n_register():
     if pair is None:
         print(f"gl_stream, SHDAER: {SHADER_NAME} FAILED TO COMPILE DUE ABSENCE OF gl_Stream key (None)\n")
         return
-    if pair[1] is not None:
-        print(f"gl_stream: SHADER {SHADER_NAME} Stopped compiliation due presance on another object at gl_stream[{SHADER_NAME}][1]")
-        return #already compiled
+    
     Desc = pair[0]
 
     #Compile
@@ -117,9 +153,7 @@ def compile_n_register():
     return shader
 
 def unregister():
-    global UBO_1
-    if UBO_1 is not None:
-        del UBO_1 
+    del UBO_1
     bpy.gl_stream.pop(SHADER_NAME)
 
 #===========================================================

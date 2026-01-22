@@ -10,8 +10,6 @@ bl_info = {
 
 import bpy
 import importlib
-import sys
-
 # List your modules in order of dependency
 # (Base logic first, UI last)
 from .bpy_gl import GLSLbase
@@ -39,13 +37,6 @@ def register():
 def unregister():
     for mod in reversed(modules):
         mod.unregister()
-
-    if hasattr(bpy, "gl_stack"):
-        del bpy.gl_stack
-    if hasattr(bpy, "gl_Hs"):
-        del bpy.gl_Hs
-    if hasattr(bpy.types.Scene, "gl_settings"):
-        del bpy.types.Scene.gl_settings
 
     print("PBNPR: Unregistered")
 
