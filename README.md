@@ -13,8 +13,11 @@ By providing a standard translation unit that the addon understands to store/loa
 
 Ultimate customizability. Ultimate performance.
 
+
 Repo Map:
+
 1.Code/bpy_glsl_manager/* addon internals.
+
 2.resource/* LFS resource stuff with source_examples; some GLSL shaders to test on.
 
 for developers: One pholosophy used here is that any .py has the same access when ever, and thus the cusomizablilty is all up to you, like even spawining a cube middle of registeration, who cares!
