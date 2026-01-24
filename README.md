@@ -1,9 +1,10 @@
 # PBNPR
 
+Phisically based non-photorealistic rendering.
 The goal of this repo is to provide methods for artists to fill their needs with 100% control like an ASM project.
 
 ## GLSL manager
-### TLDR: Modifiers tab but with user defined GLSL shaders!
+### TLDR: a blander addon: Modifiers tab but with user defined GLSL shaders!
 no TLDR: it Provides the ability to load custom shaders writtin in OpenGL or simply Facilitates GLSL usage;
 By providing a standard translation unit that the addon understands to store/load/bake the shader instructions with a simple UI.
 
