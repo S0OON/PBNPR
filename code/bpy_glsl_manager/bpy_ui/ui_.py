@@ -90,8 +90,13 @@ def tog_enum_remove(self, context):
             block.enabled = False
             STACK.remove(i)
         i+=1
-    bpy.gl_stream[self.selected_type_remove][0].CALL_UNREG()
-    self.selected_type_add = "Select" 
+    try:
+        bpy.gl_stream[self.selected_type_remove][0].CALL_UNREG()
+    except Exception as e:
+        print(f"[UI] Couldnt remove shader type: {self.selected_type_remove} error: {e}")
+        bpy.gl_stream.pop(self.selected_type_remove)
+    self.selected_type_add = "Select"
+
 class gl_mainSettings(bpy.types.PropertyGroup):
     selected_type_add: bpy.props.EnumProperty(
         name="", items=_get_streamKeys, update=tog_enum_add

@@ -1,6 +1,6 @@
 bl_info = {
     "name": "PBNPR: GLSL Manager",
-    "author": "KIJAKER",
+    "author": "S00N",
     "version": (1, 0),
     "blender": (3, 6, 0),
     "location": "View3D > N-Panel > PBNPR",
@@ -8,22 +8,17 @@ bl_info = {
     "category": "Render",
 }
 
-import bpy
 import importlib
-# List your modules in order of dependency
-# (Base logic first, UI last)
 from .bpy_gl import GLSLbase
 from .bpy_ui import ui_
 modules = [
     GLSLbase,
     ui_
 ]
-# XXXX
 
 #============================================================
 def register():
-    # Handle reloads during development
-    # If the addon was already loaded, reload modules to apply code changes
+    # Handle reloads during development 
     if "bpy" in locals():
         for mod in modules:
             importlib.reload(mod)
