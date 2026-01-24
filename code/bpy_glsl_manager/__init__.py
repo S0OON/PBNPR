@@ -9,12 +9,14 @@ bl_info = {
 }
 
 import importlib
-from .bpy_gl import GLSLbase
-from .bpy_ui import ui_
+from . import GLSLbase
+from . import ui_
+from .src_template import template as GL_TEMPLATE
 modules = [
+    GL_TEMPLATE,
     GLSLbase,
     ui_
-]
+] 
 
 #============================================================
 def register():
@@ -23,15 +25,14 @@ def register():
         for mod in modules:
             importlib.reload(mod)
 
-    from .src_template import template
-    GLSLbase.register(template)
+    GLSLbase.register()
     ui_.register()
     
     print("PBNPR: Registered successfully")
 
 def unregister():
-    for mod in reversed(modules):
-        mod.unregister()
+    ui_.unregister()
+    GLSLbase.unregister()
 
     print("PBNPR: Unregistered")
 

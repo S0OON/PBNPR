@@ -7,39 +7,45 @@ from dataclasses import dataclass
 from typing import Callable, Type
 
 #===========================================================
-BASE_DIR = os.path.dirname(__file__)
-SHADER_NAME = "SHADER_TEMPLATE"
-V = "vert.glsl"
-F = "frag.glsl"
-DRAW_REGION = "WINDOW"
-DRAW_TYPE = "POST_VIEW"
+BASE_DIR              = os.path.dirname(__file__)
+SHADER_NAME           = os.path.basename(BASE_DIR)
+V                     = os.path.join(BASE_DIR,"vert.glsl")
+F                     = os.path.join(BASE_DIR,"frag.glsl")
+DRAW_REGION           = "WINDOW"
+DRAW_TYPE             = "POST_VIEW"
 DRAW_PRIMITIVE_METHOD = "TRIS"
 #===========================================================
 UBO_1 = None
 #===========================================================
 def toggle(self,context):
-    img = bpy.data.images.get(self.image)
-    if not img: return
+    try:
+        img = self.target_img
 
-    W, H   = img.size
-    pair   = bpy.gl_stream[SHADER_NAME]
-    desc   = pair[0]
-    shader = pair[1]
-    batch  = desc.CALL_BATCH(shader,self)
-    offscreen = gpu.types.GPUOffScreen(W, H) 
+        W, H   = img.size
+        pair   = bpy.gl_stream[SHADER_NAME]
+        desc   = pair[0]
+        shader = pair[1]
+        batch  = desc.CALL_BATCH(shader,self)
+        offscreen = gpu.types.GPUOffScreen(W, H) 
 
-    with offscreen.bind():
-        gpu.state.viewport_set(0, 0, W, H)
-        desc.CALL_EXEC(shader,batch,self)
-        buffer = gpu.state.active_framebuffer_get().read_color(0, 0, W, H, 4, 0, 'FLOAT')
+        with offscreen.bind():
+            gpu.state.viewport_set(0, 0, W, H)
+            desc.CALL_EXEC(shader,batch,self)
+            buffer = gpu.state.active_framebuffer_get().read_color(0, 0, W, H, 4, 0, 'FLOAT')
 
-    buffer.dimensions = W * H * 4 
-    img.pixels.foreach_set(buffer) 
-    img.update() 
-    
-    offscreen.free() 
+        buffer.dimensions = W * H * 4 
+        img.pixels.foreach_set(buffer) 
+        img.update() 
+        
+        offscreen.free() 
+    except Exception as e:
+        print(f"[IMG BACKING REPORT]: failed at {SHADER_NAME}: {e}")
 class shader_params(bpy.types.PropertyGroup):
-    image    : bpy.props.StringProperty(default="GLSL_layer",update=toggle) #Bake on name update
+    target_img: bpy.props.PointerProperty(
+        name="",
+        type=bpy.types.Image,
+        update=toggle
+    )
     intensity: bpy.props.FloatProperty(default=1.0)
 
 def uniforms_bind(
@@ -87,48 +93,36 @@ def safe_exec(
         block:  shader_params
 ):
     """Execute a single drawing shader on screen"""
-    if not shader or not batch:
-        return
-        
     try:
         shader.bind()
         uniforms_bind(shader,block)
         batch.draw(shader)
     except Exception as e:
-        print(f"Drawing Error in {shader}: {e}")
+        print(f"[SAFE EXECUTION REPORT]: Drawing Error in [{SHADER_NAME}]: {e}")
 
 #===========================================================
-def compile_n_register():
-    """
-    Compiles a shader, saves to bpy.gl_stream[1] after refreshing the whole key-value
-    """
-    #Getter
-    pair = bpy.gl_stream.get(SHADER_NAME)
-    if pair is None:
-        print(f"gl_stream, SHDAER: {SHADER_NAME} FAILED TO COMPILE DUE ABSENCE OF gl_Stream key (None)\n")
-        return
-    if pair[1] is not None:
-        print(f"gl_stream: SHADER {SHADER_NAME} Stopped compiliation due presance on another object at gl_stream[{SHADER_NAME}][1]")
-        return #already compiled
-    Desc = pair[0]
-
-    #Compile
-    with open(Desc.PATH_VERT, "r", encoding="utf-8") as f: 
+def register():
+    """PROVIDED DISCRIPTION in gl_stream"""
+    # Compile
+    with open(V, "r", encoding="utf-8") as f: 
         vert_src = f.read()
-    with open(Desc.PATH_FRAG, "r", encoding="utf-8") as f:
+    with open(F, "r", encoding="utf-8") as f:
         frag_src = f.read()
     shader = gpu.types.GPUShader(vert_src, frag_src)
-    
-    #Assign
-    pair[1] = shader
-
+    # Assign
+    try:
+        bpy.utils.register_class(shader_params)
+    except Exception as e:
+        print(f"[SHADER [{SHADER_NAME}] CLASS REGISTRATION REPORT]: {e}")
     return shader
 
 def unregister():
+    # Locale Data
     global UBO_1
     if UBO_1 is not None:
         UBO_1 = None
-    bpy.gl_stream.pop(SHADER_NAME)
+    # remove bpy internal
+    bpy.utils.unregister_class(shader_params)
 
 #===========================================================
 @dataclass
@@ -142,20 +136,20 @@ class ShaderDesc:
     CALL_UNI: Callable
     CALL_BATCH: Callable
     CALL_EXEC: Callable
-    PARAMS: Type
     CALL_REG:Callable
     CALL_UNREG:Callable
+    UI: Type
 DESCRIPTION = ShaderDesc(
     NAME                  = SHADER_NAME,
-    PATH_VERT             = os.path.join(BASE_DIR, V),
-    PATH_FRAG             = os.path.join(BASE_DIR, F),
+    PATH_VERT             = V,
+    PATH_FRAG             = F,
     DRAW_REGION           = DRAW_REGION, 
     DRAW_TYPE             = DRAW_TYPE, 
     DRAW_PRIMITIVE_METHOD = DRAW_PRIMITIVE_METHOD,
     CALL_UNI              = uniforms_bind,
     CALL_BATCH            = batch_make,
     CALL_EXEC             = safe_exec,
-    PARAMS                = shader_params,
-    CALL_REG              = compile_n_register,
-    CALL_UNREG            = unregister
+    CALL_REG              = register,
+    CALL_UNREG            = unregister,
+    UI                    = shader_params
 )

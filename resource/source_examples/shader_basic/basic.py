@@ -6,21 +6,19 @@ from gpu_extras.batch import batch_for_shader
 from dataclasses import dataclass
 from typing import Callable, Type
 import numpy as np
-
 #===========================================================
-BASE_DIR = os.path.dirname(__file__)
-SHADER_NAME = "Dot"
-V = "vert.glsl"
-F = "frag.glsl"
-DRAW_REGION = "WINDOW"
-DRAW_TYPE = "POST_VIEW"
+BASE_DIR              = os.path.dirname(__file__)
+SHADER_NAME           = os.path.basename(BASE_DIR)
+V                     = os.path.join(BASE_DIR,"vert.glsl")
+F                     = os.path.join(BASE_DIR,"frag.glsl")
+DRAW_REGION           = "WINDOW"
+DRAW_TYPE             = "POST_VIEW"
 DRAW_PRIMITIVE_METHOD = "TRIS"
 #===========================================================
 UBO_1 = None
 #===========================================================
-
 def toggle(self,context):
-    img = bpy.data.images.get(self.image)
+    img = self.target_img
     if not img: return
 
     W, H = img.size
@@ -47,8 +45,17 @@ def toggle(self,context):
     
     offscreen.free() 
 class shader_params(bpy.types.PropertyGroup):
-    image : bpy.props.StringProperty(default="GLSL_layer",update=toggle) #Bake on update the name
-    Object_name:bpy.props.StringProperty(default="Cube")
+    target_obj: bpy.props.PointerProperty(
+        name="",
+        type=bpy.types.Object,
+        description="Pick an object to use its coordinates in the shader"
+    )
+    target_img: bpy.props.PointerProperty(
+        name="",
+        type=bpy.types.Image,
+        description="Pick an object to use its coordinates in the shader",
+        update=toggle
+    )
     color : bpy.props.FloatVectorProperty(
         subtype='COLOR',
         size=4, min=0.0, max=1.0, 
@@ -62,8 +69,9 @@ def uniforms_bind(
         shader: gpu.types.GPUShader,
         block:  shader_params
 ):
+    obj  = block.target_obj
+    if not obj: return
     cam  = bpy.context.scene.camera
-    obj  = bpy.data.objects[block.Object_name]
     deps = bpy.context.evaluated_depsgraph_get()
     w,h  = [bpy.context.scene.render.resolution_x,bpy.context.scene.render.resolution_y]
     
@@ -91,8 +99,9 @@ def batch_make(
         shader: gpu.types.GPUShader,
         block:  shader_params
 ):
+    obj  = block.target_obj
+    if not obj: return
     deps = bpy.context.evaluated_depsgraph_get()
-    obj = bpy.data.objects[block.Object_name]
     obj_eval = obj.evaluated_get(deps)
     mesh = obj_eval.to_mesh()
     mesh.calc_loop_triangles()
@@ -142,37 +151,28 @@ def safe_exec(
         print(f"Drawing Error: {e}")
 
 #===========================================================
-def compile_n_register():
-    """
-    Compiles a shader, saves to bpy.gl_stream[1] after refreshing the whole key-value
-    """
-    #Getter
-    pair = bpy.gl_stream.get(SHADER_NAME)
-    if pair is None:
-        print(f"gl_stream, SHDAER: {SHADER_NAME} FAILED TO COMPILE DUE ABSENCE OF gl_Stream key (None)\n")
-        return
-    if pair[1] is not None:
-        print(f"gl_stream: SHADER {SHADER_NAME} Stopped compiliation due presance on another object at gl_stream[{SHADER_NAME}][1]")
-        return #already compiled
-    Desc = pair[0]
-
-    #Compile
-    with open(Desc.PATH_VERT, "r", encoding="utf-8") as f: 
+def register():
+    """PROVIDED DISCRIPTION in gl_stream"""
+    # Compile
+    with open(V, "r", encoding="utf-8") as f: 
         vert_src = f.read()
-    with open(Desc.PATH_FRAG, "r", encoding="utf-8") as f:
+    with open(F, "r", encoding="utf-8") as f:
         frag_src = f.read()
     shader = gpu.types.GPUShader(vert_src, frag_src)
-    
-    #Assign
-    pair[1] = shader
-
+    # Assign
+    try:
+        bpy.utils.register_class(shader_params)
+    except Exception as e:
+        print(f"[SHADER [{SHADER_NAME}] CLASS REGISTRATION REPORT]: {e}")
     return shader
 
 def unregister():
+    # Locale Data
     global UBO_1
     if UBO_1 is not None:
         UBO_1 = None
-    bpy.gl_stream.pop(SHADER_NAME)
+    # remove bpy internal
+    bpy.utils.unregister_class(shader_params)
 
 #===========================================================
 @dataclass
@@ -186,20 +186,20 @@ class ShaderDesc:
     CALL_UNI: Callable
     CALL_BATCH: Callable
     CALL_EXEC: Callable
-    PARAMS: Type
     CALL_REG:Callable
     CALL_UNREG:Callable
+    UI: Type
 DESCRIPTION = ShaderDesc(
     NAME                  = SHADER_NAME,
-    PATH_VERT             = os.path.join(BASE_DIR, V),
-    PATH_FRAG             = os.path.join(BASE_DIR, F),
+    PATH_VERT             = V,
+    PATH_FRAG             = F,
     DRAW_REGION           = DRAW_REGION, 
     DRAW_TYPE             = DRAW_TYPE, 
     DRAW_PRIMITIVE_METHOD = DRAW_PRIMITIVE_METHOD,
     CALL_UNI              = uniforms_bind,
     CALL_BATCH            = batch_make,
     CALL_EXEC             = safe_exec,
-    PARAMS                = shader_params,
-    CALL_REG              = compile_n_register,
-    CALL_UNREG            = unregister
+    CALL_REG              = register,
+    CALL_UNREG            = unregister,
+    UI                    = shader_params
 )
