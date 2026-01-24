@@ -6,3 +6,4 @@ __pycache__/
 *$py.class
 *.so
 .Python
+export_folder_tree_to_txt.py

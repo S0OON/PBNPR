@@ -8,7 +8,7 @@ from typing import Callable, Type
 
 #===========================================================
 BASE_DIR = os.path.dirname(__file__)
-SHADER_NAME = "TEMPLATE"
+SHADER_NAME = "SHADER_TEMPLATE"
 V = "vert.glsl"
 F = "frag.glsl"
 DRAW_REGION = "WINDOW"
