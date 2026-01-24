@@ -7,7 +7,7 @@ Physically based non-photorealistic rendering. (WIP)
 > ### TLDR: Modifiers tab but with user defined GLSL shaders!
 
 ![How to use the addon](/resource/img/UI_guide.png)
-
+![Or watch this Video instead](https://x.com/S00N28202269/status/2015151274149241310?s=20)
 no TLDR: it Provides the ability to load custom shaders writtin in OpenGL or simply Facilitates GLSL usage;
 By providing a standard translation unit that the addon understands to store/load/bake the shader instructions with a simple UI.
 
