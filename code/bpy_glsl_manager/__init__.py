@@ -1,8 +1,10 @@
+# This file belongs to S00N's PBNPR Blender Add-on
+# all rights reserved (C) 2024 S00N
 bl_info = {
     "name": "PBNPR: GLSL Manager",
     "author": "S00N",
     "version": (1, 0),
-    "blender": (3, 6, 0),
+    "blender": (5, 0, 1),
     "location": "View3D > N-Panel > PBNPR",
     "description": "High-performance GLSL viewport manager and baker",
     "category": "Render",
@@ -11,19 +13,13 @@ bl_info = {
 import importlib
 from . import GLSLbase
 from . import ui_
-from .src_template import template as GL_TEMPLATE
-modules = [
-    GL_TEMPLATE,
-    GLSLbase,
-    ui_
-] 
 
 #============================================================
 def register():
     # Handle reloads during development 
     if "bpy" in locals():
-        for mod in modules:
-            importlib.reload(mod)
+        importlib.reload(GLSLbase)
+        importlib.reload(ui_)
 
     GLSLbase.register()
     ui_.register()
