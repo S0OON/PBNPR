@@ -28,7 +28,6 @@ def toggle(self,context):
     batch = desc.CALL_BATCH(shader,self)
     offscreen = gpu.types.GPUOffScreen(W, H) 
  
-    # 
     with offscreen.bind():
         gpu.state.viewport_set(0, 0, W, H)
         
@@ -158,7 +157,10 @@ def register():
         vert_src = f.read()
     with open(F, "r", encoding="utf-8") as f:
         frag_src = f.read()
-    shader = gpu.types.GPUShader(vert_src, frag_src)
+    info = gpu.types.GPUShaderCreateInfo()
+    info.vertex_source(vert_src)
+    info.fragment_source(frag_src)
+    shader = gpu.shader.create_from_info(info)
     # Assign
     try:
         bpy.utils.register_class(shader_params)

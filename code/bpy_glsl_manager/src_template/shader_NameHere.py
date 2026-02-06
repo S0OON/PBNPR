@@ -6,15 +6,22 @@ from gpu_extras.batch import batch_for_shader
 from dataclasses import dataclass
 from typing import Callable, Type
 
-#===========================================================
-BASE_DIR              = os.path.dirname(__file__)
-SHADER_NAME           = os.path.basename(BASE_DIR)
+#=====================__FILE__ CONSTNATS===========================
+BASE_DIR     = os.path.dirname(__file__)
+SHADER_PATH  = os.path.abspath(__file__)
+SHADER_NAME  = os.path.splitext(os.path.basename(SHADER_PATH))[0]
 V                     = os.path.join(BASE_DIR,"vert.glsl")
 F                     = os.path.join(BASE_DIR,"frag.glsl")
 DRAW_REGION           = "WINDOW"
 DRAW_TYPE             = "POST_VIEW"
 DRAW_PRIMITIVE_METHOD = "TRIS"
-#===========================================================
+
+#=====================SHADER CONSTNATS===========================
+#Vertex data
+V_POS = "pos"
+#Frag Data
+
+#======================LOCALE OBJECTS==============================
 UBO_1 = None
 #===========================================================
 def toggle(self,context):
@@ -100,20 +107,25 @@ def safe_exec(
     except Exception as e:
         print(f"[SAFE EXECUTION REPORT]: Drawing Error in [{SHADER_NAME}]: {e}")
 
-#===========================================================
+#===================__FILE__ related Linking to bpy=============================
 def register():
-    """PROVIDED DISCRIPTION in gl_stream"""
+    """
+        -PROVIDED DISCRIPTION in gl_stream is valid,
+         it will set its GPUshader at [1]
+        -Register its class
+    """
     # Compile
     with open(V, "r", encoding="utf-8") as f: 
         vert_src = f.read()
     with open(F, "r", encoding="utf-8") as f:
         frag_src = f.read()
     shader = gpu.types.GPUShader(vert_src, frag_src)
-    # Assign
+    # register class
     try:
         bpy.utils.register_class(shader_params)
     except Exception as e:
-        print(f"[SHADER [{SHADER_NAME}] CLASS REGISTRATION REPORT]: {e}")
+        print(f"[SHADER CLASS REGISTRATION REPORT] AT [{SHADER_NAME}] : {e}")
+        return None
     return shader
 
 def unregister():

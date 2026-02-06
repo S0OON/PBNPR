@@ -1,4 +1,4 @@
-// Blender 3.6 adds #version 330 automatically [cite: 41, 42]
+// Blender 3.6 adds #version 330 automatically
 
 layout (std140) uniform MyShaderParams {
     float u_intensity; // Bytes 0-3

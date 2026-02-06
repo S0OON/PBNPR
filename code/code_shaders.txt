@@ -1,0 +1,547 @@
+
+========================================
+e:\soon\projects\PBNPR\resource\source_examples\export_folder_tree_to_txt.py
+========================================
+import os
+
+# Define which file extensions to include
+INCLUDE_EXTENSIONS = {'.py', '.glsl', '.txt', '.md'}
+
+# Output file name
+OUTPUT_FILE = 'combined_output.txt'
+
+def collect_files(base_dir):
+    """Recursively collect files with target extensions."""
+    collected = []
+    for root, _, files in os.walk(base_dir):
+        for file in files:
+            if os.path.splitext(file)[1] in INCLUDE_EXTENSIONS:
+                collected.append(os.path.join(root, file))
+    return collected
+
+def write_combined_output(files, output_path):
+    """Write contents of all files into one output file."""
+    with open(output_path, 'w', encoding='utf-8') as out:
+        for file_path in files:
+            out.write(f"\n{'='*40}\n{file_path}\n{'='*40}\n")
+            try:
+                with open(file_path, 'r', encoding='utf-8') as f:
+                    out.write(f.read())
+            except Exception as e:
+                out.write(f"[Error reading {file_path}: {e}]\n")
+
+if __name__ == "__main__":
+    current_dir = os.path.dirname(os.path.abspath(__file__))
+    subfolder = os.path.join(current_dir)  # or specify a subfolder like 'src'
+    files = collect_files(subfolder)
+    write_combined_output(files, os.path.join(current_dir, OUTPUT_FILE))
+    print(f"✅ Combined {len(files)} files into {OUTPUT_FILE}")
+
+========================================
+e:\soon\projects\PBNPR\resource\source_examples\shader_basic\basic.py
+========================================
+import os
+import bpy
+import gpu
+import struct
+from gpu_extras.batch import batch_for_shader
+from dataclasses import dataclass
+from typing import Callable, Type
+import numpy as np
+#===========================================================
+BASE_DIR              = os.path.dirname(__file__)
+SHADER_NAME           = os.path.basename(BASE_DIR)
+V                     = os.path.join(BASE_DIR,"vert.glsl")
+F                     = os.path.join(BASE_DIR,"frag.glsl")
+DRAW_REGION           = "WINDOW"
+DRAW_TYPE             = "POST_VIEW"
+DRAW_PRIMITIVE_METHOD = "TRIS"
+#===========================================================
+UBO_1 = None
+#===========================================================
+def toggle(self,context):
+    img = self.target_img
+    if not img: return
+
+    W, H = img.size
+    pair = bpy.gl_stream[SHADER_NAME]
+    desc = pair[0]
+    shader = pair[1]
+    batch = desc.CALL_BATCH(shader,self)
+    offscreen = gpu.types.GPUOffScreen(W, H) 
+ 
+    # 
+    with offscreen.bind():
+        gpu.state.viewport_set(0, 0, W, H)
+        
+        # THE FIX: Clear the color AND the depth buffer!
+        fbo = gpu.state.active_framebuffer_get()
+        fbo.clear(color=(0.0, 0.0, 0.0, 0.0), depth=1.0) 
+        
+        desc.CALL_EXEC(shader,batch,self)
+        buffer = gpu.state.active_framebuffer_get().read_color(0, 0, W, H, 4, 0, 'FLOAT')
+
+    buffer.dimensions = W * H * 4 
+    img.pixels.foreach_set(buffer) 
+    img.update() 
+    
+    offscreen.free() 
+class shader_params(bpy.types.PropertyGroup):
+    target_obj: bpy.props.PointerProperty(
+        name="",
+        type=bpy.types.Object,
+        description="Pick an object to use its coordinates in the shader"
+    )
+    target_img: bpy.props.PointerProperty(
+        name="",
+        type=bpy.types.Image,
+        description="Pick an object to use its coordinates in the shader",
+        update=toggle
+    )
+    color : bpy.props.FloatVectorProperty(
+        subtype='COLOR',
+        size=4, min=0.0, max=1.0, 
+        default=(0.2, 0.6, 1.0, 1.0) 
+        )
+    vector: bpy.props.FloatVectorProperty(
+        subtype="XYZ",size=4
+    )
+
+def uniforms_bind(
+        shader: gpu.types.GPUShader,
+        block:  shader_params
+):
+    obj  = block.target_obj
+    if not obj: return
+    cam  = bpy.context.scene.camera
+    deps = bpy.context.evaluated_depsgraph_get()
+    w,h  = [bpy.context.scene.render.resolution_x,bpy.context.scene.render.resolution_y]
+    
+    m_world = np.array(obj.matrix_world.transposed(),                     dtype=np.float32).flatten()
+    m_view  = np.array(cam.matrix_world.inverted().transposed(),          dtype=np.float32).flatten()
+    m_proj  = np.array(cam.calc_matrix_camera(deps,x=w,y=h).transposed(), dtype=np.float32).flatten()
+    u_col   = np.array(block.color,       dtype=np.float32).flatten() 
+    u_point = np.array(block.vector,      dtype=np.float32).flatten() 
+    # =======================================
+
+    # =======================================
+    Data = np.concatenate([m_world, m_view, m_proj, u_col, u_point])
+    # =======================================
+    
+    global UBO_1
+    if UBO_1 is None:
+        UBO_1 = gpu.types.GPUUniformBuf(data=Data)
+    else:
+        UBO_1.update(Data)
+
+    shader.bind()
+    shader.uniform_block("MyShaderParams", UBO_1)
+
+def batch_make(
+        shader: gpu.types.GPUShader,
+        block:  shader_params
+):
+    obj  = block.target_obj
+    if not obj: return
+    deps = bpy.context.evaluated_depsgraph_get()
+    obj_eval = obj.evaluated_get(deps)
+    mesh = obj_eval.to_mesh()
+    mesh.calc_loop_triangles()
+
+    # Get Vertices
+    vertices = np.empty((len(mesh.vertices), 3), dtype=np.float32)
+    mesh.vertices.foreach_get("co", vertices.reshape(-1))
+
+    # Get Triangle Indices
+    indices = np.empty((len(mesh.loop_triangles), 3), 'i')
+    mesh.loop_triangles.foreach_get("vertices", indices.reshape(-1))
+
+    # Get Normals
+    normals = np.empty((len(mesh.vertices), 3), dtype=np.float32)
+    mesh.vertices.foreach_get("normal", normals.reshape(-1))
+
+    obj_eval.to_mesh_clear()
+    
+    # Pass both pos and indices to the batch
+    return batch_for_shader(shader, DRAW_PRIMITIVE_METHOD, 
+                            {"pos": vertices,
+                             "normal":normals}, 
+        indices=indices
+    )
+
+def safe_exec(
+        shader: gpu.types.GPUShader,
+        batch:  gpu.types.GPUBatch,
+        block:  shader_params
+):
+    if not shader or not batch:
+        return
+        
+    try:
+        shader.bind()
+        uniforms_bind(shader, block)
+
+        # THE FIX: Tell the GPU to respect the Z-axis
+        gpu.state.depth_test_set('LESS_EQUAL')
+        gpu.state.depth_mask_set(True) 
+        
+        batch.draw(shader)
+        
+        # Reset to Blender's default to avoid UI glitches
+        gpu.state.depth_mask_set(False)
+    except Exception as e:
+        print(f"Drawing Error: {e}")
+
+#===========================================================
+def register():
+    """PROVIDED DISCRIPTION in gl_stream"""
+    # Compile
+    with open(V, "r", encoding="utf-8") as f: 
+        vert_src = f.read()
+    with open(F, "r", encoding="utf-8") as f:
+        frag_src = f.read()
+    shader = gpu.types.GPUShader(vert_src, frag_src)
+    # Assign
+    try:
+        bpy.utils.register_class(shader_params)
+    except Exception as e:
+        print(f"[SHADER [{SHADER_NAME}] CLASS REGISTRATION REPORT]: {e}")
+    return shader
+
+def unregister():
+    # Locale Data
+    global UBO_1
+    if UBO_1 is not None:
+        UBO_1 = None
+    # remove bpy internal
+    bpy.utils.unregister_class(shader_params)
+
+#===========================================================
+@dataclass
+class ShaderDesc:
+    NAME: str
+    PATH_VERT: str
+    PATH_FRAG: str
+    DRAW_REGION: str
+    DRAW_TYPE: str
+    DRAW_PRIMITIVE_METHOD:str
+    CALL_UNI: Callable
+    CALL_BATCH: Callable
+    CALL_EXEC: Callable
+    CALL_REG:Callable
+    CALL_UNREG:Callable
+    UI: Type
+DESCRIPTION = ShaderDesc(
+    NAME                  = SHADER_NAME,
+    PATH_VERT             = V,
+    PATH_FRAG             = F,
+    DRAW_REGION           = DRAW_REGION, 
+    DRAW_TYPE             = DRAW_TYPE, 
+    DRAW_PRIMITIVE_METHOD = DRAW_PRIMITIVE_METHOD,
+    CALL_UNI              = uniforms_bind,
+    CALL_BATCH            = batch_make,
+    CALL_EXEC             = safe_exec,
+    CALL_REG              = register,
+    CALL_UNREG            = unregister,
+    UI                    = shader_params
+)
+
+========================================
+e:\soon\projects\PBNPR\resource\source_examples\shader_basic\frag.glsl
+========================================
+
+in vec4 vColor;
+in vec3 vNormal;
+in vec3 point;
+in float Depth;
+
+out vec4 fragCol;
+
+void main() {
+    float Dot = dot(point,vNormal);
+    
+    fragCol = vColor * vec4(vec3(Dot),1.0);
+}
+========================================
+e:\soon\projects\PBNPR\resource\source_examples\shader_basic\vert.glsl
+========================================
+layout (std140) uniform MyShaderParams {
+    mat4 uOBJm;   // 0   - 63
+    mat4 uCAMm;   // 64  - 127
+    mat4 uPROJm;  // 128 - 191
+    vec4 uCOL;    // 192 - 207
+    vec4 uP;      // 208 - 222
+}; // total = 224 bytes
+
+in vec3 pos;
+in vec3 normal;
+
+out vec4 vColor;
+out vec3 vNormal;
+out vec3 point;
+out float Depth;
+
+void main() {
+    vColor = uCOL;
+    point = uP.xyz; 
+    vec3 worldNormal = normalize(mat3(uOBJm) * normal);
+    vNormal = normal;
+    vec4 viewPos = uCAMm * uOBJm * vec4(pos, 1.0);
+    Depth = -viewPos.z;
+    
+    gl_Position = uPROJm * viewPos;
+}
+========================================
+e:\soon\projects\PBNPR\resource\source_examples\shader_test\frag.glsl
+========================================
+
+in vec4 vColor;
+in vec3 vNormal;
+in vec3 point;
+in float Depth;
+
+out vec4 fragCol;
+
+void main() {
+    float Dot = dot(point,vNormal);
+    
+    fragCol = vColor * vec4(vec3(Dot),1.0);
+}
+========================================
+e:\soon\projects\PBNPR\resource\source_examples\shader_test\tst.py
+========================================
+import os
+import bpy
+import gpu
+import struct
+from gpu_extras.batch import batch_for_shader
+from dataclasses import dataclass
+from typing import Callable, Type
+import numpy as np
+#===========================================================
+BASE_DIR              = os.path.dirname(__file__)
+SHADER_NAME           = os.path.basename(BASE_DIR)
+V                     = os.path.join(BASE_DIR,"vert.glsl")
+F                     = os.path.join(BASE_DIR,"frag.glsl")
+DRAW_REGION           = "WINDOW"
+DRAW_TYPE             = "POST_VIEW"
+DRAW_PRIMITIVE_METHOD = "TRIS"
+#===========================================================
+UBO_1 = None
+#===========================================================
+def toggle(self,context):
+    img = self.target_img
+    if not img: return
+
+    W, H = img.size
+    pair = bpy.gl_stream[SHADER_NAME]
+    desc = pair[0]
+    shader = pair[1]
+    batch = desc.CALL_BATCH(shader,self)
+    offscreen = gpu.types.GPUOffScreen(W, H) 
+ 
+    # 
+    with offscreen.bind():
+        gpu.state.viewport_set(0, 0, W, H)
+        
+        # THE FIX: Clear the color AND the depth buffer!
+        fbo = gpu.state.active_framebuffer_get()
+        fbo.clear(color=(0.0, 0.0, 0.0, 0.0), depth=1.0) 
+        
+        desc.CALL_EXEC(shader,batch,self)
+        buffer = gpu.state.active_framebuffer_get().read_color(0, 0, W, H, 4, 0, 'FLOAT')
+
+    buffer.dimensions = W * H * 4 
+    img.pixels.foreach_set(buffer) 
+    img.update() 
+    
+    offscreen.free() 
+class shader_params(bpy.types.PropertyGroup):
+    target_obj: bpy.props.PointerProperty(
+        name="",
+        type=bpy.types.Object,
+        description="Pick an object to use its coordinates in the shader"
+    )
+    target_img: bpy.props.PointerProperty(
+        name="",
+        type=bpy.types.Image,
+        description="Pick an object to use its coordinates in the shader",
+        update=toggle
+    )
+    color : bpy.props.FloatVectorProperty(
+        subtype='COLOR',
+        size=4, min=0.0, max=1.0, 
+        default=(0.2, 0.6, 1.0, 1.0) 
+        )
+    vector: bpy.props.FloatVectorProperty(
+        subtype="XYZ",size=4
+    )
+
+def uniforms_bind(
+        shader: gpu.types.GPUShader,
+        block:  shader_params
+):
+    obj  = block.target_obj
+    if not obj: return
+    cam  = bpy.context.scene.camera
+    deps = bpy.context.evaluated_depsgraph_get()
+    w,h  = [bpy.context.scene.render.resolution_x,bpy.context.scene.render.resolution_y]
+    
+    m_world = np.array(obj.matrix_world.transposed(),                     dtype=np.float32).flatten()
+    m_view  = np.array(cam.matrix_world.inverted().transposed(),          dtype=np.float32).flatten()
+    m_proj  = np.array(cam.calc_matrix_camera(deps,x=w,y=h).transposed(), dtype=np.float32).flatten()
+    u_col   = np.array(block.color,       dtype=np.float32).flatten() 
+    u_point = np.array(block.vector,      dtype=np.float32).flatten() 
+    # =======================================
+
+    # =======================================
+    Data = np.concatenate([m_world, m_view, m_proj, u_col, u_point])
+    # =======================================
+    
+    global UBO_1
+    if UBO_1 is None:
+        UBO_1 = gpu.types.GPUUniformBuf(data=Data)
+    else:
+        UBO_1.update(Data)
+
+    shader.bind()
+    shader.uniform_block("MyShaderParams", UBO_1)
+
+def batch_make(
+        shader: gpu.types.GPUShader,
+        block:  shader_params
+):
+    obj  = block.target_obj
+    if not obj: return
+    deps = bpy.context.evaluated_depsgraph_get()
+    obj_eval = obj.evaluated_get(deps)
+    mesh = obj_eval.to_mesh()
+    mesh.calc_loop_triangles()
+
+    # Get Vertices
+    vertices = np.empty((len(mesh.vertices), 3), dtype=np.float32)
+    mesh.vertices.foreach_get("co", vertices.reshape(-1))
+
+    # Get Triangle Indices
+    indices = np.empty((len(mesh.loop_triangles), 3), 'i')
+    mesh.loop_triangles.foreach_get("vertices", indices.reshape(-1))
+
+    # Get Normals
+    normals = np.empty((len(mesh.vertices), 3), dtype=np.float32)
+    mesh.vertices.foreach_get("normal", normals.reshape(-1))
+
+    obj_eval.to_mesh_clear()
+    
+    # Pass both pos and indices to the batch
+    return batch_for_shader(shader, DRAW_PRIMITIVE_METHOD, 
+                            {"pos": vertices,
+                             "normal":normals}, 
+        indices=indices
+    )
+
+def safe_exec(
+        shader: gpu.types.GPUShader,
+        batch:  gpu.types.GPUBatch,
+        block:  shader_params
+):
+    if not shader or not batch:
+        return
+        
+    try:
+        shader.bind()
+        uniforms_bind(shader, block)
+
+        # THE FIX: Tell the GPU to respect the Z-axis
+        gpu.state.depth_test_set('LESS_EQUAL')
+        gpu.state.depth_mask_set(True) 
+        
+        batch.draw(shader)
+        
+        # Reset to Blender's default to avoid UI glitches
+        gpu.state.depth_mask_set(False)
+    except Exception as e:
+        print(f"Drawing Error: {e}")
+
+#===========================================================
+def register():
+    """PROVIDED DISCRIPTION in gl_stream"""
+    # Compile
+    with open(V, "r", encoding="utf-8") as f: 
+        vert_src = f.read()
+    with open(F, "r", encoding="utf-8") as f:
+        frag_src = f.read()
+    shader = gpu.types.GPUShader(vert_src, frag_src)
+    # Assign
+    try:
+        bpy.utils.register_class(shader_params)
+    except Exception as e:
+        print(f"[SHADER [{SHADER_NAME}] CLASS REGISTRATION REPORT]: {e}")
+    return shader
+
+def unregister():
+    # Locale Data
+    global UBO_1
+    if UBO_1 is not None:
+        UBO_1 = None
+    # remove bpy internal
+    bpy.utils.unregister_class(shader_params)
+
+#===========================================================
+@dataclass
+class ShaderDesc:
+    NAME: str
+    PATH_VERT: str
+    PATH_FRAG: str
+    DRAW_REGION: str
+    DRAW_TYPE: str
+    DRAW_PRIMITIVE_METHOD:str
+    CALL_UNI: Callable
+    CALL_BATCH: Callable
+    CALL_EXEC: Callable
+    CALL_REG:Callable
+    CALL_UNREG:Callable
+    UI: Type
+DESCRIPTION = ShaderDesc(
+    NAME                  = SHADER_NAME,
+    PATH_VERT             = V,
+    PATH_FRAG             = F,
+    DRAW_REGION           = DRAW_REGION, 
+    DRAW_TYPE             = DRAW_TYPE, 
+    DRAW_PRIMITIVE_METHOD = DRAW_PRIMITIVE_METHOD,
+    CALL_UNI              = uniforms_bind,
+    CALL_BATCH            = batch_make,
+    CALL_EXEC             = safe_exec,
+    CALL_REG              = register,
+    CALL_UNREG            = unregister,
+    UI                    = shader_params
+)
+
+========================================
+e:\soon\projects\PBNPR\resource\source_examples\shader_test\vert.glsl
+========================================
+layout (std140) uniform MyShaderParams {
+    mat4 uOBJm;   // 0   - 63
+    mat4 uCAMm;   // 64  - 127
+    mat4 uPROJm;  // 128 - 191
+    vec4 uCOL;    // 192 - 207
+    vec4 uP;      // 208 - 222
+}; // total = 224 bytes
+
+in vec3 pos;
+in vec3 normal;
+
+out vec4 vColor;
+out vec3 vNormal;
+out vec3 point;
+out float Depth;
+
+void main() {
+    vColor = uCOL;
+    point = uP.xyz; 
+    vec3 worldNormal = normalize(mat3(uOBJm) * normal);
+    vNormal = normal;
+    vec4 viewPos = uCAMm * uOBJm * vec4(pos, 1.0);
+    Depth = -viewPos.z;
+    
+    gl_Position = uPROJm * viewPos;
+}
