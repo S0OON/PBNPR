@@ -1,31 +1,29 @@
 # This file belongs to S00N's PBNPR Blender Add-on
 # all rights reserved (C) 2024 S00N
-import os
-import bpy
-import gpu
-import struct
-from gpu_extras.batch import batch_for_shader
-from dataclasses import dataclass
-from typing import Callable, Type
 #========================WARNING=================================
 #Important!: This file is a template for shader integration.
 # the name of this file (shaderNameMe.py) must be changed to the desired shader name when copied.
 # MUST BE UNIQUE TO NOT INTERFIER WITH PYTHON MODULES AND OTHER SHADERS IN THE STREAM.
 # BE AWARE all python files have the same access to any thing in bpy module, so name collisions may occur.
+#========================IMPORTS=================================
+import os
+import bpy
+import gpu
+from gpu_extras.batch import batch_for_shader
+from dataclasses import dataclass
+from typing import Callable, Type
+from bpy_glsl_manager import gpu_types as t
 #=====================__FILE__ CONSTANTS===========================
 BASE_DIR     = os.path.dirname(__file__)
 ABS_DIR      = os.path.abspath(__file__)
 SHADER_NAME  = os.path.splitext(os.path.basename(ABS_DIR))[0]
-V            = os.path.join(BASE_DIR, "vert.glsl")
-F            = os.path.join(BASE_DIR, "frag.glsl")
-DRAW_REGION  = "WINDOW"
-DRAW_TYPE    = "POST_VIEW"
-DRAW_PRIMITIVE_METHOD = "TRIS"
+V            = os.path.join(BASE_DIR, t.SHADER_V)
+F            = os.path.join(BASE_DIR, t.SHADER_F)
+DRAW_REGION  = t.SHADER_DRAW_REGION_WINDOW
+DRAW_TYPE    = t.SHADER_DRAW_TYPE_POST_VIEW
+DRAW_PRIMITIVE_METHOD = t.PRIM_TRIS
 
-#======================LOCALE OBJECTS==============================
-UBO_1 = None
-
-#========================FUNCTIONALITY===============================
+#=====================UI EXPOSURE===========================
 def toggle(self, context):
     try:
         img = self.target_img
@@ -54,71 +52,115 @@ def toggle(self, context):
         offscreen.free() 
     except Exception as e:
         print(f"[SHADER OFFSCREEN BAKING REPORT]: failed at {SHADER_NAME} : Message: {e}")
-
 class shader_params(bpy.types.PropertyGroup):
+    #Customs
+    Colour : bpy.props.FloatVectorProperty(
+        name="Color",subtype='COLOR', default=(0.0, 0.0, 0.0, 1.0), min=0.0, max=1.0,
+        description="Color to use in the shader", size=4
+    ) # pyright: ignore[reportInvalidTypeForm]
+    # Sarder params
     target_img: bpy.props.PointerProperty(
         name="Target Image",
         type=bpy.types.Image,
         update=toggle
-    )
-    intensity: bpy.props.FloatProperty(name="Intensity", default=1.0)
-
-def uniforms_bind(shader: gpu.types.GPUShader, block: shader_params):
-    """Binds data using std140 alignment required by 5.0.1"""
-    # 16-byte alignment (4 floats)
-    Data = struct.pack('ffff', block.intensity, 0.2, 0.5, 0.7)
-    
-    global UBO_1
-    if UBO_1 is None:
-        UBO_1 = gpu.types.GPUUniformBuf(data=Data)
-    else:
-        UBO_1.update(Data)
-
-    shader.bind()
-    # Name must match the uniform_buf name in CreateInfo
-    shader.uniform_block("u_params", UBO_1)
-
-def batch_make(shader: gpu.types.GPUShader, block: shader_params):
-    coords = [(-0.5, -0.5), (0.5, -0.5), (0.0, 0.5)]
-    # Attribute name 'pos' must be registered in CreateInfo
-    return batch_for_shader(shader, DRAW_PRIMITIVE_METHOD, {"pos": coords})
-
-def safe_exec(shader: gpu.types.GPUShader, batch: gpu.types.GPUBatch, block: shader_params):
-    if not shader or not batch: return
-    try:
-        shader.bind()
-        uniforms_bind(shader, block)
-        batch.draw(shader)
-    except Exception as e:
-        print(f": Drawing Error in: {e}")
-
-#=================== 5.0.1 REGISTRATION (CreateInfo) =============================
-def register():
-    # 1. Initialize CreateInfo
+    ) # pyright: ignore[reportInvalidTypeForm]
+    alwyas_on_top: bpy.props.BoolProperty(
+        name="Always on Top (X-Ray)", 
+        default=False, 
+        description="Disable depth testing to see through solids"
+    ) # pyright: ignore[reportInvalidTypeForm]
+    blend_mode: bpy.props.EnumProperty(
+        name="Blend Mode",
+        items=[
+            (t.BLEND_NONE,      "Opaque",         "Solid object"),
+            (t.BLEND_ALPHA,     "Alpha Blend",    "Standard transparency"),
+            (t.BLEND_ADD,       "Additive",       "Glowing/Hologram style"),
+            (t.BLEND_ADD_ALPHA, "Additive Alpha", "Additive but respects alpha"),
+            (t.BLEND_MULTIPLY,  "Multiply",       "Darkening, good for shadows")
+        ],
+        default=t.BLEND_NONE
+    ) # pyright: ignore[reportInvalidTypeForm]
+    depth_mode: bpy.props.EnumProperty(
+        name="Depth Mode",
+        items=[
+            (t.DEPTH_NONE,    "None",       "No depth testing, draw on top of everything"),
+            (t.DEPTH_ALWAYS,  "Always",     "Draw regardless of depth, but still write to depth buffer"),
+            (t.DEPTH_LESS,    "Less",       "Standard: Draw if closer than existing pixels"),
+            (t.DEPTH_LEQUAL,  "Less Equal", "Draw if closer or equal (Default)"),
+            (t.DEPTH_GREATER, "Greater",    "Draw if further away than existing pixels"),
+            (t.DEPTH_GEQUAL,  "Greater Equal","Draw if further or equal")
+        ],
+        default=t.DEPTH_LEQUAL
+    ) # pyright: ignore[reportInvalidTypeForm]
+    cull_mode: bpy.props.EnumProperty(
+        name="Cull Mode",
+        items=[
+            (t.CULL_NONE,   "None",   "No culling"),
+            (t.CULL_FRONT,  "Front",  "Cull front faces"),
+            (t.CULL_BACK,   "Back",   "Cull back faces (Default)")
+        ],
+        default=t.CULL_BACK
+    ) # pyright: ignore[reportInvalidTypeForm]
+#======================LOCALE SHADER INTERFACE==============================
+COLOR = 'color'
+# extra if needed
+UBO_1 = None
+#======================COMPILE INTERFACE==============================
+def createInfo():
     info = gpu.types.GPUShaderCreateInfo()
+    #=== VARS - OBJs ===
+    # Vert
+    info.vertex_in(0,    t.VEC3, t.ATTR_POS)
+    # Frag
+    info.fragment_out(0, t.VEC4, t.ATTR_OUT_FRAG_COLOR)
+    # Glob
+    info.push_constant(  t.VEC4, COLOR)
     
-    # 2. Declare Interface (Vulkan/Metal requirement)
-    info.vertex_in(0, 'VEC3', "pos")
-    
-    # Register fragment output (Location, Type, Name)
-    info.fragment_out(0, 'VEC4', "fragCol")
-    
-    # Register UBO (Slot, TypeName, InstanceName)
-    # std140 struct definition
-    info.typedef_source("struct MyParams { float u_intensity; float u_R; float u_G; float u_B; };")
-    info.uniform_buf(0, "MyParams", "u_params")
-    
-    # 3. Load Clean Source (No manual declarations in strings)
+    #=== SHADERS =====
     with open(V, "r", encoding="utf-8") as f: 
         vert_src = f.read()
     with open(F, "r", encoding="utf-8") as f:
         frag_src = f.read()
-    
     info.vertex_source(vert_src)
     info.fragment_source(frag_src)
+    return info
+
+#======================FUNCTIONALITY================================
+def uniforms_bind(shader: gpu.types.GPUShader, block: shader_params):
+    shader.uniform_float(COLOR, block.Colour)
+
+def batch_make(shader: gpu.types.GPUShader, block: shader_params):
+    coords = [(-0.5, -0.5), (0.5, -0.5), (0.0, 0.5)]
+    # Attribute name 'pos' must be registered in CreateInfo
+    return batch_for_shader(
+        shader, 
+        DRAW_PRIMITIVE_METHOD, 
+        {
+            t.ATTR_POS: coords,
+        }
+    )
+
+def safe_exec(shader: gpu.types.GPUShader, batch: gpu.types.GPUBatch, block: shader_params):
+    gpu.state.blend_set(block.blend_mode)
+    gpu.state.depth_test_set(block.depth_mode)
+    gpu.state.face_culling_set(block.cull_mode)
+
+    shader.bind()
+    uniforms_bind(shader, block)
+    batch.draw(shader)
     
-    # 4. Compile via the new API
-    shader = gpu.shader.create_from_info(info)
+    gpu.state.blend_set(t.BLEND_NONE)
+    gpu.state.depth_test_set(t.DEPTH_NONE)
+    gpu.state.face_culling_set(t.CULL_NONE)
+
+#=================== 5.0.1 REGISTRATION (CreateInfo) =============================
+def register():
+    info = createInfo()
+
+    try:
+        shader = gpu.shader.create_from_info(info)
+    except Exception as e:
+        print(f"[ERORR AT COMPILING SHADER FROM INFO] at {SHADER_NAME}: {e}]")
     
     bpy.utils.register_class(shader_params)
         
@@ -128,7 +170,6 @@ def unregister():
     global UBO_1
     UBO_1 = None # Explicitly release UBO
     bpy.utils.unregister_class(shader_params)
-
 
 #===========================================================
 @dataclass

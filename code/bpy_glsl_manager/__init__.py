@@ -13,11 +13,13 @@ bl_info = {
 import importlib
 from . import GLSLbase
 from . import ui_
-
+from . import gpu_types as t
 #============================================================
 def register():
+    print("X64 - bpy")
     # Handle reloads during development 
     if "bpy" in locals():
+        importlib.reload(t)
         importlib.reload(GLSLbase)
         importlib.reload(ui_)
 

@@ -77,14 +77,22 @@ def tog_inst_H(self, context):
         while bpy.gl_Hs.__len__() <= self.handler_id: # size checker
             bpy.gl_Hs.append(None)
 
-        pair   = bpy.gl_stream[self.shaderType]
-        desc   = pair[0]
-        shader = pair[1]
+        desc   = bpy.gl_stream[self.shaderType][0]
+        if desc == None:
+            print(f"[HANDLER TOGGLE REPORT]: No desc found for shader type: {self.shaderType}")
+            return
+        shader = bpy.gl_stream[self.shaderType][1]
+        if shader == None:
+            print(f"[HANDLER TOGGLE REPORT]: shader is NONE for shader type: {self.shaderType}")
+            return
         ui     = getattr(
             self, 
             f"ptr_{self.shaderType}", 
             None
         )
+        if ui == None:
+            print(f"[HANDLER TOGGLE REPORT]: No UI found for shader type: {self.shaderType}")
+            return
         batch  = desc.CALL_BATCH(shader,ui)
 
         args = (
@@ -103,6 +111,11 @@ def tog_inst_H(self, context):
         pair = bpy.gl_stream[self.shaderType]
         desc = pair[0]
 
+        if bpy.gl_Hs[self.handler_id] == None:
+            print(f"[HANDLER TOGGLE REPORT]: Attempting to remove a handler that is already None for shader type: {self.shaderType}")
+            self.handler_id = -1
+            return
+
         bpy.types.SpaceView3D.draw_handler_remove(
             bpy.gl_Hs[self.handler_id], 
             desc.DRAW_REGION
@@ -110,10 +123,10 @@ def tog_inst_H(self, context):
         bpy.gl_Hs[self.handler_id] = None
         self.handler_id = -1
 class gl_instance_sk(bpy.types.PropertyGroup):
-    enabled:     bpy.props.BoolProperty(default=False, update=tog_inst_H)
-    expanded:    bpy.props.BoolProperty(default=True)
-    shaderType:  bpy.props.StringProperty(default="")
-    handler_id : bpy.props.IntProperty(default=-1)
+    enabled:     bpy.props.BoolProperty(default=False, update=tog_inst_H)  # pyright: ignore[reportInvalidTypeForm]
+    expanded:    bpy.props.BoolProperty(default=True) # pyright: ignore[reportInvalidTypeForm]
+    shaderType:  bpy.props.StringProperty(default="") # pyright: ignore[reportInvalidTypeForm]
+    handler_id : bpy.props.IntProperty(default=-1) # pyright: ignore[reportInvalidTypeForm]
 
 #====================SETTINGS AND OPS===============================
 def tog_shType_add(self, context):
@@ -136,7 +149,6 @@ def tog_shType_remove(self, context):
         if j.shaderType == target:
             j.enabled = False
             STACK.remove(i)
-    #=====
     delattr(
         gl_instance_sk,
         f"ptr_{target}"
@@ -155,16 +167,16 @@ class gl_mainSettings(bpy.types.PropertyGroup):
     selected_type_add: bpy.props.EnumProperty(
         name="", update=tog_shType_add, 
         items =_get_streamKeys
-    )
+    ) # pyright: ignore[reportInvalidTypeForm]
     selected_type_remove: bpy.props.EnumProperty(
         name="", update=tog_shType_remove, 
         items=_get_streamKeys
-    )
+    ) # pyright: ignore[reportInvalidTypeForm]
 
 class gl_OP_remove_instance(bpy.types.Operator):
     bl_idname = ID_OP_REMOVE
     bl_label = ""
-    index_i : bpy.props.IntProperty(default=-1)
+    index_i : bpy.props.IntProperty(default=-1) # pyright: ignore[reportInvalidTypeForm]
 
     def execute(self, context):
         stack = bpy.context.scene.gl_stack
@@ -178,7 +190,7 @@ class gl_OP_Export_templateMOD(bpy.types.Operator, ExportHelper): # Use ExportHe
     bl_idname    = ID_OP_EX_TEMP_MOD
     bl_label     = "Create New Shader Project"
     filename_ext = "" 
-    directory:   bpy.props.StringProperty(subtype='DIR_PATH')
+    directory:   bpy.props.StringProperty(subtype='DIR_PATH') # pyright: ignore[reportInvalidTypeForm]
 
     def execute(self, context):
         template_src = os.path.dirname(GLSL_DEFAULT.__file__)
@@ -231,16 +243,16 @@ class gl_OP_import_shaderMOD(bpy.types.Operator, ImportHelper):
     bl_idname = ID_OP_ADD_MOD_FROM_DIR
     bl_label = "Load Shader Script"
 
-    filter_glob: bpy.props.StringProperty(default="*.py", options={'HIDDEN'})
+    filter_glob: bpy.props.StringProperty(default="*.py", options={'HIDDEN'}) # pyright: ignore[reportInvalidTypeForm]
 
     def execute(self, context):
         ext_mod = safe_import_mod(self.filepath)
         
         if ext_mod:
             from .GLSLbase import assign_shader
-            assign_shader(ext_mod)
-            
-            desc = ext_mod.DESCRIPTION
+            desc = assign_shader(ext_mod)[0]
+            if desc == None:
+                return
             
             setattr(
                 gl_instance_sk, f"ptr_{desc.NAME}", 
@@ -262,9 +274,9 @@ class gl_OP_import_shaderMOD(bpy.types.Operator, ImportHelper):
 classes = (
     gl_instance_sk,
     gl_OP_remove_instance,
-    gl_mainSettings,
     gl_OP_Export_templateMOD,
     gl_OP_import_shaderMOD,
+    gl_mainSettings,
     gl_panel
 )
 
