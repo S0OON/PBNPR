@@ -24,7 +24,9 @@ DRAW_TYPE    = t.SHADER_DRAW_TYPE_POST_VIEW
 DRAW_PRIMITIVE_METHOD = t.PRIM_TRIS
 
 #=====================UI EXPOSURE===========================
-def toggle(self, context):
+def bake_toggle(self, context):
+    if not self.bake:
+        return
     try:
         img = self.target_img
         if not img: return
@@ -49,9 +51,10 @@ def toggle(self, context):
         img.pixels.foreach_set(buffer) 
         img.update() 
         
-        offscreen.free() 
+        offscreen.free()
     except Exception as e:
         print(f"[SHADER OFFSCREEN BAKING REPORT]: failed at {SHADER_NAME} : Message: {e}")
+    self.bake = False
 class shader_params(bpy.types.PropertyGroup):
     #Customs
     Colour : bpy.props.FloatVectorProperty(
@@ -59,11 +62,12 @@ class shader_params(bpy.types.PropertyGroup):
         description="Color to use in the shader", size=4
     ) # pyright: ignore[reportInvalidTypeForm]
     # Sarder params
+    bake : bpy.props.BoolProperty(default=False,update=bake_toggle)
     target_img: bpy.props.PointerProperty(
         name="Target Image",
-        type=bpy.types.Image,
-        update=toggle
+        type=bpy.types.Image
     ) # pyright: ignore[reportInvalidTypeForm]
+    expand_sets: bpy.props.BoolProperty(default=True)
     alwyas_on_top: bpy.props.BoolProperty(
         name="Always on Top (X-Ray)", 
         default=False, 
@@ -101,6 +105,25 @@ class shader_params(bpy.types.PropertyGroup):
         ],
         default=t.CULL_BACK
     ) # pyright: ignore[reportInvalidTypeForm]
+
+def specify_ui_in_panel(panel : bpy.types.Panel, ui : shader_params):
+    box = panel.layout.box()
+    # List all of the shader_params items, the ui is also customized
+    col = box.column()
+    col.prop(ui, "Colour")
+    row = box.row()
+    row.prop(ui,"bake",icon='SCENE',text='')
+    row.prop(ui,"target_img",icon_only=True)
+    col = box.column(align=True)
+    col.prop(ui, "expand_sets", 
+        icon='TRIA_DOWN' if ui.expand_sets else 'TRIA_RIGHT',
+        text="settings"
+    )
+    if ui.expand_sets:
+        col.prop(ui, "alwyas_on_top")
+        col.prop(ui, "blend_mode")
+        col.prop(ui, "depth_mode")
+        col.prop(ui, "cull_mode")
 #======================LOCALE SHADER INTERFACE==============================
 COLOR = 'color'
 # extra if needed
@@ -126,10 +149,10 @@ def createInfo():
     return info
 
 #======================FUNCTIONALITY================================
-def uniforms_bind(shader: gpu.types.GPUShader, block: shader_params):
-    shader.uniform_float(COLOR, block.Colour)
+def uniforms_bind(shader: gpu.types.GPUShader, ui: shader_params):
+    shader.uniform_float(COLOR, ui.Colour)
 
-def batch_make(shader: gpu.types.GPUShader, block: shader_params):
+def batch_make(shader: gpu.types.GPUShader, ui: shader_params):
     coords = [(-0.5, -0.5), (0.5, -0.5), (0.0, 0.5)]
     # Attribute name 'pos' must be registered in CreateInfo
     return batch_for_shader(
@@ -140,13 +163,13 @@ def batch_make(shader: gpu.types.GPUShader, block: shader_params):
         }
     )
 
-def safe_exec(shader: gpu.types.GPUShader, batch: gpu.types.GPUBatch, block: shader_params):
-    gpu.state.blend_set(block.blend_mode)
-    gpu.state.depth_test_set(block.depth_mode)
-    gpu.state.face_culling_set(block.cull_mode)
+def safe_exec(shader: gpu.types.GPUShader, batch: gpu.types.GPUBatch, ui: shader_params):
+    gpu.state.blend_set(ui.blend_mode)
+    gpu.state.depth_test_set(ui.depth_mode)
+    gpu.state.face_culling_set(ui.cull_mode)
 
     shader.bind()
-    uniforms_bind(shader, block)
+    uniforms_bind(shader, ui)
     batch.draw(shader)
     
     gpu.state.blend_set(t.BLEND_NONE)
@@ -186,6 +209,7 @@ class ShaderDesc:
     CALL_REG:Callable
     CALL_UNREG:Callable
     UI: Type
+    CALL_UI_SPEC:Callable
 DESCRIPTION = ShaderDesc(
     NAME                  = SHADER_NAME,
     PATH_VERT             = V,
@@ -198,5 +222,6 @@ DESCRIPTION = ShaderDesc(
     CALL_EXEC             = safe_exec,
     CALL_REG              = register,
     CALL_UNREG            = unregister,
-    UI                    = shader_params
+    UI                    = shader_params,
+    CALL_UI_SPEC          = specify_ui_in_panel
 )

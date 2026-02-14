@@ -16,7 +16,6 @@ from . import ui_
 from . import gpu_types as t
 #============================================================
 def register():
-    print("X64 - bpy")
     # Handle reloads during development 
     if "bpy" in locals():
         importlib.reload(t)
@@ -25,14 +24,10 @@ def register():
 
     GLSLbase.register()
     ui_.register()
-    
-    print("PBNPR: Registered successfully")
 
 def unregister():
     ui_.unregister()
     GLSLbase.unregister()
-
-    print("PBNPR: Unregistered")
 
 if __name__ == "__main__":
     register()

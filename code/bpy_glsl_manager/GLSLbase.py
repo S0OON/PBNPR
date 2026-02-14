@@ -5,6 +5,12 @@ import numpy as np
 from bpy_glsl_manager import gpu_types as t
 
 def _get_mesh_data_for_gpu(obj):
+    """
+    Docstring for _get_mesh_data_for_gpu
+    
+    :param obj: object
+    :return:- i,p,N (s)
+    """
     depsgraph = bpy.context.evaluated_depsgraph_get()
     eval_obj  = obj.evaluated_get(depsgraph)
     mesh      = eval_obj.to_mesh()
@@ -40,9 +46,7 @@ def assign_shader(py):
             py.DESCRIPTION,
             py.DESCRIPTION.CALL_REG()
         ]
-        # now print the 'module' or .py in console to confirm registration
-        print(f"[SHADER REGISTRATION REPORT]: '{py.SHADER_NAME}' assigned.")
-
+        
         return bpy.gl_stream[py.SHADER_NAME]
     
     except Exception as e:

@@ -1,6 +1,6 @@
 
 # --- blender specific ---
-bl_verts = 'verticies'
+bl_verts = 'vertices'
 bl_Co = 'co'
 bl_normal = 'normal'
 bl_loop_triangles = 'loop_triangles'
@@ -37,6 +37,7 @@ ATTR_NORMAL   = "normal"   # Standard normal (vec3)
 ATTR_UV       = "uv"       # Standard UV map (vec2)
 ATTR_COLOR    = "color"    # Vertex color (vec4)
 ATTR_TANGENT  = "tangent"  # Tangent (vec4)
+ATTR_POINT    = "point"    # Point (vec3)
 # --- Standard Output Names ---
 ATTR_OUT_FRAG_COLOR = "fragColor" # Standard Fragment Output
 

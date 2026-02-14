@@ -17,7 +17,7 @@
       "E:\\soon\\projects\\PBNPR\\code\\bpy_glsl_manager"
     ],
   "python.analysis.extraPaths": [
-      "E:\\soon\\projects\\PBNPR\\code\\bpy_glsl_manager",
+    "E:\\soon\\projects\\PBNPR\\code\\bpy_glsl_manager",
   ],
   
   "_comment_replace_scope": "Replace the scope value above with the scope reported by 'Developer: Inspect Editor Tokens and Scopes' if different.",

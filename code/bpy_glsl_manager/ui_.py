@@ -15,7 +15,9 @@ def _get_streamKeys(self, context):
     for key in bpy.gl_stream.keys():
         items.append((key, key, ""))
     return items
-
+def _global_classes():
+    bpy.types.Scene.gl_settings = bpy.props.PointerProperty(type=gl_mainSettings)
+    bpy.types.Scene.gl_stack    = bpy.props.CollectionProperty(type=gl_instance_sk)
 #====================CONSTANT===============================
 ID_OP_ADD_MOD_FROM_DIR = "gl.import_shader"
 ID_OP_EX_TEMP_MOD      = "gl.export_shader_template"
@@ -59,11 +61,12 @@ class gl_panel(bpy.types.Panel):
             op.index_i = i 
 
             if INST.expanded:
-                custom_params = getattr(INST, f"ptr_{INST.shaderType}", None)
-                col = box.column(align=True)
-                for prop in custom_params.bl_rna.properties:
-                    if not prop.is_readonly: # Skip internal RNA props
-                        col.prop(custom_params, prop.identifier)
+                custom_params = getattr(
+                    INST, 
+                    f"ptr_{INST.shaderType}", 
+                    None
+                )
+                bpy.gl_stream[INST.shaderType][0].CALL_UI_SPEC(self,custom_params)
 
 #====================INSTANCE===============================
 def tog_inst_H(self, context):
@@ -283,9 +286,7 @@ classes = (
 def register():
     for cl in classes: 
         bpy.utils.register_class(cl)
-    
-    bpy.types.Scene.gl_settings = bpy.props.PointerProperty(type=gl_mainSettings)
-    bpy.types.Scene.gl_stack    = bpy.props.CollectionProperty(type=gl_instance_sk)
+    _global_classes()
 
     from .GLSLbase import assign_shader
     assign_shader(GLSL_DEFAULT)

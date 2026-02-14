@@ -1,13 +1,16 @@
-
-in vec4 vColor;
-in vec3 vNormal;
-in vec3 point;
-in float Depth;
-
-out vec4 fragCol;
+/*with:-
+uColor
+uPP
+uOBJm
+uCAMm
+uPROJm
+in vec3 V_N;
+*/
 
 void main() {
-    float Dot = dot(point,vNormal);
+    vec3 worldNormal = normalize(mat3(uOBJm) * V_N);
     
-    fragCol = vColor * vec4(vec3(Dot),1.0);
+    float Dot = dot(uPP,worldNormal);
+    
+    fragColor = uColor * vec4(vec3(Dot),1.0);
 }
