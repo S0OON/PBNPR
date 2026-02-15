@@ -12,6 +12,8 @@ Physically based non-photorealistic rendering. (WIP)
 > no TLDR:
 
 
+![cool logo](/resource/img/Label_img.jpg)
+
 it Provides the ability to load custom shaders writtin in OpenGL or simply Facilitates GLSL usage;
 By providing a standard translation unit that the addon understands to store/load/bake the shader instructions with a simple UI.
 

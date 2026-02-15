@@ -62,7 +62,7 @@ class shader_params(bpy.types.PropertyGroup):
         description="Color to use in the shader", size=4
     ) # pyright: ignore[reportInvalidTypeForm]
     # Sarder params
-    bake : bpy.props.BoolProperty(default=False,update=bake_toggle)
+    bake : bpy.props.BoolProperty(default=False,update=bake_toggle) # pyright: ignore[reportInvalidTypeForm]
     target_img: bpy.props.PointerProperty(
         name="Target Image",
         type=bpy.types.Image
