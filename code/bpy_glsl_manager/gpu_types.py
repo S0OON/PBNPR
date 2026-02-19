@@ -30,7 +30,7 @@ SAMPLER_1D_ARRAY     = 'FLOAT_1D_ARRAY'
 SAMPLER_2D_ARRAY     = 'FLOAT_2D_ARRAY'
 SAMPLER_CUBE_ARRAY   = 'FLOAT_CUBE_ARRAY'
 SAMPLER_2D_SHADOW    = 'FLOAT_2D_SHADOW'  # For depth maps
- 
+
 # --- Standard Attribute Names (Blender Conventions) ---
 ATTR_POS      = "pos"      # Standard position (vec3)
 ATTR_NORMAL   = "normal"   # Standard normal (vec3)
@@ -38,8 +38,10 @@ ATTR_UV       = "uv"       # Standard UV map (vec2)
 ATTR_COLOR    = "color"    # Vertex color (vec4)
 ATTR_TANGENT  = "tangent"  # Tangent (vec4)
 ATTR_POINT    = "point"    # Point (vec3)
+ATTR_VIEW_MAT = "viewMat"  # View Matrix (mat4)
 # --- Standard Output Names ---
 ATTR_OUT_FRAG_COLOR = "fragColor" # Standard Fragment Output
+ATTR_OUT_V          = "gl_Position"
 
 # --- GPU State Constants ---
 DEPTH_NONE    = 'NONE'       # Disable depth testing

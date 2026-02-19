@@ -1,38 +1,51 @@
 # This file belongs to S00N's PBNPR Blender Add-on
 # all rights reserved (C) 2024 S00N
-import bpy
+import bpy,gpu
 import numpy as np
 from bpy_glsl_manager import gpu_types as t
+# ============================================================
+class UBO:
+    """Helper class to manage UBO data and buffer, consist of Name,type_name, buffer_object"""
+    def __init__(self, name,type_name):
+        self.name      = name
+        self.type_name = type_name
+        self.buf       = None
 
 def _get_mesh_data_for_gpu(obj):
-    """
-    Docstring for _get_mesh_data_for_gpu
-    
-    :param obj: object
-    :return:- i,p,N (s)
-    """
     depsgraph = bpy.context.evaluated_depsgraph_get()
     eval_obj  = obj.evaluated_get(depsgraph)
     mesh      = eval_obj.to_mesh()
     mesh.calc_loop_triangles()
     
-    # --- A. Collect Indices ---
-    loop_tri_count = len(mesh.loop_triangles)
-    indices        = np.empty((loop_tri_count, 3), dtype=np.int32)
-    mesh.loop_triangles.foreach_get(t.bl_verts, indices.reshape(-1))
-
-    # --- B. Collect Positions ---
-    v_count = len(mesh.vertices)
-    pos     = np.empty((v_count, 3), dtype=np.float32)
-    mesh.vertices.foreach_get(t.bl_Co, pos.reshape(-1))
-
-    # --- C. Collect Normals ---
-    normals = np.empty((v_count, 3), dtype=np.float32)
-    mesh.vertices.foreach_get(t.bl_normal, normals.reshape(-1))
-
-    eval_obj.to_mesh_clear()# Clean up
+    tris_count = len(mesh.loop_triangles)
     
-    return indices,pos, normals
+    # 1. Get the Loop Indices (The specific corners of every triangle)
+    loops_indices = np.empty((tris_count * 3), dtype=np.int32)
+    mesh.loop_triangles.foreach_get("loops", loops_indices)
+
+    # 2. Get Vertex Indices (Which vertex does each corner point to?)
+    vertex_indices = np.empty((tris_count * 3), dtype=np.int32)
+    mesh.loop_triangles.foreach_get(t.bl_verts, vertex_indices)
+
+    # --- A. Collect Positions ---
+    # Get all unique positions, then map them to our triangle corners
+    all_pos = np.empty((len(mesh.vertices), 3), dtype=np.float32)
+    mesh.vertices.foreach_get(t.bl_Co, all_pos.reshape(-1))
+    
+    # Create the final flat array of positions (3 for every triangle)
+    final_pos = all_pos[vertex_indices]
+
+    # --- B. Collect Normals ---
+    # Get normals from LOOPS (This preserves Sharp Edges and Custom Split Normals, like bleeding)
+    all_normals = np.empty((len(mesh.loops), 3), dtype=np.float32)
+    mesh.loops.foreach_get(t.bl_normal, all_normals.reshape(-1))
+    
+    # final flat array of normals
+    final_normals = all_normals[loops_indices]
+
+    eval_obj.to_mesh_clear() # Clean up (safe in 4.0/5.0 context depending on usage)
+    
+    return None, final_pos, final_normals
 
 def assign_shader(py):
     """

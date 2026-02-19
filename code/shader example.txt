@@ -1,3 +1,65 @@
+
+========================================
+E:\soon\projects\PBNPR\resource\source_examples\export_folder_tree_to_txt.py
+========================================
+import os
+
+# Define which file extensions to include
+INCLUDE_EXTENSIONS = {'.py', '.glsl', '.txt', '.md'}
+
+# Output file name
+OUTPUT_FILE = 'combined_output.txt'
+
+def collect_files(base_dir):
+    """Recursively collect files with target extensions."""
+    collected = []
+    for root, _, files in os.walk(base_dir):
+        for file in files:
+            if os.path.splitext(file)[1] in INCLUDE_EXTENSIONS:
+                collected.append(os.path.join(root, file))
+    return collected
+
+def write_combined_output(files, output_path):
+    """Write contents of all files into one output file."""
+    with open(output_path, 'w', encoding='utf-8') as out:
+        for file_path in files:
+            out.write(f"\n{'='*40}\n{file_path}\n{'='*40}\n")
+            try:
+                with open(file_path, 'r', encoding='utf-8') as f:
+                    out.write(f.read())
+            except Exception as e:
+                out.write(f"[Error reading {file_path}: {e}]\n")
+
+if __name__ == "__main__":
+    current_dir = os.path.dirname(os.path.abspath(__file__))
+    subfolder = os.path.join(current_dir)  # or specify a subfolder like 'src'
+    files = collect_files(subfolder)
+    write_combined_output(files, os.path.join(current_dir, OUTPUT_FILE))
+    print(f"✅ Combined {len(files)} files into {OUTPUT_FILE}")
+
+========================================
+E:\soon\projects\PBNPR\resource\source_examples\shader_dot\frag.glsl
+========================================
+/*with:-
+uColor
+uPP
+uVIEWm:
+    uOBJm
+    uCAMm
+uPROJm
+in vec3 V_N;
+*/
+void main() {
+    //vec3 worldNormal = normalize(mat3(uVIEWm.OBJ) * V_N);
+    //
+    //float Dot = dot(uPP,worldNormal);
+    //
+    //fragColor = uColor * vec4(vec3(Dot),1.0);
+    fragColor = vec4(1.0);
+}
+========================================
+E:\soon\projects\PBNPR\resource\source_examples\shader_dot\shader_dot.py
+========================================
 # This file belongs to S00N's PBNPR Blender Add-on
 # all rights reserved (C) 2024 S00N
 #========================WARNING=================================
@@ -12,7 +74,13 @@ import gpu
 from gpu_extras.batch import batch_for_shader
 from dataclasses import dataclass
 from typing import Callable, Type
-from bpy_glsl_manager import gpu_types as t
+import numpy as np
+try:
+    from ....code.bpy_glsl_manager import gpu_types as t
+    from ....code.bpy_glsl_manager.GLSLbase import _get_mesh_data_for_gpu,_define_type_source,UBO
+except:
+    from bpy_glsl_manager import gpu_types as t # pyright: ignore[reportMissingImports]
+    from bpy_glsl_manager.GLSLbase import _get_mesh_data_for_gpu, _define_type_source,UBO # pyright: ignore[reportMissingImports]
 #=====================__FILE__ CONSTANTS===========================
 BASE_DIR     = os.path.dirname(__file__)
 ABS_DIR      = os.path.abspath(__file__)
@@ -53,13 +121,21 @@ def bake_toggle(self, context):
         
         offscreen.free()
     except Exception as e:
-        print(f"[SHADER OFFSCREEN BAKING REPORT]: failed at {SHADER_NAME} : Message: {e}")
+        print(f"[SHADER OFFSCREEN BAKING REPORT]: failed at {SHADER_NAME} : {e}")
     self.bake = False
 class shader_params(bpy.types.PropertyGroup):
     #Customs
     Colour : bpy.props.FloatVectorProperty(
         name="Color",subtype='COLOR', default=(0.0, 0.0, 0.0, 1.0), min=0.0, max=1.0,
         description="Color to use in the shader", size=4
+    ) # pyright: ignore[reportInvalidTypeForm]
+    Source: bpy.props.FloatVectorProperty(
+        subtype="XYZ",size=4
+    ) # pyright: ignore[reportInvalidTypeForm]
+    target_obj: bpy.props.PointerProperty(
+        name="",
+        type=bpy.types.Object,
+        description="Pick an object to use its coordinates in the shader"
     ) # pyright: ignore[reportInvalidTypeForm]
     # Sarder params
     bake : bpy.props.BoolProperty(default=False,update=bake_toggle) # pyright: ignore[reportInvalidTypeForm]
@@ -111,9 +187,12 @@ def specify_ui_in_panel(
         ui : shader_params
     ):
     box = panel.layout.box()
+    col = box.column(align=True)
     # List all of the shader_params items, the ui is also customized
-    col = box.column()
+
     col.prop(ui, "Colour")
+    col.prop(ui, "Source")
+    col.prop(ui, "target_obj")
     row = box.row()
     row.prop(ui,"bake",icon='SCENE',text='')
     row.prop(ui,"target_img",icon_only=True)
@@ -127,26 +206,54 @@ def specify_ui_in_panel(
         col.prop(ui, "blend_mode")
         col.prop(ui, "depth_mode")
         col.prop(ui, "cull_mode")
+
 #======================LOCALE SHADER INTERFACE==============================
-COLOR = 'color'
+#interface
+i_name = 'INTERFACE_C'
+OUT_N  = 'V_N'
+#uniform - constant
+U_COLOR= 'uColor'
+U_P_Pos= 'uPP'
+#UBO_MAT_CO 
+M_OBJ  = 'OBJ'
+M_CAM  = 'CAM'
+M_PROJ = 'PROJ'
 # extra if needed
-UBO_1 = None
+UBO_VIEW = UBO('uVIEWm','U_VIEW_MAT')
 #======================COMPILE INTERFACE==============================
 def createInfo():
     info = gpu.types.GPUShaderCreateInfo()
     #=== VARS - OBJs ===
     # Vert
     info.vertex_in(0,    t.VEC3, t.ATTR_POS)
-    # Frag
+    info.vertex_in(1,    t.VEC3, t.ATTR_NORMAL)
+    #interface = gpu.types.GPUStageInterfaceInfo(i_name)
+    #interface.flat(t.VEC3,OUT_N)
+    #info.vertex_out(interface)
+    #frag
     info.fragment_out(0, t.VEC4, t.ATTR_OUT_FRAG_COLOR)
     # Glob
-    info.push_constant(  t.VEC4, COLOR)
+    info.push_constant(t.VEC4, U_COLOR)
+    info.push_constant(t.VEC3, U_P_Pos)
+    
+    info.typedef_source(
+        _define_type_source(
+            f'layout(std140) uniform {UBO_VIEW.type_name} ',
+            {
+                t.MAT4 : M_OBJ,
+                t.MAT4 : M_CAM,
+                t.MAT4 : M_PROJ
+            }
+        )
+    )
+    info.uniform_buf(2, UBO_VIEW.type_name,UBO_VIEW.name)
     
     #=== SHADERS =====
     with open(V, "r", encoding="utf-8") as f: 
         vert_src = f.read()
     with open(F, "r", encoding="utf-8") as f:
         frag_src = f.read()
+
     info.vertex_source(vert_src)
     info.fragment_source(frag_src)
     return info
@@ -156,20 +263,48 @@ def uniforms_bind(
         shader: gpu.types.GPUShader, 
         ui: shader_params
     ):
-    shader.uniform_float(COLOR, ui.Colour)
+    # ================== CONST =====================
+    uVals = {
+        U_COLOR:  ui.Colour, 
+        U_P_Pos : ui.Source,
+    }
+    for K,V in uVals.items():
+        shader.uniform_float(K,V)
+
+    # ================== UBO_VIEW ===================
+    obj  = ui.target_obj
+    if not obj: return
+    cam  = bpy.context.scene.camera
+    if not cam: return
+    deps = bpy.context.evaluated_depsgraph_get()
+    w,h  = [bpy.context.scene.render.resolution_x,bpy.context.scene.render.resolution_y]
+    
+    uValM = {
+        M_OBJ  :   np.array(obj.matrix_world.transposed(),                      dtype=np.float32 ).flatten(),
+        M_CAM  :   np.array(cam.matrix_world.inverted().transposed(),           dtype=np.float32 ).flatten(),
+        M_PROJ :   np.array(cam.calc_matrix_camera(deps,x=w,y=h).transposed(),  dtype=np.float32 ).flatten(),
+    }
+    data = np.concatenate(x for x in uValM.values())
+    
+    global UBO_VIEW
+    UBO_VIEW.buf.update(data=data)
+    shader.uniform_block(UBO_VIEW.name, UBO_VIEW.buf)
+    return
 
 def batch_make(
         shader: gpu.types.GPUShader, 
         ui: shader_params
     ):
-    coords = [(-0.5, -0.5), (0.5, -0.5), (0.0, 0.5)]
+    i,P,N = _get_mesh_data_for_gpu(ui.target_obj)
     # Attribute name 'pos' must be registered in CreateInfo
     return batch_for_shader(
         shader, 
         DRAW_PRIMITIVE_METHOD, 
         {
-            t.ATTR_POS: coords,
-        }
+            t.ATTR_POS   :P,
+            t.ATTR_NORMAL:N
+        },
+        indices=i
     )
 
 def safe_exec(
@@ -191,9 +326,8 @@ def safe_exec(
 
 #=================== 5.0.1 REGISTRATION (CreateInfo) =============================
 def register():
-    info = createInfo()
-
     try:
+        info = createInfo()
         shader = gpu.shader.create_from_info(info)
     except Exception as e:
         print(f"[ERORR AT COMPILING SHADER FROM INFO] at {SHADER_NAME}: {e}]")
@@ -238,3 +372,29 @@ DESCRIPTION = ShaderDesc(
     UI                    = shader_params,
     CALL_UI_SPEC          = specify_ui_in_panel
 )
+========================================
+E:\soon\projects\PBNPR\resource\source_examples\shader_dot\vert.glsl
+========================================
+/*with:-
+uColor
+uPP
+uVIEWm:
+    uOBJm
+    uCAMm
+    uPROJm
+V_N
+in vec3 pos
+in vec3 normal
+*/
+
+out vec3 V_N;
+void main() {
+    //OUT
+    V_N = normal;
+    //VIEW_marix
+    vec4 viewPos = uVIEWm.CAM * uVIEWm.OBJ * vec4(pos, 1.0);
+    //Depth = -viewPos.z;
+    
+    //outptu
+    gl_Position = uVIEWm.PROJ * viewPos;
+}

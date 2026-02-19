@@ -7,18 +7,15 @@
 # BE AWARE all python files have the same access to any thing in bpy module, so name collisions may occur.
 #========================IMPORTS=================================
 import os
+import numpy as np
 import bpy
 import gpu
+import mathutils
 from gpu_extras.batch import batch_for_shader
 from dataclasses import dataclass
 from typing import Callable, Type
-import numpy as np
-try:
-    from ....code.bpy_glsl_manager import gpu_types as t
-    from ....code.bpy_glsl_manager.GLSLbase import _get_mesh_data_for_gpu
-except:
-    from bpy_glsl_manager import gpu_types as t # pyright: ignore[reportMissingImports]
-    from bpy_glsl_manager.GLSLbase import _get_mesh_data_for_gpu # pyright: ignore[reportMissingImports]
+from bpy_glsl_manager import gpu_types as t
+from bpy_glsl_manager.GLSLbase import _get_mesh_data_for_gpu,UBO
 #=====================__FILE__ CONSTANTS===========================
 BASE_DIR     = os.path.dirname(__file__)
 ABS_DIR      = os.path.abspath(__file__)
@@ -68,7 +65,7 @@ class shader_params(bpy.types.PropertyGroup):
         description="Color to use in the shader", size=4
     ) # pyright: ignore[reportInvalidTypeForm]
     Source: bpy.props.FloatVectorProperty(
-        subtype="XYZ",size=4
+        subtype="XYZ",size=3
     ) # pyright: ignore[reportInvalidTypeForm]
     target_obj: bpy.props.PointerProperty(
         name="",
@@ -81,7 +78,7 @@ class shader_params(bpy.types.PropertyGroup):
         name="Target Image",
         type=bpy.types.Image
     ) # pyright: ignore[reportInvalidTypeForm]
-    expand_sets: bpy.props.BoolProperty(default=True)
+    expand_sets: bpy.props.BoolProperty(default=True) # pyright: ignore[reportInvalidTypeForm]
     alwyas_on_top: bpy.props.BoolProperty(
         name="Always on Top (X-Ray)", 
         default=False, 
@@ -120,7 +117,10 @@ class shader_params(bpy.types.PropertyGroup):
         default=t.CULL_BACK
     ) # pyright: ignore[reportInvalidTypeForm]
 
-def specify_ui_in_panel(panel : bpy.types.Panel, ui : shader_params):
+def specify_ui_in_panel(
+        panel : bpy.types.Panel, 
+        ui : shader_params
+    ):
     box = panel.layout.box()
     col = box.column(align=True)
     # List all of the shader_params items, the ui is also customized
@@ -141,44 +141,53 @@ def specify_ui_in_panel(panel : bpy.types.Panel, ui : shader_params):
         col.prop(ui, "blend_mode")
         col.prop(ui, "depth_mode")
         col.prop(ui, "cull_mode")
-
 #======================LOCALE SHADER INTERFACE==============================
-#interface
-i_name = 'INTERFACE_C'
-#uniform - constant
-U_COLOR= 'uColor'
-U_P_Pos= 'uPP'
-U_BFF  = 'uBFF'
-M_OBJ  = 'uOBJm'
-M_CAM  = 'uCAMm'
-M_PROJ = 'uPROJm'
-OUT_N  = 'V_N'
-# extra if needed
-UBO_1 = None
+i_interface = 'i_Interface'
+iOUT_N = 'vNormal'
+fDota = 'Dota'
 #======================COMPILE INTERFACE==============================
 def createInfo():
     info = gpu.types.GPUShaderCreateInfo()
-    #=== VARS - OBJs ===
-    # Vert
-    info.vertex_in(0,    t.VEC3, t.ATTR_POS)
-    info.vertex_in(1,    t.VEC3, t.ATTR_NORMAL)
-    interface = gpu.types.GPUStageInterfaceInfo(i_name)
-    interface.flat(t.VEC3,OUT_N)
-    info.vertex_out(interface)
-    # Frag
-    info.fragment_out(0, t.VEC4, t.ATTR_OUT_FRAG_COLOR)
-    # Glob
-    info.push_constant(0,U_COLOR)
-    info.push_constant(1,U_P_Pos)
-    info.uniform_buf(2,t.MAT4,U_BFF)
+#Glob
+    info.push_constant(t.VEC4, t.ATTR_COLOR)
+    info.push_constant(t.VEC3, t.ATTR_POINT)
+    info.push_constant(t.MAT4, t.ATTR_VIEW_MAT)
+
+#vertex
+    info.vertex_in(0, t.VEC3, t.ATTR_POS   )
+    info.vertex_in(1, t.VEC3, t.ATTR_NORMAL)
+    inter = gpu.types.GPUStageInterfaceInfo(i_interface)
+    inter.flat(t.VEC3, iOUT_N)
+    info.vertex_out(inter)
     
-    #=== SHADERS =====
-    with open(V, "r", encoding="utf-8") as f: 
-        vert_src = f.read()
-    with open(F, "r", encoding="utf-8") as f:
-        frag_src = f.read()
-    info.vertex_source(vert_src)
-    info.fragment_source(frag_src)
+    v = (
+        "void main(){"
+        
+        f"{iOUT_N} = {t.ATTR_NORMAL};"
+
+        f"{t.ATTR_OUT_V} = {t.ATTR_VIEW_MAT} * vec4({t.ATTR_POS},1.0);"
+        
+        "}"
+    )
+    info.vertex_source(v)
+
+#Frag
+    info.fragment_out(0, t.VEC4, t.ATTR_OUT_FRAG_COLOR)
+
+    info.fragment_source(
+        "void main() {"
+
+        f"float {fDota} = dot(normalize({iOUT_N}), normalize({t.ATTR_POINT}));"
+
+        f"fragColor = vec4( {t.ATTR_COLOR}.rgb * {fDota}, {t.ATTR_COLOR}.a );"
+        "}"
+    )
+    
+# out
+    #with open(F, "r", encoding="utf-8") as f:
+    #    frag_src = f.read()
+    #with open(V, "r", encoding="utf-8") as f: 
+    #    vert_src = f.read()
     return info
 
 #======================FUNCTIONALITY================================
@@ -186,51 +195,49 @@ def uniforms_bind(
         shader: gpu.types.GPUShader, 
         ui: shader_params
     ):
+    # ================== CONST =====================
+    shader.uniform_float(t.ATTR_COLOR,ui.Colour)
+    shader.uniform_float(t.ATTR_POINT,ui.Source)
+
+    # ================== UBO_VIEW ===================
     obj  = ui.target_obj
     if not obj: return
     cam  = bpy.context.scene.camera
     if not cam: return
     deps = bpy.context.evaluated_depsgraph_get()
     w,h  = [bpy.context.scene.render.resolution_x,bpy.context.scene.render.resolution_y]
-    
-    m_world = np.array(obj.matrix_world.transposed(),                      dtype=np.float32).flatten()
-    m_view  = np.array(cam.matrix_world.inverted().transposed(),           dtype=np.float32).flatten()
-    m_proj  = np.array(cam.calc_matrix_camera(deps,x=w,y=h).transposed(),  dtype=np.float32).flatten()
-    # =======================================
-    uValM = {
-        M_OBJ :   m_world, 
-        M_CAM :   m_view, 
-        M_PROJ :  m_proj, 
-    }
-    # ===============
-    data = np.concatenate(x for x in uValM.values())
-    global UBO_1
-    if UBO_1 == None:
-        UBO_1 = gpu.types.GPUUniformBuf(data)
-    UBO_1.update(data=data)
-    shader.uniform_block(U_BFF, UBO_1)
-    # =======================================
-    uVals = {
-        U_COLOR:  ui.Colour, 
-        U_P_Pos : ui.Source,
-    }
-    for K,V in uVals:
-        shader.uniform_float(K,V)
 
-def batch_make(shader: gpu.types.GPUShader, ui: shader_params):
+    m_world = np.array(obj.matrix_world.transposed(),                      dtype=np.float32)#.flatten()
+    m_view  = np.array(cam.matrix_world.inverted().transposed(),           dtype=np.float32)#.flatten()
+    m_proj  = np.array(cam.calc_matrix_camera(deps,x=w,y=h).transposed(),  dtype=np.float32)#.flatten()
+    # ===============
+    mat = (m_world @ m_view @ m_proj).astype(np.float32) 
+    flat = mat.flatten()
+    
+    shader.uniform_float(t.ATTR_VIEW_MAT, flat)
+
+    return
+
+def batch_make(
+        shader: gpu.types.GPUShader, 
+        ui: shader_params
+    ):
+    
     i,P,N = _get_mesh_data_for_gpu(ui.target_obj)
-    # Attribute name 'pos' must be registered in CreateInfo
+    
     return batch_for_shader(
-        shader, 
-        DRAW_PRIMITIVE_METHOD, 
+        shader, DRAW_PRIMITIVE_METHOD, 
         {
-            t.ATTR_POS   :P,
-            t.ATTR_NORMAL:N
-        },
-        indices=i
+            t.ATTR_POS   : P,
+            t.ATTR_NORMAL: N
+        }
     )
 
-def safe_exec(shader: gpu.types.GPUShader, batch: gpu.types.GPUBatch, ui: shader_params):
+def safe_exec(
+        shader: gpu.types.GPUShader, 
+        batch: gpu.types.GPUBatch, 
+        ui: shader_params
+    ):
     gpu.state.blend_set(ui.blend_mode)
     gpu.state.depth_test_set(ui.depth_mode)
     gpu.state.face_culling_set(ui.cull_mode)

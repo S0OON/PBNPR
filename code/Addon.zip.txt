@@ -1,0 +1,929 @@
+
+========================================
+E:\soon\projects\PBNPR\code\export_folder_tree_to_txt.py
+========================================
+import os
+
+# Define which file extensions to include
+INCLUDE_EXTENSIONS = {'.py', '.glsl', '.txt', '.md'}
+
+# Output file name
+OUTPUT_FILE = 'combined_output.txt'
+
+def collect_files(base_dir):
+    """Recursively collect files with target extensions."""
+    collected = []
+    for root, _, files in os.walk(base_dir):
+        for file in files:
+            if os.path.splitext(file)[1] in INCLUDE_EXTENSIONS:
+                collected.append(os.path.join(root, file))
+    return collected
+
+def write_combined_output(files, output_path):
+    """Write contents of all files into one output file."""
+    with open(output_path, 'w', encoding='utf-8') as out:
+        for file_path in files:
+            out.write(f"\n{'='*40}\n{file_path}\n{'='*40}\n")
+            try:
+                with open(file_path, 'r', encoding='utf-8') as f:
+                    out.write(f.read())
+            except Exception as e:
+                out.write(f"[Error reading {file_path}: {e}]\n")
+
+if __name__ == "__main__":
+    current_dir = os.path.dirname(os.path.abspath(__file__))
+    subfolder = os.path.join(current_dir)  # or specify a subfolder like 'src'
+    files = collect_files(subfolder)
+    write_combined_output(files, os.path.join(current_dir, OUTPUT_FILE))
+    print(f"✅ Combined {len(files)} files into {OUTPUT_FILE}")
+
+========================================
+E:\soon\projects\PBNPR\code\bpy_glsl_manager\GLSLbase.py
+========================================
+# This file belongs to S00N's PBNPR Blender Add-on
+# all rights reserved (C) 2024 S00N
+import bpy,gpu
+import numpy as np
+from bpy_glsl_manager import gpu_types as t
+# ============================================================
+class UBO:
+    """Helper class to manage UBO data and buffer, consist of Name,type_name, buffer_object"""
+    def __init__(self, name,type_name):
+        self.name      = name
+        self.type_name = type_name
+        self.buf       = gpu.types.GPUUniformBuf
+
+def _define_type_source(
+        declare:str,
+        associated_bundle:dict[str, str]
+):
+    """
+    This is a function that generates the source code for a GLSL data type
+    e.g. 
+         struct MyUniformBlock { vec3 myVec3; float myFloat; };
+         layout(std140) uniform MyUniformBlock { vec3 myVec3; float myFloat; };
+         in vec3 myVec3;
+    
+    :param type_prefix: 
+    :type type_prefix: e.g. "struct", "layout(std140)", 'in', 'out', etc.
+
+    :param type: 
+    :type type: e.g. 'int', 'float', 'vec4' ,'uniform' for layout and empty if sturct
+
+    :param type_name: 
+    :type type_name: e.g. 'MyUniformBlock'
+
+    :param associated_bundle: if not exist it will ignored, otherwise it will be used to generate the body of the struct/layout
+    :type associated_bundle: dict[Var_type : Var_name]
+    """
+    if associated_bundle != None:
+        declare += "{\n"
+        for var_type, var_name in associated_bundle.items():
+            declare += f"    {var_type.lower()} {var_name}; \n"
+        declare += "}; \n"
+
+    return declare
+
+def _get_mesh_data_for_gpu(obj):
+    """
+    Docstring for _get_mesh_data_for_gpu
+    
+    :param obj: object
+    :return:- i,p,N (s)
+    """
+    depsgraph = bpy.context.evaluated_depsgraph_get()
+    eval_obj  = obj.evaluated_get(depsgraph)
+    mesh      = eval_obj.to_mesh()
+    mesh.calc_loop_triangles()
+    
+    # --- A. Collect Indices ---
+    loop_tri_count = len(mesh.loop_triangles)
+    indices        = np.empty((loop_tri_count, 3), dtype=np.int32)
+    mesh.loop_triangles.foreach_get(t.bl_verts, indices.reshape(-1))
+
+    # --- B. Collect Positions ---
+    v_count = len(mesh.vertices)
+    pos     = np.empty((v_count, 3), dtype=np.float32)
+    mesh.vertices.foreach_get(t.bl_Co, pos.reshape(-1))
+
+    # --- C. Collect Normals ---
+    normals = np.empty((v_count, 3), dtype=np.float32)
+    mesh.vertices.foreach_get(t.bl_normal, normals.reshape(-1))
+
+    eval_obj.to_mesh_clear()# Clean up
+    
+    return indices,pos, normals
+
+def assign_shader(py):
+    """
+    1.Loads to the stream
+    2.Calls shader's register()
+
+    returns the stream
+    """
+    try:
+        bpy.gl_stream[py.SHADER_NAME] = [
+            py.DESCRIPTION,
+            py.DESCRIPTION.CALL_REG()
+        ]
+        
+        return bpy.gl_stream[py.SHADER_NAME]
+    
+    except Exception as e:
+        print(f"[SHADER ASSIGNING TO STREAM/reg REPORT]: at [{py.SHADER_NAME}]: '{e}'")
+#===========================================================
+def register():
+    # Init streams,
+    if not hasattr(bpy,"gl_stream"):
+        bpy.gl_stream = {} 
+    if not hasattr(bpy,"gl_Hs"):
+        bpy.gl_Hs = []
+
+#===========================================================
+def unregister():
+    for i,h in enumerate(bpy.gl_Hs):
+        if h != None: 
+            try:
+                bpy.types.SpaceView3D.draw_handler_remove(h,'WINDOW')
+            except Exception as e: 
+                print(f"[GLSL HANDLER UNREGESTRATION REPORT] at [{i}]: '{e}'")
+
+    for pair in bpy.gl_stream.values():
+        if pair != None: 
+            try:
+                pair[0].CALL_UNREG()
+            except Exception as e: 
+                print(f"[GLSL SHADER UNREGESTRATION REPORT]: [{pair[0].NAME}]: '{e}'")
+
+    del bpy.gl_stream
+    del bpy.gl_Hs
+========================================
+E:\soon\projects\PBNPR\code\bpy_glsl_manager\gpu_types.py
+========================================
+
+# --- blender specific ---
+bl_verts = 'vertices'
+bl_Co = 'co'
+bl_normal = 'normal'
+bl_loop_triangles = 'loop_triangles'
+
+# --- Data Types (for CreateInfo) ---
+FLOAT    = 'FLOAT'
+INT      = 'INT'
+UINT     = 'UINT'
+VEC2     = 'VEC2'
+VEC3     = 'VEC3'
+VEC4     = 'VEC4'
+MAT3     = 'MAT3'
+MAT4     = 'MAT4'
+IVEC2    = 'IVEC2'
+IVEC3    = 'IVEC3'
+IVEC4    = 'IVEC4'
+UVEC2    = 'UVEC2'
+UVEC3    = 'UVEC3'
+UVEC4    = 'UVEC4'
+# --- Texture Sampler Types ---
+SAMPLER_1D           = 'FLOAT_1D'
+SAMPLER_2D           = 'FLOAT_2D'
+SAMPLER_3D           = 'FLOAT_3D'
+SAMPLER_CUBE         = 'FLOAT_CUBE'
+SAMPLER_BUFFER       = 'FLOAT_BUFFER'
+SAMPLER_1D_ARRAY     = 'FLOAT_1D_ARRAY'
+SAMPLER_2D_ARRAY     = 'FLOAT_2D_ARRAY'
+SAMPLER_CUBE_ARRAY   = 'FLOAT_CUBE_ARRAY'
+SAMPLER_2D_SHADOW    = 'FLOAT_2D_SHADOW'  # For depth maps
+
+# --- Standard Attribute Names (Blender Conventions) ---
+ATTR_POS      = "pos"      # Standard position (vec3)
+ATTR_NORMAL   = "normal"   # Standard normal (vec3)
+ATTR_UV       = "uv"       # Standard UV map (vec2)
+ATTR_COLOR    = "color"    # Vertex color (vec4)
+ATTR_TANGENT  = "tangent"  # Tangent (vec4)
+ATTR_POINT    = "point"    # Point (vec3)
+# --- Standard Output Names ---
+ATTR_OUT_FRAG_COLOR = "fragColor" # Standard Fragment Output
+
+# --- GPU State Constants ---
+DEPTH_NONE    = 'NONE'       # Disable depth testing
+DEPTH_ALWAYS  = 'ALWAYS'     # Always draw, regardless of depth
+DEPTH_LESS    = 'LESS'       # Standard: Draw if closer
+DEPTH_LEQUAL  = 'LESS_EQUAL' # Draw if closer or equal (Default)
+DEPTH_GREATER = 'GREATER'    # Draw if further away
+DEPTH_GEQUAL  = 'GREATER_EQUAL'
+
+BLEND_NONE    = 'NONE'
+BLEND_ALPHA   = 'ALPHA'              # Standard transparency
+BLEND_ADD     = 'ADDITIVE'           # Light accumulation (fire, lasers)
+BLEND_ADD_ALPHA = 'ADDITIVE_ALPHA'   # Additive but respects alpha
+BLEND_MULTIPLY = 'MULTIPLY'          # Darkening (shadows)
+
+CULL_NONE     = 'NONE'     # Draw both sides of faces
+CULL_BACK     = 'BACK'     # Don't draw back-faces (Standard optimization)
+CULL_FRONT    = 'FRONT'    # Don't draw front-faces (Inside-out view)
+
+# --- Primitive Types (for batch_for_shader) ---
+PRIM_POINTS     = 'POINTS'
+PRIM_LINES      = 'LINES'
+PRIM_TRIS       = 'TRIS'
+PRIM_LINE_STRIP = 'LINE_STRIP'
+PRIM_TRI_STRIP  = 'TRI_STRIP'
+
+#--- utlis ---
+SHADER_V = 'vert.glsl'
+SHADER_F = 'frag.glsl'
+SHADER_DRAW_REGION_WINDOW  = 'WINDOW'
+SHADER_DRAW_TYPE_POST_PIXEL= 'POST_PIXEL'# Usually  for 2D drawing and 
+SHADER_DRAW_TYPE_POST_VIEW = 'POST_VIEW'  # for 3D drawing. 
+SHADER_DRAW_TYPE_PRE_VIEW  = 'PRE_VIEW'   # for 3D drawing before the main scene is drawn. Useful for backgrounds or effects that should appear behind everything else.
+
+========================================
+E:\soon\projects\PBNPR\code\bpy_glsl_manager\ui_.py
+========================================
+# This file belongs to S00N's PBNPR Blender Add-on
+# all rights reserved (C) 2024 S00N
+import bpy 
+from bpy_extras.io_utils import ImportHelper
+from bpy_extras.io_utils import ExportHelper
+import importlib.util
+import shutil
+import sys
+import os
+from .src_template import shaderNameMe as GLSL_DEFAULT
+
+#===========================================================
+def _get_streamKeys(self, context):
+    items = [("Select", "Select Shader...", "")]
+    for key in bpy.gl_stream.keys():
+        items.append((key, key, ""))
+    return items
+def _global_classes():
+    bpy.types.Scene.gl_settings = bpy.props.PointerProperty(type=gl_mainSettings)
+    bpy.types.Scene.gl_stack    = bpy.props.CollectionProperty(type=gl_instance_sk)
+#====================CONSTANT===============================
+ID_OP_ADD_MOD_FROM_DIR = "gl.import_shader"
+ID_OP_EX_TEMP_MOD      = "gl.export_shader_template"
+ID_OP_REMOVE           = "gl.remove_instance"
+ID_INST_add_shader_i   = "selected_type_add"
+ID_INST_rem_shader_i   = "selected_type_remove"
+#====================PANEL===============================
+class gl_panel(bpy.types.Panel):
+    bl_label       = "GLSL Manager"
+    bl_space_type  = 'VIEW_3D'
+    bl_region_type = 'UI'
+    bl_category    = 'PBNPR'
+
+    def draw(self, context):
+        layout   = self.layout
+        STACK    = bpy.context.scene.gl_stack
+        SETTINGS = bpy.context.scene.gl_settings
+
+        box = layout.box()
+        row = box.row(align=True)
+        row.operator(ID_OP_EX_TEMP_MOD,     icon='NEWFOLDER',text='Export project')
+        row.operator(ID_OP_ADD_MOD_FROM_DIR, icon='FILE_NEW', text='import shader.py')
+
+        row = box.row()
+        row.prop(SETTINGS, ID_INST_add_shader_i, text="Add a shader type block")
+        row = box.row() 
+        row.prop(SETTINGS, ID_INST_rem_shader_i, text="Remove a shader type")
+
+        for i, INST in enumerate(STACK):
+            box = layout.box()
+            row = box.row(align=True)
+            
+            row.prop(INST, "expanded", 
+                icon='TRIA_DOWN' if INST.expanded else 'TRIA_RIGHT',
+                icon_only=True, emboss=False
+            )
+            row.label(text=INST.shaderType, icon='SHADING_RENDERED')
+            row.prop(INST, "enabled", text="")
+            
+            op         = row.operator(ID_OP_REMOVE, text="", icon='X')
+            op.index_i = i 
+
+            if INST.expanded:
+                custom_params = getattr(
+                    INST, 
+                    f"ptr_{INST.shaderType}", 
+                    None
+                )
+                bpy.gl_stream[INST.shaderType][0].CALL_UI_SPEC(self,custom_params)
+
+#====================INSTANCE===============================
+def tog_inst_H(self, context):
+    if self.enabled and self.handler_id == -1: # Enabled but inActive 
+        STACK = bpy.context.scene.gl_stack
+        for i,j in enumerate(STACK):
+            if self == j: # address level comparision
+                self.handler_id = i
+                break
+        
+        while bpy.gl_Hs.__len__() <= self.handler_id: # size checker
+            bpy.gl_Hs.append(None)
+
+        desc   = bpy.gl_stream[self.shaderType][0]
+        if desc == None:
+            print(f"[HANDLER TOGGLE REPORT]: No desc found for shader type: {self.shaderType}")
+            return
+        shader = bpy.gl_stream[self.shaderType][1]
+        if shader == None:
+            print(f"[HANDLER TOGGLE REPORT]: shader is NONE for shader type: {self.shaderType}")
+            return
+        ui     = getattr(
+            self, 
+            f"ptr_{self.shaderType}", 
+            None
+        )
+        if ui == None:
+            print(f"[HANDLER TOGGLE REPORT]: No UI found for shader type: {self.shaderType}")
+            return
+        batch  = desc.CALL_BATCH(shader,ui)
+
+        args = (
+            shader,
+            batch,
+            ui
+        )
+        handler = bpy.types.SpaceView3D.draw_handler_add(
+            desc.CALL_EXEC,   args,
+            desc.DRAW_REGION, desc.DRAW_TYPE
+        )
+
+        bpy.gl_Hs[self.handler_id]=handler
+    
+    elif not self.enabled and self.handler_id != -1: # Disabled but active
+        pair = bpy.gl_stream[self.shaderType]
+        desc = pair[0]
+
+        if bpy.gl_Hs[self.handler_id] == None:
+            print(f"[HANDLER TOGGLE REPORT]: Attempting to remove a handler that is already None for shader type: {self.shaderType}")
+            self.handler_id = -1
+            return
+
+        bpy.types.SpaceView3D.draw_handler_remove(
+            bpy.gl_Hs[self.handler_id], 
+            desc.DRAW_REGION
+        )
+        bpy.gl_Hs[self.handler_id] = None
+        self.handler_id = -1
+class gl_instance_sk(bpy.types.PropertyGroup):
+    enabled:     bpy.props.BoolProperty(default=False, update=tog_inst_H)  # pyright: ignore[reportInvalidTypeForm]
+    expanded:    bpy.props.BoolProperty(default=True) # pyright: ignore[reportInvalidTypeForm]
+    shaderType:  bpy.props.StringProperty(default="") # pyright: ignore[reportInvalidTypeForm]
+    handler_id : bpy.props.IntProperty(default=-1) # pyright: ignore[reportInvalidTypeForm]
+
+#====================SETTINGS AND OPS===============================
+def tog_shType_add(self, context):
+    target = self.selected_type_add 
+    if target == "Select": 
+        return
+    STACK = bpy.context.scene.gl_stack
+
+    new_i = STACK.add()
+    new_i.shaderType = target
+
+    target = "Select" 
+def tog_shType_remove(self, context):
+    target = self.selected_type_remove
+    if target == "Select": 
+        return
+    # Clear the target relatives
+    STACK = bpy.context.scene.gl_stack
+    for i,j in enumerate(STACK):
+        if j.shaderType == target:
+            j.enabled = False
+            STACK.remove(i)
+    delattr(
+        gl_instance_sk,
+        f"ptr_{target}"
+    )
+    # remove shader type key in gl_stream
+    try:
+        bpy.gl_stream[target][0].CALL_UNREG()
+    except Exception as e:
+        print(f"[UI SETTINGS DEL REPORT] Couldnt UNREGISTER this shader type: {target} | error: {e}")
+    bpy.gl_stream.pop(target)
+    if target in sys.modules:
+        del sys.modules[target]
+    target = "Select"
+
+class gl_mainSettings(bpy.types.PropertyGroup):
+    selected_type_add: bpy.props.EnumProperty(
+        name="", update=tog_shType_add, 
+        items =_get_streamKeys
+    ) # pyright: ignore[reportInvalidTypeForm]
+    selected_type_remove: bpy.props.EnumProperty(
+        name="", update=tog_shType_remove, 
+        items=_get_streamKeys
+    ) # pyright: ignore[reportInvalidTypeForm]
+
+class gl_OP_remove_instance(bpy.types.Operator):
+    bl_idname = ID_OP_REMOVE
+    bl_label = ""
+    index_i : bpy.props.IntProperty(default=-1) # pyright: ignore[reportInvalidTypeForm]
+
+    def execute(self, context):
+        stack = bpy.context.scene.gl_stack
+        if self.index_i < len(stack):
+            stack[self.index_i].enabled = False # Triggers toggle() to remove handler
+            stack.remove(self.index_i)
+        return {'FINISHED'}
+
+#====================PROJECT DIRECTORY MANAGEMENT===============================
+class gl_OP_Export_templateMOD(bpy.types.Operator, ExportHelper): # Use ExportHelper for folders
+    bl_idname    = ID_OP_EX_TEMP_MOD
+    bl_label     = "Create New Shader Project"
+    filename_ext = "" 
+    directory:   bpy.props.StringProperty(subtype='DIR_PATH') # pyright: ignore[reportInvalidTypeForm]
+
+    def execute(self, context):
+        template_src = os.path.dirname(GLSL_DEFAULT.__file__)
+        target_dir   = os.path.join(self.directory, "new_shader")
+        try:
+            shutil.copytree(template_src, target_dir)
+            self.report({'INFO'}, f"Template created: {target_dir}")
+        except Exception as e:
+            self.report({'ERROR'}, f"Export Failed: {str(e)}")
+        return {'FINISHED'}
+    
+    def invoke(self, context, event):
+        # We force the file selector to open
+        # For folders, we ensure the directory property is used
+        context.window_manager.fileselect_add(self)
+        return {'RUNNING_MODAL'}
+
+def safe_import_mod(filepath):
+    """
+    Dynamically imports a Python file into Blender.
+    Ensures the module is reloaded fresh for debugging.
+    """
+    try:
+        # 1. Get Absolute Path and Name
+        mod_path = os.path.abspath(filepath)
+        # Use the filename as the module key (e.g., 'my_shader' from '*/my_shader.py')
+        mod_name = os.path.splitext(os.path.basename(mod_path))[0]
+
+        # 2. FORCE RELOAD
+        if mod_name in sys.modules:
+            del sys.modules[mod_name]
+
+        # 3. Create the Spec (idk some perCursor of importyed *.py)
+        spec = importlib.util.spec_from_file_location(mod_name,mod_path)
+        
+        if spec is None or spec.loader is None:
+            print(f"Error: Could not find a valid Python spec for {mod_path}")
+            return None
+
+        # 4. Load and Execute
+        ext_mod = importlib.util.module_from_spec(spec)
+        sys.modules[mod_name] = ext_mod # register in system
+        spec.loader.exec_module(ext_mod)
+        return ext_mod
+    except Exception as e:
+        print(f"Safe Import Failed: {e}")
+        return None
+    
+class gl_OP_import_shaderMOD(bpy.types.Operator, ImportHelper):
+    bl_idname = ID_OP_ADD_MOD_FROM_DIR
+    bl_label = "Load Shader Script"
+
+    filter_glob: bpy.props.StringProperty(default="*.py", options={'HIDDEN'}) # pyright: ignore[reportInvalidTypeForm]
+
+    def execute(self, context):
+        ext_mod = safe_import_mod(self.filepath)
+        
+        if ext_mod:
+            from .GLSLbase import assign_shader
+            m = assign_shader(ext_mod)
+            if m == None:
+                return
+            desc = m[0]
+            
+            setattr(
+                gl_instance_sk, f"ptr_{desc.NAME}", 
+                bpy.props.PointerProperty(type=desc.UI)
+            )
+            
+            self.report({'INFO'}, f"Freshly Loaded: {desc.NAME}")
+            return {'FINISHED'}
+            
+        self.report({'ERROR'}, "Import failed. Check Console.")
+        return {'CANCELLED'}
+
+    def invoke(self, context, event):
+        # This ensures the window pops up even if called from a script
+        context.window_manager.fileselect_add(self)
+        return {'RUNNING_MODAL'}
+
+#======================STARTUPS==========================
+classes = (
+    gl_instance_sk,
+    gl_OP_remove_instance,
+    gl_OP_Export_templateMOD,
+    gl_OP_import_shaderMOD,
+    gl_mainSettings,
+    gl_panel
+)
+
+def register():
+    for cl in classes: 
+        bpy.utils.register_class(cl)
+    _global_classes()
+
+    from .GLSLbase import assign_shader
+    assign_shader(GLSL_DEFAULT)
+    py = GLSL_DEFAULT.DESCRIPTION
+    if not hasattr(gl_instance_sk, f"ptr_{py.NAME}"):
+        setattr(
+            gl_instance_sk, f"ptr_{py.NAME}", 
+            bpy.props.PointerProperty(type=py.UI)
+        )
+
+def unregister():
+    for cl in reversed(classes):
+        bpy.utils.unregister_class(cl)
+    del bpy.types.Scene.gl_settings
+    del bpy.types.Scene.gl_stack
+    
+========================================
+E:\soon\projects\PBNPR\code\bpy_glsl_manager\__init__.py
+========================================
+# This file belongs to S00N's PBNPR Blender Add-on
+# all rights reserved (C) 2024 S00N
+bl_info = {
+    "name": "PBNPR: GLSL Manager",
+    "author": "S00N",
+    "version": (1, 0),
+    "blender": (5, 0, 1),
+    "location": "View3D > N-Panel > PBNPR",
+    "description": "High-performance GLSL viewport manager and baker",
+    "category": "Render",
+}
+
+import importlib
+from . import GLSLbase
+from . import ui_
+from . import gpu_types as t
+#============================================================
+def register():
+    # Handle reloads during development 
+    if "bpy" in locals():
+        importlib.reload(t)
+        importlib.reload(GLSLbase)
+        importlib.reload(ui_)
+
+    GLSLbase.register()
+    ui_.register()
+
+def unregister():
+    ui_.unregister()
+    GLSLbase.unregister()
+
+if __name__ == "__main__":
+    register()
+
+========================================
+E:\soon\projects\PBNPR\code\bpy_glsl_manager\src_template\frag.glsl
+========================================
+// This file belongs to S00N's PBNPR Blender Add-on
+// all rights reserved (C) 2024 S00N
+
+// with ' vec4 color '
+void main() {
+    fragColor = color;
+}
+========================================
+E:\soon\projects\PBNPR\code\bpy_glsl_manager\src_template\shaderNameMe.py
+========================================
+# This file belongs to S00N's PBNPR Blender Add-on
+# all rights reserved (C) 2024 S00N
+#========================WARNING=================================
+#Important!: This file is a template for shader integration.
+# the name of this file (shaderNameMe.py) must be changed to the desired shader name when copied.
+# MUST BE UNIQUE TO NOT INTERFIER WITH PYTHON MODULES AND OTHER SHADERS IN THE STREAM.
+# BE AWARE all python files have the same access to any thing in bpy module, so name collisions may occur.
+#========================IMPORTS=================================
+import os
+import bpy
+import gpu
+from gpu_extras.batch import batch_for_shader
+from dataclasses import dataclass
+from typing import Callable, Type
+from bpy_glsl_manager import gpu_types as t
+#=====================__FILE__ CONSTANTS===========================
+BASE_DIR     = os.path.dirname(__file__)
+ABS_DIR      = os.path.abspath(__file__)
+SHADER_NAME  = os.path.splitext(os.path.basename(ABS_DIR))[0]
+V            = os.path.join(BASE_DIR, t.SHADER_V)
+F            = os.path.join(BASE_DIR, t.SHADER_F)
+DRAW_REGION  = t.SHADER_DRAW_REGION_WINDOW
+DRAW_TYPE    = t.SHADER_DRAW_TYPE_POST_VIEW
+DRAW_PRIMITIVE_METHOD = t.PRIM_TRIS
+
+#=====================UI EXPOSURE===========================
+def bake_toggle(self, context):
+    if not self.bake:
+        return
+    try:
+        img = self.target_img
+        if not img: return
+
+        W, H   = img.size
+        # Access the stream (assuming it was initialized in your manager)
+        desc, shader = bpy.gl_stream[SHADER_NAME]
+        
+        batch  = desc.CALL_BATCH(shader, self)
+        offscreen = gpu.types.GPUOffScreen(W, H) 
+
+        with offscreen.bind():
+            gpu.state.viewport_set(0, 0, W, H)
+            # Clear is recommended in 5.0.1 to avoid artifacts
+            fbo = gpu.state.active_framebuffer_get()
+            fbo.clear(color=(0.0, 0.0, 0.0, 0.0))
+            
+            desc.CALL_EXEC(shader, batch, self)
+            buffer = fbo.read_color(0, 0, W, H, 4, 0, 'FLOAT')
+
+        buffer.dimensions = W * H * 4 
+        img.pixels.foreach_set(buffer) 
+        img.update() 
+        
+        offscreen.free()
+    except Exception as e:
+        print(f"[SHADER OFFSCREEN BAKING REPORT]: failed at {SHADER_NAME} : Message: {e}")
+    self.bake = False
+class shader_params(bpy.types.PropertyGroup):
+    #Customs
+    Colour : bpy.props.FloatVectorProperty(
+        name="Color",subtype='COLOR', default=(0.0, 0.0, 0.0, 1.0), min=0.0, max=1.0,
+        description="Color to use in the shader", size=4
+    ) # pyright: ignore[reportInvalidTypeForm]
+    # Sarder params
+    bake : bpy.props.BoolProperty(default=False,update=bake_toggle) # pyright: ignore[reportInvalidTypeForm]
+    target_img: bpy.props.PointerProperty(
+        name="Target Image",
+        type=bpy.types.Image
+    ) # pyright: ignore[reportInvalidTypeForm]
+    expand_sets: bpy.props.BoolProperty(default=True)
+    alwyas_on_top: bpy.props.BoolProperty(
+        name="Always on Top (X-Ray)", 
+        default=False, 
+        description="Disable depth testing to see through solids"
+    ) # pyright: ignore[reportInvalidTypeForm]
+    blend_mode: bpy.props.EnumProperty(
+        name="Blend Mode",
+        items=[
+            (t.BLEND_NONE,      "Opaque",         "Solid object"),
+            (t.BLEND_ALPHA,     "Alpha Blend",    "Standard transparency"),
+            (t.BLEND_ADD,       "Additive",       "Glowing/Hologram style"),
+            (t.BLEND_ADD_ALPHA, "Additive Alpha", "Additive but respects alpha"),
+            (t.BLEND_MULTIPLY,  "Multiply",       "Darkening, good for shadows")
+        ],
+        default=t.BLEND_NONE
+    ) # pyright: ignore[reportInvalidTypeForm]
+    depth_mode: bpy.props.EnumProperty(
+        name="Depth Mode",
+        items=[
+            (t.DEPTH_NONE,    "None",       "No depth testing, draw on top of everything"),
+            (t.DEPTH_ALWAYS,  "Always",     "Draw regardless of depth, but still write to depth buffer"),
+            (t.DEPTH_LESS,    "Less",       "Standard: Draw if closer than existing pixels"),
+            (t.DEPTH_LEQUAL,  "Less Equal", "Draw if closer or equal (Default)"),
+            (t.DEPTH_GREATER, "Greater",    "Draw if further away than existing pixels"),
+            (t.DEPTH_GEQUAL,  "Greater Equal","Draw if further or equal")
+        ],
+        default=t.DEPTH_LEQUAL
+    ) # pyright: ignore[reportInvalidTypeForm]
+    cull_mode: bpy.props.EnumProperty(
+        name="Cull Mode",
+        items=[
+            (t.CULL_NONE,   "None",   "No culling"),
+            (t.CULL_FRONT,  "Front",  "Cull front faces"),
+            (t.CULL_BACK,   "Back",   "Cull back faces (Default)")
+        ],
+        default=t.CULL_BACK
+    ) # pyright: ignore[reportInvalidTypeForm]
+
+def specify_ui_in_panel(
+        panel : bpy.types.Panel, 
+        ui : shader_params
+    ):
+    box = panel.layout.box()
+    # List all of the shader_params items, the ui is also customized
+    col = box.column()
+    col.prop(ui, "Colour")
+    row = box.row()
+    row.prop(ui,"bake",icon='SCENE',text='')
+    row.prop(ui,"target_img",icon_only=True)
+    col = box.column(align=True)
+    col.prop(ui, "expand_sets", 
+        icon='TRIA_DOWN' if ui.expand_sets else 'TRIA_RIGHT',
+        text="settings"
+    )
+    if ui.expand_sets:
+        col.prop(ui, "alwyas_on_top")
+        col.prop(ui, "blend_mode")
+        col.prop(ui, "depth_mode")
+        col.prop(ui, "cull_mode")
+#======================LOCALE SHADER INTERFACE==============================
+COLOR = 'color'
+# extra if needed
+UBO_1 = None
+#======================COMPILE INTERFACE==============================
+def createInfo():
+    info = gpu.types.GPUShaderCreateInfo()
+    #=== VARS - OBJs ===
+    # Vert
+    info.vertex_in(0,    t.VEC3, t.ATTR_POS)
+    # Frag
+    info.fragment_out(0, t.VEC4, t.ATTR_OUT_FRAG_COLOR)
+    # Glob
+    info.push_constant(  t.VEC4, COLOR)
+    
+    #=== SHADERS =====
+    with open(V, "r", encoding="utf-8") as f: 
+        vert_src = f.read()
+    with open(F, "r", encoding="utf-8") as f:
+        frag_src = f.read()
+    info.vertex_source(vert_src)
+    info.fragment_source(frag_src)
+    return info
+
+#======================FUNCTIONALITY================================
+def uniforms_bind(
+        shader: gpu.types.GPUShader, 
+        ui: shader_params
+    ):
+    shader.uniform_float(COLOR, ui.Colour)
+
+def batch_make(
+        shader: gpu.types.GPUShader, 
+        ui: shader_params
+    ):
+    coords = [(-0.5, -0.5), (0.5, -0.5), (0.0, 0.5)]
+    # Attribute name 'pos' must be registered in CreateInfo
+    return batch_for_shader(
+        shader, 
+        DRAW_PRIMITIVE_METHOD, 
+        {
+            t.ATTR_POS: coords,
+        }
+    )
+
+def safe_exec(
+        shader: gpu.types.GPUShader, 
+        batch: gpu.types.GPUBatch, 
+        ui: shader_params
+    ):
+    gpu.state.blend_set(ui.blend_mode)
+    gpu.state.depth_test_set(ui.depth_mode)
+    gpu.state.face_culling_set(ui.cull_mode)
+
+    shader.bind()
+    uniforms_bind(shader, ui)
+    batch.draw(shader)
+    
+    gpu.state.blend_set(t.BLEND_NONE)
+    gpu.state.depth_test_set(t.DEPTH_NONE)
+    gpu.state.face_culling_set(t.CULL_NONE)
+
+#=================== 5.0.1 REGISTRATION (CreateInfo) =============================
+def register():
+    info = createInfo()
+
+    try:
+        shader = gpu.shader.create_from_info(info)
+    except Exception as e:
+        print(f"[ERORR AT COMPILING SHADER FROM INFO] at {SHADER_NAME}: {e}]")
+    
+    bpy.utils.register_class(shader_params)
+        
+    return shader
+
+def unregister():
+    global UBO_1
+    UBO_1 = None # Explicitly release UBO
+    bpy.utils.unregister_class(shader_params)
+
+#===========================================================
+@dataclass
+class ShaderDesc:
+    NAME: str
+    PATH_VERT: str
+    PATH_FRAG: str
+    DRAW_REGION: str
+    DRAW_TYPE: str
+    DRAW_PRIMITIVE_METHOD:str
+    CALL_UNI: Callable
+    CALL_BATCH: Callable
+    CALL_EXEC: Callable
+    CALL_REG:Callable
+    CALL_UNREG:Callable
+    UI: Type
+    CALL_UI_SPEC:Callable
+DESCRIPTION = ShaderDesc(
+    NAME                  = SHADER_NAME,
+    PATH_VERT             = V,
+    PATH_FRAG             = F,
+    DRAW_REGION           = DRAW_REGION, 
+    DRAW_TYPE             = DRAW_TYPE, 
+    DRAW_PRIMITIVE_METHOD = DRAW_PRIMITIVE_METHOD,
+    CALL_UNI              = uniforms_bind,
+    CALL_BATCH            = batch_make,
+    CALL_EXEC             = safe_exec,
+    CALL_REG              = register,
+    CALL_UNREG            = unregister,
+    UI                    = shader_params,
+    CALL_UI_SPEC          = specify_ui_in_panel
+)
+========================================
+E:\soon\projects\PBNPR\code\bpy_glsl_manager\src_template\vert.glsl
+========================================
+//# This file belongs to S00N's PBNPR Blender Add-on
+//# all rights reserved (C) 2024 S00N
+
+// with 'in pos'
+void main() {
+    // 'pos' is injected as an input by CreateInfo
+    gl_Position = vec4(pos, 1.0);
+}
+========================================
+E:\soon\projects\PBNPR\code\util\sync.py
+========================================
+
+import os
+import shutil
+
+# Source and destination paths
+src = r"E:\soon\projects\PBNPR\code\bpy_glsl_manager"
+dst = r"C:\Users\ADMINI~1\AppData\Roaming\Blender Foundation\Blender\5.0\scripts\addons\bpy_glsl_manager"
+
+# Ensure destination exists
+os.makedirs(dst, exist_ok=True)
+
+# Iterate through all files and folders in source
+for item in os.listdir(src):
+    src_path = os.path.join(src, item)
+    dst_path = os.path.join(dst, item)
+
+    # If destination already has the file/folder, remove it first (force overwrite)
+    if os.path.exists(dst_path):
+        if os.path.isfile(dst_path) or os.path.islink(dst_path):
+            os.remove(dst_path)
+        elif os.path.isdir(dst_path):
+            shutil.rmtree(dst_path)
+
+    # Copy file or folder
+    if os.path.isdir(src_path):
+        shutil.copytree(src_path, dst_path)
+    else:
+        shutil.copy2(src_path, dst_path)
+
+print("All files copied successfully.")
+
+========================================
+E:\soon\projects\PBNPR\code\util\sync_to_blender.py
+========================================
+"""
+Sync utility: Copy bpy_glsl_manager from repo to Blender addons directory
+"""
+import shutil
+import os
+from pathlib import Path
+
+# Define paths
+REPO_SOURCE = r"e:\soon\projects\PBNPR\code\bpy_glsl_manager"
+BLENDER_DEST = r"C:\Users\ADMINI~1\AppData\Roaming\Blender Foundation\Blender\5.0\scripts\addons\bpy_glsl_manager"
+
+def sync_to_blender():
+    """Sync bpy_glsl_manager from repo to Blender addons (forced overwrite)"""
+    
+    # Verify source exists
+    if not os.path.exists(REPO_SOURCE):
+        print(f"❌ ERROR: Source directory not found: {REPO_SOURCE}")
+        return False
+    
+    # Verify destination exists
+    if not os.path.exists(BLENDER_DEST):
+        print(f"❌ ERROR: Destination directory not found: {BLENDER_DEST}")
+        return False
+    
+    try:
+        # Remove existing destination
+        if os.path.exists(BLENDER_DEST):
+            print(f"🗑️  Removing existing directory: {BLENDER_DEST}")
+            shutil.rmtree(BLENDER_DEST)
+        
+        # Copy entire directory
+        print(f"📋 Copying from: {REPO_SOURCE}")
+        print(f"📍 Copying to:   {BLENDER_DEST}")
+        shutil.copytree(REPO_SOURCE, BLENDER_DEST)
+        
+        print("✅ SUCCESS: Files synced to Blender addons!")
+        return True
+        
+    except Exception as e:
+        print(f"❌ ERROR during sync: {e}")
+        return False
+
+if __name__ == "__main__":
+    sync_to_blender()

@@ -253,9 +253,10 @@ class gl_OP_import_shaderMOD(bpy.types.Operator, ImportHelper):
         
         if ext_mod:
             from .GLSLbase import assign_shader
-            desc = assign_shader(ext_mod)[0]
-            if desc == None:
+            m = assign_shader(ext_mod)
+            if m == None:
                 return
+            desc = m[0]
             
             setattr(
                 gl_instance_sk, f"ptr_{desc.NAME}", 

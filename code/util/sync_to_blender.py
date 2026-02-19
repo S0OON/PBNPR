@@ -1,6 +1,4 @@
-"""
-Sync utility: Copy bpy_glsl_manager from repo to Blender addons directory
-"""
+
 import shutil
 import os
 from pathlib import Path
