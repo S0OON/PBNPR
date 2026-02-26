@@ -69,8 +69,6 @@ def register():
     # Init streams,
     if not hasattr(bpy,"gl_stream"):
         bpy.gl_stream = {} 
-    if not hasattr(bpy,"gl_Hs"):
-        bpy.gl_Hs = []
 
 #===========================================================
 def unregister():

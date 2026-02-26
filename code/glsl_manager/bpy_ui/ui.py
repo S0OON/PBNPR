@@ -7,14 +7,6 @@ import importlib.util
 import shutil
 import sys
 import os
-from .src_template import shaderNameMe as GLSL_DEFAULT
-
-#===========================================================
-def _get_streamKeys(self, context):
-    items = [("Select", "Select Shader...", "")]
-    for key in bpy.gl_stream.keys():
-        items.append((key, key, ""))
-    return items
 #====================CONSTANT===============================
 ID_OP_ADD_MOD_FROM_DIR = "gl.import_shader"
 ID_OP_EX_TEMP_MOD      = "gl.export_shader_template"
@@ -66,30 +58,9 @@ class gl_panel(bpy.types.Panel):
                 bpy.gl_stream[INST.shaderType][0].CALL_UI_SPEC(self,custom_params)
 
 #====================INSTANCE===============================
-def tog_inst_H(self, context):
-    if self.enabled and self.view_handler == None: # Enabled but INactive
-        try:
-            desc   = bpy.gl_stream[self.shaderType][0]
-            shader = bpy.gl_stream[self.shaderType][1]
-            ui     = getattr(self, f"ptr_{self.shaderType}", None )
-            batch  = desc.CALL_BATCH(shader,ui)
-            args   = (shader,batch,ui) 
-            self.view_handler = bpy.types.SpaceView3D.draw_handler_add(desc.CALL_EXEC, args, desc.DRAW_REGION, desc.DRAW_TYPE)
-        except Exception as e:
-            self.report({'ERROR'}, f"Failed to enable shader [{self.shaderType}]: {e}")
-            self.enabled = False
-            self.view_handler = None
-            return
-    elif not self.enabled and self.view_handler != None: # Disabled but active
-        try:
-            desc   = bpy.gl_stream[self.shaderType][0]
-            bpy.types.SpaceView3D.draw_handler_remove(self.view_handler, desc.DRAW_REGION)
-            self.view_handler = None
-        except Exception as e:
-            self.report({'ERROR'}, f"Failed to remove handler [{self.shaderType}]: {e}")
-
-class gl_instance_sk(bpy.types.PropertyGroup):
-    enabled:     bpy.props.BoolProperty(default=False, update=tog_inst_H)  # pyright: ignore[reportInvalidTypeForm]
+class gl_panel_shader_unit(bpy.types.PropertyGroup):
+    """A container of the shaderType + its ui constraints."""
+    enabled:     bpy.props.BoolProperty(default=False)  # pyright: ignore[reportInvalidTypeForm]
     expanded:    bpy.props.BoolProperty(default=True) # pyright: ignore[reportInvalidTypeForm]
     shaderType:  bpy.props.StringProperty(default="") # pyright: ignore[reportInvalidTypeForm]
     view_handler = None
@@ -129,7 +100,7 @@ def tog_shType_remove(self, context):
         del sys.modules[target]
     target = "Select"
 
-class gl_mainSettings(bpy.types.PropertyGroup):
+class gl_Panel_header_settings(bpy.types.PropertyGroup):
     selected_type_add: bpy.props.EnumProperty(
         name="", update=tog_shType_add, 
         items =_get_streamKeys
@@ -239,19 +210,14 @@ class gl_OP_import_shaderMOD(bpy.types.Operator, ImportHelper):
 
 #======================STARTUPS==========================
 classes = (
-    gl_instance_sk,
-    gl_OP_remove_instance,
-    gl_OP_Export_templateMOD,
-    gl_OP_import_shaderMOD,
-    gl_mainSettings,
-    gl_panel
+    
 )
 
 def register():
     for cl in classes: 
         bpy.utils.register_class(cl)
-    bpy.types.Scene.gl_settings = bpy.props.PointerProperty(type=gl_mainSettings)
-    bpy.types.Scene.gl_stack    = bpy.props.CollectionProperty(type=gl_instance_sk)
+    bpy.types.Scene.gl_settings = bpy.props.PointerProperty(type=gl_Panel_header_settings)
+    bpy.types.Scene.gl_stack    = bpy.props.CollectionProperty(type=gl_panel_shader_unit)
 
 def unregister():
     for cl in reversed(classes):
