@@ -1,15 +1,15 @@
 # gl_context.py - Initialize once, reuse everywhere
 import moderngl
 import numpy as np
-
+ 
 class GLContext:
-    """Standalone ModernGL context for rendering"""
+    """Singleton ModernGL context for rendering"""
     _instance = None
     
     @classmethod
     def get(cls):
         if cls._instance is None:
-            cls._instance = moderngl.create_standalone_context()
+            cls._instance = moderngl.create_context()
             print(f"ModernGL {cls._instance.version_code} initialized")
         return cls._instance
     

@@ -4,8 +4,8 @@ import os
 from pathlib import Path
 
 # Define paths
-REPO_SOURCE = r"e:\soon\projects\PBNPR\code\bpy_glsl_manager"
-BLENDER_DEST = r"C:\Users\ADMINI~1\AppData\Roaming\Blender Foundation\Blender\5.0\scripts\addons\bpy_glsl_manager"
+REPO_SOURCE = r"E:\soon\projects\PBNPR\code\glsl_manager"
+BLENDER_DEST = r"C:\Users\ADMINI~1\AppData\Roaming\Blender Foundation\Blender\5.0\scripts\addons\glsl_manager"
 
 def sync_to_blender():
     """Sync bpy_glsl_manager from repo to Blender addons (forced overwrite)"""
@@ -17,8 +17,7 @@ def sync_to_blender():
     
     # Verify destination exists
     if not os.path.exists(BLENDER_DEST):
-        print(f"❌ ERROR: Destination directory not found: {BLENDER_DEST}")
-        return False
+        os.makedirs(BLENDER_DEST)
     
     try:
         # Remove existing destination

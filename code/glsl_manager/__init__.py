@@ -10,18 +10,9 @@ bl_info = {
     "category": "Render",
 }
 
-import importlib
-from .gl      import modrenGL_lib   as mgl
-from .gl      import shader_pattren as mgl_pt
-from .gl.util import util_types     as t
 from .bpy_ui  import ui
 #============================================================
 def register():
-    if "bpy" in locals():
-        importlib.reload(mgl)
-        importlib.reload(mgl_pt)
-        importlib.reload(t)
-        importlib.reload(ui)
     ui.register()
 
 def unregister():

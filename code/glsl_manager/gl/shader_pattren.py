@@ -1,9 +1,16 @@
-
-import moderngl
+import moderngl,bpy
 import numpy as np
-from modrenGL_lib import GLContext
+from glsl_manager.gl.modrenGL_lib import GLContext
+
 
 class ShaderBase:
+    """
+    Base class for the ui to understand (Base unit).
+
+    a child class MUST override: NAME, VERT_SRC and FRAG_SRC and render_object().
+
+    helper functions start with '_'
+    """
     NAME = "BaseShader"
     VERT_SRC = """
         #version 330
@@ -27,31 +34,40 @@ class ShaderBase:
         """
         Compile only (program creation), using the child's source code strings. #version 330
         
-        Adds an additional FBO,VAO
+        Adds an additional ctx,prog,FBO,VAO
         """
         self.ctx = GLContext.get()
         self.prog = self.ctx.program(vertex_shader=self.VERT_SRC,
                                     fragment_shader=self.FRAG_SRC)
-        self.vao = None  # Created per-geometry
-        self.fbo = None  # Created per-resolution
+        self.vao = None
+        self.fbo = None
+
+    def render_object(self):
+        """
+        Must overide, will be called in addon's internals.
+        """
     
-    def uniform(self, **kwargs):
-        """Simple uniforms helper"""
+    def _release(self):
+        if self.vao:
+            self.vao.release()
+        if self.fbo:
+            self.fbo.release()
+        self.prog.release()
+    
+    def _uniform(self, **kwargs): 
         for name, value in kwargs.items():
             self.prog[name].value = value
     
-    def exec(self, width, height, gl_flags, clear=True):
-        """
-        Render to an off-screen framebuffer, returning pixel data as a numpy array.
-        
-        Must provide VAO and program uniforms before calling.
-        """
+    def _exec(self, width, height, gl_flags:list =None, clear=True):
+        """Return the Rendered Pixel data (demands VAO)"""
         if self.fbo is None or self.fbo.size != (width, height):
             self.fbo = self.ctx.framebuffer(
                 color_attachments=[self.ctx.texture((width, height), 4)])
-        
+            
         self.fbo.use()
-        self.ctx.enable(gl_flags)
+        if gl_flags:
+            for f in gl_flags:
+                self.ctx.enable(f)
     
         if clear:
             self.ctx.clear(0.0, 0.0, 0.0, 0.0)
@@ -64,12 +80,17 @@ class ShaderBase:
             self.fbo.read(components=4), 
             dtype=np.uint8)
     
-    def render_object(self):
-        """Override this method in child classes to set up VAO, uniforms, and call exec()"""
+class ui_base(bpy.types.PropertyGroup):
+    """
+    Base class to define custom UI as the shader demnads.
     
-    def release(self):
-        if self.vao:
-            self.vao.release()
-        if self.fbo:
-            self.fbo.release()
-        self.prog.release()
+    must override draw_self_to_panel_canvas to draw the UI in the panel.
+    """ 
+        
+    def draw_self_to_panel_canvas(self,canvas:bpy.types.UILayout):
+        """
+        Canvas is a box() passed boy the addon internal machine.
+
+        Just like a canvas.
+        """
+        return

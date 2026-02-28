@@ -11,34 +11,10 @@ class MyEffect(ShaderBase):
     # Custom GLSL
     VERT_SRC = """
         #version 330
-        in vec3 in_pos;
-        in vec3 in_normal;
-        
-        uniform mat4 m_world;
-        uniform mat4 m_view;
-        uniform mat4 m_proj;
-        
-        out vec3 v_normal;
-        
-        void main() {
-            v_normal = in_normal;
-            mat4 mvp = m_proj * m_view * m_world;
-            gl_Position = mvp * vec4(in_pos, 1.0);
-        }
     """
     
     FRAG_SRC = """
         #version 330
-        in vec3 v_normal;
-        out vec4 fragColor;
-        
-        uniform vec3 light_dir;
-        uniform vec4 base_color;
-        
-        void main() {
-            float diff = max(dot(normalize(v_normal), normalize(light_dir)), 0.0);
-            fragColor = vec4(base_color.rgb * diff, base_color.a);
-        }
     """
     
     def __init__(self):

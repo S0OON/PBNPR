@@ -1,4 +1,14 @@
-
+from dataclasses import dataclass
+from typing import Callable, Type
+@dataclass
+class SHADER_INTERP:
+    """
+    This is for the addon's internals to understand the current python file.
+    
+    data = UI(bpy.type.propertyGroup),SHADER(a provided default pattern provided in glsl_manager.gl.shader_pattren)
+    """
+    UI    :Type
+    SHADER:Type
 # --- blender specific ---
 bl_verts = 'vertices'
 bl_Co = 'co'
