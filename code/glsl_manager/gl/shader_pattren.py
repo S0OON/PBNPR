@@ -58,27 +58,40 @@ class ShaderBase:
         for name, value in kwargs.items():
             self.prog[name].value = value
     
-    def _exec(self, width, height, gl_flags:list =None, clear=True):
-        """Return the Rendered Pixel data (demands VAO)"""
+    def _exec(self, width, height, gl_flags=None, clear=True):
+        """
+        Execute render with specified GPU state flags.
+        
+        Args:
+            width, height: Render target size
+            gl_flags: ModernGL flags from ctx.enable() (DEPTH_TEST, BLEND, etc.)
+            clear: Whether to clear framebuffer before render
+        """
+        # Setup framebuffer
         if self.fbo is None or self.fbo.size != (width, height):
+            if self.fbo:
+                self.fbo.release()
             self.fbo = self.ctx.framebuffer(
                 color_attachments=[self.ctx.texture((width, height), 4)])
-            
+
         self.fbo.use()
+        # Apply render state flags
         if gl_flags:
-            for f in gl_flags:
-                self.ctx.enable(f)
-    
+            self.ctx.enable(gl_flags)
+        else:
+            self.ctx.disable(moderngl.DEPTH_TEST | moderngl.BLEND | moderngl.CULL_FACE)
+        
         if clear:
             self.ctx.clear(0.0, 0.0, 0.0, 0.0)
-
+        
         if self.vao:
             self.vao.render(moderngl.TRIANGLES)
         
-        # Read pixels (the bridge!)
+        # Read pixels
         return np.frombuffer(
-            self.fbo.read(components=4), 
-            dtype=np.uint8)
+            self.fbo.read(components=4),
+            dtype=np.uint8
+        )
     
 class ui_base(bpy.types.PropertyGroup):
     """
