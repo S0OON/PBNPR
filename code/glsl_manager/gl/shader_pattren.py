@@ -1,6 +1,7 @@
 import moderngl,bpy
 import numpy as np
 from glsl_manager.gl.modrenGL_lib import GLContext
+from glsl_manager.gl.util import util_types as t
 
 
 class ShaderBase:
@@ -11,6 +12,7 @@ class ShaderBase:
 
     helper functions start with '_'
     """
+    __slots__ = ['ctx', 'prog', 'vao', 'fbo']  # Optimize memory usage by defining fixed attributes
     NAME = "BaseShader"
     VERT_SRC = """
         #version 330
@@ -70,16 +72,18 @@ class ShaderBase:
         # Setup framebuffer
         if self.fbo is None or self.fbo.size != (width, height):
             if self.fbo:
-                self.fbo.release()
+                self.fbo.release() 
+            depth_buffer = self.ctx.depth_renderbuffer((width, height))
+            
             self.fbo = self.ctx.framebuffer(
-                color_attachments=[self.ctx.texture((width, height), 4)])
+                color_attachments=[self.ctx.texture((width, height), 4)],
+                depth_attachment=depth_buffer
+            )
 
         self.fbo.use()
         # Apply render state flags
         if gl_flags:
             self.ctx.enable(gl_flags)
-        else:
-            self.ctx.disable(moderngl.DEPTH_TEST | moderngl.BLEND | moderngl.CULL_FACE)
         
         if clear:
             self.ctx.clear(0.0, 0.0, 0.0, 0.0)
@@ -87,12 +91,17 @@ class ShaderBase:
         if self.vao:
             self.vao.render(moderngl.TRIANGLES)
         
-        self.ctx.disable(moderngl.DEPTH_TEST | moderngl.BLEND | moderngl.CULL_FACE)
-        # Read pixels
-        return np.frombuffer(
+        pixels = np.frombuffer(
             self.fbo.read(components=4),
-            dtype=np.uint8
-        )
+            dtype=np.uint8)
+
+        self.ctx.disable(t.GL_FLAGS['DEPTH_TEST'] |        
+                         t.GL_FLAGS['CULL_FACE'] |        
+                         t.GL_FLAGS['BLEND'] |        
+                         t.GL_FLAGS['PROGRAM_POINT_SIZE'] |        
+                         t.GL_FLAGS['RASTERIZER_DISCARD'] )
+        # Read pixels
+        return pixels 
     
 class ui_base(bpy.types.PropertyGroup):
     """

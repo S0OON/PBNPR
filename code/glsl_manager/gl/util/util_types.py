@@ -1,5 +1,7 @@
 from dataclasses import dataclass
 from typing import Callable, Type
+import moderngl
+
 @dataclass
 class SHADER_INTERP:
     """
@@ -7,8 +9,75 @@ class SHADER_INTERP:
     
     data = UI(bpy.type.propertyGroup),SHADER(a provided default pattern provided in glsl_manager.gl.shader_pattren)
     """
-    UI    :Type
-    SHADER:Type
+    UI     : Type
+    SHADER : Type
+
+import moderngl
+# --- 1. CONTEXT FLAGS (For ctx.enable / ctx.disable) ---
+# Combine these using bitwise OR (|) when building flags for ctx.enable()
+GL_FLAGS = {
+    'DEPTH_TEST'        : moderngl.DEPTH_TEST,
+    'CULL_FACE'         : moderngl.CULL_FACE,
+    'BLEND'             : moderngl.BLEND,
+    'PROGRAM_POINT_SIZE': moderngl.PROGRAM_POINT_SIZE,
+    'RASTERIZER_DISCARD': moderngl.RASTERIZER_DISCARD,
+    'NONE': 0  # Safe fallback if UI is set to None/Off
+}
+
+# --- 2. DEPTH FUNCTIONS (For ctx.depth_func) ---
+# ModernGL relies on simple math strings instead of confusing C++ integer constants.
+DEPTH_FUNCS = {
+    'LESS'      : '<',      # Standard: Draw if closer to camera
+    'LESS_EQUAL': '<=',     # Draw if closer or equal (ModernGL Default)
+    'EQUAL'     : '==',     # Draw only if exactly equal
+    'NOT_EQUAL' : '!=',     # Draw if different
+    'ALWAYS'    : '1',      # Always draw, ignoring depth
+    'NEVER'     : '0'       # Never draw
+}
+
+# --- 3. CULL FACE MODES (For ctx.cull_face) ---
+# ModernGL uses simple strings.
+CULL_MODES = {
+    'BACK'          : 'back',            # Standard optimization: Don't draw inside faces
+    'FRONT'         : 'front',           # Inside-out view: Don't draw outside faces
+    'FRONT_AND_BACK': 'front_and_back'   # Draw nothing, idk wtf this
+}
+
+# --- 4. BLEND PRESETS (For ctx.blend_func) ---
+# Format is a tuple: (Source, Destination)
+BLEND_PRESETS = {
+    'ALPHA'        : (moderngl.SRC_ALPHA, moderngl.ONE_MINUS_SRC_ALPHA), # Standard transparency
+    'ADDITIVE'     : (moderngl.ONE,       moderngl.ONE),                 # Glows, fire, lasers
+    'MULTIPLY'     : (moderngl.DST_COLOR, moderngl.ZERO),                # Darkening, shadows
+    'PREMULTIPLIED': (moderngl.ONE,       moderngl.ONE_MINUS_SRC_ALPHA), # Premultiplied alpha
+    'NONE': None                                                         # Disable blending entirely
+}
+
+# --- 5. DATA TYPES (For buffer attributes) ---
+# ModernGL uses struct format strings (data type + bytes per component).
+# e.g., 'f4' = Float 4-byte (32-bit float). 'i1' = Integer 1-byte(idk i think its either an boolean).
+GL_TYPES = {
+    'FLOAT' : 'f4',      # 32-bit float (Standard for vertices/normals)
+    'DOUBLE': 'f8',      # 64-bit float
+    'INT'   : 'i4',      # 32-bit signed integer
+    'UINT'  : 'u4',      # 32-bit unsigned integer
+    'SHORT' : 'i2',      # 16-bit signed integer
+    'BYTE'  : 'i1',      # 8-bit signed integer
+    'UBYTE' : 'f1'       # 8-bit unsigned int (Standard for 0-255 color data)
+}
+
+# --- 6. PRIMITIVE TYPES (For vao.render(mode=...)) ---
+# These are the standard geometric drawing modes.
+PRIMITIVES = {
+    'POINTS'        : moderngl.POINTS,
+    'LINES'         : moderngl.LINES,
+    'LINE_STRIP'    : moderngl.LINE_STRIP,
+    'LINE_LOOP'     : moderngl.LINE_LOOP,
+    'TRIANGLES'     : moderngl.TRIANGLES,       # Standard 3D 
+    'TRIANGLE_STRIP': moderngl.TRIANGLE_STRIP,
+    'TRIANGLE_FAN'  : moderngl.TRIANGLE_FAN
+}
+
 # --- blender specific ---
 bl_verts = 'vertices'
 bl_Co = 'co'

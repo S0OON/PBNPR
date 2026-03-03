@@ -1,5 +1,5 @@
 import bpy,moderngl
-from glsl_manager.gl.util import util_types as t 
+from glsl_manager.gl.util import util_types as t
 from glsl_manager.gl.shader_pattren import ShaderBase, ui_base
 import numpy as np
 from typing import cast 
@@ -44,7 +44,7 @@ class Shader(ShaderBase):
         super().__init__()
 
 #======================================
-coords = np.array([(-0.5, -0.5,0.0), (0.5, -0.5,0.0), (0.0, 0.5,0.0)], dtype=np.float32)
+coords = np.array([(-0.5, -0.5,0.0), (0.5, -0.5,0.0), (0.0, 0.5,0.0)], dtype=np.float32) # cool tringle coordinates
 
 #======================================
 def execute_bake(self, context):
@@ -61,24 +61,26 @@ class bpy_ui(ui_base):
     Bake: bpy.props.BoolProperty(default=False,update=execute_bake) # pyright: ignore[reportInvalidTypeForm]
     baking_target_img: bpy.props.PointerProperty(type=bpy.types.Image) # pyright: ignore[reportInvalidTypeForm]
     show_settings: bpy.props.BoolProperty(default=False) # pyright: ignore[reportInvalidTypeForm]
+    
     depth_test: bpy.props.EnumProperty(
         name="Depth Test", 
         description="How to handle depth buffer",
-        items=[ (str(int(moderngl.DEPTH_TEST)), "Enabled", "Check depth, draw if closer"),
-                ("0", "Disabled", "Ignore depth, draw on top"),],default=str(int(moderngl.DEPTH_TEST)) ) # pyright: ignore[reportInvalidTypeForm]
+        default="LESS_EQUAL", # Changed from no default to valid dict key
+        items=[(i,i,'') for i in t.DEPTH_FUNCS.keys()] ) # pyright: ignore[reportInvalidTypeForm]
+    
     blend_mode: bpy.props.EnumProperty(
         name="Blend Mode",
         description="How to blend colors",
-        default="0",  # Opaque by default,
-        items=[("0", "None", "Opaque, overwrite pixels"),
-               (str(int(moderngl.BLEND)), "Alpha Blend", "Standard transparency"),]) # pyright: ignore[reportInvalidTypeForm]
+        default="NONE",  # Changed from "0" to valid dict key
+        items=[(i,i,'') for i in t.BLEND_PRESETS.keys()]) # pyright: ignore[reportInvalidTypeForm]
+    
     cull_face: bpy.props.EnumProperty(
         name="Cull Faces", 
         description="Which faces to skip drawing",
-        default="0",
-        items=[ ("0", "None", "Draw both front and back faces"),
-                (str(int(moderngl.CULL_FACE)), "Back", "Don't draw back-facing faces"),]) # pyright: ignore[reportInvalidTypeForm]
+        default="BACK",  # Changed from "0" to valid dict key
+        items=[(i,i,'') for i in t.CULL_MODES.keys()] ) # pyright: ignore[reportInvalidTypeForm]
     # peripheral
+    clear : bpy.props.BoolProperty(default=True) # pyright: ignore[reportInvalidTypeForm]
     color: bpy.props.FloatVectorProperty(
         name="Color",
         size=4,
@@ -94,6 +96,7 @@ class bpy_ui(ui_base):
         row = canvas.row(align=True)
         row.prop(self, 'Bake', text="", icon='RENDER_RESULT', icon_only=True)
         row.prop(self, 'baking_target_img', text="")
+        row.prop(self, 'clear',emboss=True)
         # shader specific
         row = canvas.row(align=True)
         row.prop(self, 'color', text="")
@@ -116,18 +119,18 @@ class bpy_ui(ui_base):
             col.prop(self, 'blend_mode')
             col.prop(self, 'cull_face') 
     
-    def get_gl_flags(self):
+    def _get_gl_flags(self): # Note the underscore prefix, this is an internal helper method not meant to be called from outside.
         """Convert UI settings to ModernGL flags for ctx.enable()"""
         flags = 0
         
-        if int(self.depth_test):
+        if self.depth_test != 'NONE':
             flags |= moderngl.DEPTH_TEST
-        if int(self.blend_mode):
+        if self.blend_mode != 'NONE':
             flags |= moderngl.BLEND
-        if int(self.cull_face):
+        if self.cull_face != 'NONE':
             flags |= moderngl.CULL_FACE 
             
-        return flags if flags else None 
+        return flags if flags else None
     
     def _get_mesh_data_for_gpu(self,obj:bpy.types.Object):
         depsgraph = bpy.context.evaluated_depsgraph_get()
@@ -207,10 +210,20 @@ class bpy_ui(ui_base):
                     (VAO_p, '3f', t.ATTR_POS),
                     (VAO_n, '3f', t.ATTR_NORMAL)
                  ])
+            
+            f = ui._get_gl_flags()
+            if f: 
+                shader.ctx.enable(f)
+            if ui.depth_test != 'NONE':
+                shader.ctx.depth_func = t.DEPTH_FUNCS[ui.depth_test] 
 
-            p = shader._exec(w,h,
-                gl_flags=self.get_gl_flags()
-            )
+            if ui.blend_mode != 'NONE':
+                shader.ctx.blend_func = t.BLEND_PRESETS[ui.blend_mode] 
+
+            if ui.cull_face != 'NONE':
+                shader.ctx.cull_face = t.CULL_MODES[ui.cull_face]
+                
+            p = shader._exec(w,h,clear=ui.clear)
             
             # Assign to image
             img.pixels.foreach_set(p.astype(np.float32).reshape(-1) / 255.0)
