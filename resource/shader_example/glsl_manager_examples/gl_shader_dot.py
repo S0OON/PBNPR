@@ -60,6 +60,7 @@ class bpy_ui(ui_base):
     shader_obj = Shader()
     Bake: bpy.props.BoolProperty(default=False,update=execute_bake) # pyright: ignore[reportInvalidTypeForm]
     baking_target_img: bpy.props.PointerProperty(type=bpy.types.Image) # pyright: ignore[reportInvalidTypeForm]
+    clear : bpy.props.BoolProperty(default=True) # pyright: ignore[reportInvalidTypeForm]
     show_settings: bpy.props.BoolProperty(default=False) # pyright: ignore[reportInvalidTypeForm]
     
     depth_test: bpy.props.EnumProperty(
@@ -80,7 +81,6 @@ class bpy_ui(ui_base):
         default="BACK",  # Changed from "0" to valid dict key
         items=[(i,i,'') for i in t.CULL_MODES.keys()] ) # pyright: ignore[reportInvalidTypeForm]
     # peripheral
-    clear : bpy.props.BoolProperty(default=True) # pyright: ignore[reportInvalidTypeForm]
     color: bpy.props.FloatVectorProperty(
         name="Color",
         size=4,
@@ -180,11 +180,10 @@ class bpy_ui(ui_base):
                 print(f"Shader object is None at {__file__}")
                 return
             
+            point = ui.vector
+
             obj = cast(bpy.types.Object,ui.Object)
             if not obj: return
-
-            point = ui.vector
-            if point is None: return
 
             deps = bpy.context.evaluated_depsgraph_get()
             w,h     = img.size[0],img.size[1]
@@ -234,7 +233,7 @@ class bpy_ui(ui_base):
             
         finally:
             self.Bake = False
-    
+            
     def unregister(self):
         self.shader_obj._release()
 
