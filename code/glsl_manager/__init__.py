@@ -10,12 +10,13 @@ bl_info = {
     "category": "Render",
 }
 
-from .bpy_ui  import ui
+from .ui  import ui
 #============================================================
 def register():
     ui.register()
 
 def unregister():
+    ui.unregister()
     return
 
 if __name__ == "__main__":

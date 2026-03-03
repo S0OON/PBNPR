@@ -87,6 +87,7 @@ class ShaderBase:
         if self.vao:
             self.vao.render(moderngl.TRIANGLES)
         
+        self.ctx.disable(moderngl.DEPTH_TEST | moderngl.BLEND | moderngl.CULL_FACE)
         # Read pixels
         return np.frombuffer(
             self.fbo.read(components=4),
@@ -98,6 +99,7 @@ class ui_base(bpy.types.PropertyGroup):
     Base class to define custom UI as the shader demnads.
     
     must override draw_self_to_panel_canvas to draw the UI in the panel.
+    must override unregister to clean up locale data.
     """ 
         
     def draw_self_to_panel_canvas(self,canvas:bpy.types.UILayout):
@@ -107,3 +109,6 @@ class ui_base(bpy.types.PropertyGroup):
         Just like a canvas.
         """
         return
+    
+    def unregister(self):
+        pass

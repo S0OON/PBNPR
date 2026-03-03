@@ -8,7 +8,9 @@ import importlib.util
 import shutil
 import sys
 import os 
+from typing import cast
 from glsl_manager.gl.example import gl_shader_template as GLSL_DEFAULT
+from glsl_manager.gl.modrenGL_lib import GLContext
 #------------------------------------------------------------- 
 PT_OP_ADD_MOD = 'gl.mod_add_shader_py'
 PT_OP_EXPORT  = 'gl.mod_export'
@@ -224,3 +226,19 @@ def register():
         bpy.utils.register_class(cl)
     bpy.types.Scene.gl_Shader_units_stack = bpy.props.CollectionProperty(type=gl_shader_unit_instance)
     bpy.types.Scene.gl_PT_header_settings = bpy.props.PointerProperty(type=gl_PT_Header_settings) 
+ 
+def unregister():
+    for cl in reversed(css):
+        bpy.utils.unregister_class(cl)
+
+    for i,j in enumerate(bpy.context.scene.gl_Shader_units_stack):
+        ui = cast(GLSL_DEFAULT.bpy_ui, getattr(j, j.shader_type))
+        if ui:
+            ui.unregister()
+    for i,j in shaders:
+        if i in sys.modules: del sys.modules[i]
+    
+    GLContext.release()
+    del bpy.types.Scene.gl_Shader_units_stack
+    del bpy.types.Scene.gl_PT_header_settings
+    shaders.clear()

@@ -3,31 +3,48 @@ from glsl_manager.gl.util import util_types as t
 from glsl_manager.gl.shader_pattren import ShaderBase, ui_base
 import numpy as np
 from typing import cast 
-# this is a simple triangle implementation.
+# this is a simple dot product implementation.
 
+mOBJ = 'mOBJ'
+mCAM = 'mCAM'
+mPROJ = 'mPROJ'
+COLOR = 'color'
 #======================================
 class Shader(ShaderBase):
     NAME = "TriangleShader"
-    VERT_SRC='''
-#version 330
-    in vec2 in_pos;
-        void main() {
-            gl_Position = vec4(in_pos, 0.0, 1.0);
-        }
-'''
-    FRAG_SRC='''
-#version 330
-    uniform vec4 color;
-    out vec4 fragColor;
-        void main() {
-            fragColor = color;
-        }
-'''
+    VERT_SRC= (
+'#version 330\n'
+    f'uniform mat4 {mOBJ };'
+    f'uniform mat4 {mCAM };'
+    f'uniform mat4 {mPROJ};'
+
+    f'in vec3 {t.ATTR_POS};'
+    f'in vec3 {t.ATTR_NORMAL};'
+    f'out vec3 N;'
+        'void main() {'
+            f'N={t.ATTR_NORMAL};'
+            f'gl_Position = {mPROJ}* {mCAM}*{mOBJ}*vec4({t.ATTR_POS}, 1.0);'
+        '}'
+)
+    FRAG_SRC=( 
+'#version 330\n'
+    f'uniform vec4 {COLOR};'
+    f'uniform vec3 {t.ATTR_POINT};'
+
+    f'in vec3 N;'
+    f'out vec4 {t.ATTR_OUT_FRAG_COLOR};'
+        'void main() {'
+            'vec3 A = normalize(point);'
+            'vec3 B = normalize(N);'
+            f'float Dota = dot(A,B);'
+            f'{t.ATTR_OUT_FRAG_COLOR} = vec4( Dota * {COLOR}.rgb, {COLOR}.a);'
+        '}'
+)
     def __init__(self):
         super().__init__()
 
 #======================================
-coords = np.array([(-0.5, -0.5), (0.5, -0.5), (0.0, 0.5)], dtype=np.float32)
+coords = np.array([(-0.5, -0.5,0.0), (0.5, -0.5,0.0), (0.0, 0.5,0.0)], dtype=np.float32)
 
 #======================================
 def execute_bake(self, context):
@@ -44,20 +61,17 @@ class bpy_ui(ui_base):
     Bake: bpy.props.BoolProperty(default=False,update=execute_bake) # pyright: ignore[reportInvalidTypeForm]
     baking_target_img: bpy.props.PointerProperty(type=bpy.types.Image) # pyright: ignore[reportInvalidTypeForm]
     show_settings: bpy.props.BoolProperty(default=False) # pyright: ignore[reportInvalidTypeForm]
-    
     depth_test: bpy.props.EnumProperty(
         name="Depth Test", 
         description="How to handle depth buffer",
         items=[ (str(int(moderngl.DEPTH_TEST)), "Enabled", "Check depth, draw if closer"),
                 ("0", "Disabled", "Ignore depth, draw on top"),],default=str(int(moderngl.DEPTH_TEST)) ) # pyright: ignore[reportInvalidTypeForm]
-    
     blend_mode: bpy.props.EnumProperty(
         name="Blend Mode",
         description="How to blend colors",
         default="0",  # Opaque by default,
         items=[("0", "None", "Opaque, overwrite pixels"),
                (str(int(moderngl.BLEND)), "Alpha Blend", "Standard transparency"),]) # pyright: ignore[reportInvalidTypeForm]
-    
     cull_face: bpy.props.EnumProperty(
         name="Cull Faces", 
         description="Which faces to skip drawing",
@@ -72,7 +86,8 @@ class bpy_ui(ui_base):
         default=(1.0, 1.0, 1.0, 1.0),
         min=(0.0),max=(1.0)
     ) # pyright: ignore[reportInvalidTypeForm]
-    
+    Object : bpy.props.PointerProperty(type=bpy.types.Object) # pyright: ignore[reportInvalidTypeForm]
+    vector : bpy.props.FloatVectorProperty(subtype='XYZ') # pyright: ignore[reportInvalidTypeForm]
     # ======================================
     def draw_self_to_panel_canvas(self, canvas: bpy.types.UILayout):
         # Main controls
@@ -82,6 +97,10 @@ class bpy_ui(ui_base):
         # shader specific
         row = canvas.row(align=True)
         row.prop(self, 'color', text="")
+        row = canvas.row(align=True)
+        row.prop(self, 'Object')
+        row = canvas.row()
+        row.prop(self, 'vector')
         
         # Settings expander
         box = canvas.box()
@@ -110,10 +129,45 @@ class bpy_ui(ui_base):
             
         return flags if flags else None 
     
+    def _get_mesh_data_for_gpu(self,obj:bpy.types.Object):
+        depsgraph = bpy.context.evaluated_depsgraph_get()
+        eval_obj  = obj.evaluated_get(depsgraph)
+        mesh      = eval_obj.to_mesh()
+        mesh.calc_loop_triangles()
+        
+        tris_count = len(mesh.loop_triangles)
+        
+        # 1. Get the Loop Indices (The specific corners of every triangle)
+        loops_indices = np.empty((tris_count * 3), dtype=np.int32)
+        mesh.loop_triangles.foreach_get("loops", loops_indices)
+
+        # 2. Get Vertex Indices (Which vertex does each corner point to?)
+        vertex_indices = np.empty((tris_count * 3), dtype=np.int32)
+        mesh.loop_triangles.foreach_get(t.bl_verts, vertex_indices)
+
+        # --- A. Collect Positions ---
+        # Get all unique positions, then map them to our triangle corners
+        all_pos = np.empty((len(mesh.vertices), 3), dtype=np.float32)
+        mesh.vertices.foreach_get(t.bl_Co, all_pos.reshape(-1))
+        
+        # Create the final flat array of positions (3 for every triangle)
+        final_pos = all_pos[vertex_indices]
+
+        # --- B. Collect Normals ---
+        # Get normals from LOOPS (This preserves Sharp Edges and Custom Split Normals, like bleeding)
+        all_normals = np.empty((len(mesh.loops), 3), dtype=np.float32)
+        mesh.loops.foreach_get(t.bl_normal, all_normals.reshape(-1))
+        
+        # final flat array of normals
+        final_normals = all_normals[loops_indices]
+
+        eval_obj.to_mesh_clear() # Clean up (safe in 4.0/5.0 context depending on usage)
+        
+        return loops_indices ,final_pos, final_normals
+
     def bake_exec(self, context):
         ui = self
         if not ui.Bake: return
-            
         try:
             img = cast(bpy.types.Image, ui.baking_target_img)
             if not img: return
@@ -123,23 +177,39 @@ class bpy_ui(ui_base):
                 print(f"Shader object is None at {__file__}")
                 return
             
-            # Set uniforms
+            obj = cast(bpy.types.Object,ui.Object)
+            if not obj: return
+
+            point = ui.vector
+            if point is None: return
+
+            deps = bpy.context.evaluated_depsgraph_get()
+            w,h     = img.size[0],img.size[1]
+            cam     = cast(bpy.types.Camera,bpy.context.scene.camera)
+            m_world = np.array(obj.matrix_world.transposed(),                     dtype=np.float32).flatten()
+            m_view  = np.array(cam.matrix_world.inverted().transposed(),          dtype=np.float32).flatten()
+            m_proj  = np.array(cam.calc_matrix_camera(deps,x=w,y=h).transposed(), dtype=np.float32).flatten()
+
             shader._uniform(
                 color=(ui.color[0], ui.color[1], ui.color[2], ui.color[3]),
+                mOBJ = m_world,
+                mCAM = m_view,
+                mPROJ = m_proj,
+                point = (point[0],point[1],point[2])
             )
             
             # Upload geometry
-            VAO = shader.ctx.buffer(coords.tobytes())
-            shader.vao = shader.ctx.vertex_array(
-                shader.prog,
-                [(VAO, '2f', 'in_pos')]
-            )
+            i,p,n = cast(np.array,self._get_mesh_data_for_gpu(obj))
 
-            # Execute render regarding flags
-            gl_flags = self.get_gl_flags()
-            p = shader._exec(
-                img.size[0],img.size[1],
-                gl_flags=gl_flags
+            VAO_p = shader.ctx.buffer(p)
+            VAO_n = shader.ctx.buffer(n)
+            shader.vao = shader.ctx.vertex_array(shader.prog,[
+                    (VAO_p, '3f', t.ATTR_POS),
+                    (VAO_n, '3f', t.ATTR_NORMAL)
+                 ])
+
+            p = shader._exec(w,h,
+                gl_flags=self.get_gl_flags()
             )
             
             # Assign to image
@@ -151,6 +221,7 @@ class bpy_ui(ui_base):
             
         finally:
             self.Bake = False
+    
     def unregister(self):
         self.shader_obj._release()
 
