@@ -109,6 +109,7 @@ class bpy_ui(ui_base):
     ) # pyright: ignore[reportInvalidTypeForm]
     Object : bpy.props.PointerProperty(type=bpy.types.Object) # pyright: ignore[reportInvalidTypeForm]
     vector : bpy.props.FloatVectorProperty(subtype='XYZ') # pyright: ignore[reportInvalidTypeForm]
+    blank_bool : bpy.props.BoolProperty(default=False) # pyright: ignore[reportInvalidTypeForm]
     # ======================================
     def draw_self_to_panel_canvas(self, canvas: bpy.types.UILayout):
         # Main controls
@@ -124,6 +125,9 @@ class bpy_ui(ui_base):
         row = canvas.row()
         row.prop(self, 'vector')
         
+        if self.Object.types == {'MESH'}:
+            row = canvas.row()
+            row.prop(self, 'blank_bool')
         # Settings expander
         box = canvas.box()
         row = box.row()
