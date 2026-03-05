@@ -58,12 +58,12 @@ class gl_shader_unit_instance(bpy.types.PropertyGroup):
     Expand : bpy.props.BoolProperty(default=False)  # pyright: ignore[reportInvalidTypeForm]
 
 def _get_available_shaders_add(self,context):
-    items = [("Select", "Add a shader...", "")]
+    items = [("Select", "Add a Shader Type", "")]
     for key in shaders.keys():
         items.append((key, key, ""))
     return items
 def _get_available_shaders_remove(self,context):
-    items = [("Select", "Remove a shader type...", "")]
+    items = [("Select", "Remove a Shader Type", "")]
     for key in shaders.keys():
         items.append((key, key, ""))
     return items
@@ -110,7 +110,7 @@ class gl_PT_Header_settings(bpy.types.PropertyGroup):
 
 class gl_OP_Export_templateMOD(bpy.types.Operator, ExportHelper): # Use ExportHelper for folders
     bl_idname    = PT_OP_EXPORT
-    bl_label     = "Create New Shader Project"
+    bl_label     = "Export"
     filename_ext = "" 
     directory:   bpy.props.StringProperty(subtype='DIR_PATH') # pyright: ignore[reportInvalidTypeForm]
 
@@ -132,7 +132,7 @@ class gl_OP_Export_templateMOD(bpy.types.Operator, ExportHelper): # Use ExportHe
 
 class gl_OP_import_shaderMOD(bpy.types.Operator, ImportHelper):
     bl_idname = PT_OP_ADD_MOD
-    bl_label = "Load Shader Script"
+    bl_label     = "Import"
 
     filter_glob: bpy.props.StringProperty(default="*.py", options={'HIDDEN'}) # pyright: ignore[reportInvalidTypeForm]
     def invoke(self, context, event):
@@ -156,7 +156,7 @@ class gl_OP_import_shaderMOD(bpy.types.Operator, ImportHelper):
 
 class gl_OP_Remove_stack_index(bpy.types.Operator):
     bl_idname = ID_OP_REMOVE
-    bl_label = ""
+    bl_label     = ""
     index_i : bpy.props.IntProperty(default=-1) # pyright: ignore[reportInvalidTypeForm]
     
     def execute(self, context):
@@ -182,15 +182,15 @@ class gl_PT(bpy.types.Panel):
 
         row = box.row(align=True)
         row.scale_y=2.0
-        j=row.operator(PT_OP_EXPORT,icon='NEWFOLDER') # Header Type operators
-        i=row.operator(PT_OP_ADD_MOD,icon='FILE_NEW')
+        j=row.operator(PT_OP_EXPORT,icon='NEWFOLDER',text='Export')
+        i=row.operator(PT_OP_ADD_MOD,icon='FILE_NEW',text='Import')
         row = box.row(align=True)
-        row.prop(SETTINGS,'selected_type_remove',text='')
+        row.prop(SETTINGS,'selected_type_remove',icon='TRASH',emboss=False,text='')
         row = box.row(align=True)
-        row.prop(SETTINGS,'selected_type_add',text='')
+        row.prop(SETTINGS,'selected_type_add',icon='GEOMETRY_SET',emboss=False,text='')
 
         for i,j in enumerate(STACK):
-            #j=gl_shader_unit_instance
+            #j = gl_shader_unit_instance
             box = layout.box()
             row = box.row(align=True)
             

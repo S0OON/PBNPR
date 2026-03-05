@@ -12,34 +12,53 @@ COLOR = 'color'
 #======================================
 class Shader(ShaderBase):
     NAME = "TriangleShader"
-    VERT_SRC= (
+    VERT_SRC = (
 '#version 330\n'
-    f'uniform mat4 {mOBJ };'
-    f'uniform mat4 {mCAM };'
+    f'uniform mat4 {mOBJ};'
+    f'uniform mat4 {mCAM};'
     f'uniform mat4 {mPROJ};'
 
     f'in vec3 {t.ATTR_POS};'
     f'in vec3 {t.ATTR_NORMAL};'
-    f'out vec3 N;'
+    
+    'out vec3 N;'
+    'out vec3 WorldPos;' # We need the vertex position in the world to find the distance to the camera
         'void main() {'
-            f'N={t.ATTR_NORMAL};'
-            f'gl_Position = {mPROJ}* {mCAM}*{mOBJ}*vec4({t.ATTR_POS}, 1.0);'
+            # Convert normal and position to world space
+            f'N = mat3({mOBJ}) * {t.ATTR_NORMAL};' 
+            f'WorldPos = vec3({mOBJ} * vec4({t.ATTR_POS}, 1.0));'
+            
+            f'gl_Position = {mPROJ} * {mCAM} * {mOBJ} * vec4({t.ATTR_POS}, 1.0);'
         '}'
-)
-    FRAG_SRC=( 
+    )
+
+    FRAG_SRC = ( 
 '#version 330\n'
     f'uniform vec4 {COLOR};'
     f'uniform vec3 {t.ATTR_POINT};'
+    'uniform vec3 viewPos;' # The camera's location
 
-    f'in vec3 N;'
-    f'out vec4 {t.ATTR_OUT_FRAG_COLOR};'
+     'in vec3 N;'
+     'in vec3 WorldPos;'
+     f'out vec4 {t.ATTR_OUT_FRAG_COLOR};'
+    
         'void main() {'
-            'vec3 A = normalize(point);'
-            'vec3 B = normalize(N);'
-            f'float Dota = dot(A,B);'
-            f'{t.ATTR_OUT_FRAG_COLOR} = vec4( Dota * {COLOR}.rgb, {COLOR}.a);'
+            'vec3 normal = normalize(N);'
+            'vec3 viewDir = normalize(viewPos - WorldPos);' # Direction from pixel to camera
+            
+            # The Magic Math
+            'float facingRatio = dot(normal, viewDir);'
+            
+            # If the facingRatio is less than 0.3 (close to the edge), 'outline' becomes 1.0
+            # You can change 0.3 to make the line thicker or thinner!
+            'float outline = step(facingRatio, 0.3);' 
+            
+            # Mix the base color with black (vec3(0.0)) based on the outline value
+            'vec3 finalColor = mix(color.rgb, vec3(0.0, 0.0, 0.0), outline);'
+
+            f'{t.ATTR_OUT_FRAG_COLOR} = vec4(finalColor, {COLOR}.a);'
         '}'
-)
+    )
     def __init__(self):
         super().__init__()
 
@@ -197,7 +216,8 @@ class bpy_ui(ui_base):
                 mOBJ = m_world,
                 mCAM = m_view,
                 mPROJ = m_proj,
-                point = (point[0],point[1],point[2]))
+                #point = (point[0],point[1],point[2]),
+                viewPos = (cam.location.x, cam.location.y, cam.location.z))
             
             # Upload geometry
             i,p,n = cast(np.array,self._get_mesh_data_for_gpu(obj))
