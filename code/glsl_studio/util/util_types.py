@@ -3,14 +3,14 @@ from typing import Callable, Type
 import moderngl
 
 @dataclass
-class SHADER_INTERP:
+class MOD_INTERP:
     """
     This is for the addon's internals to understand the current python file.
     
     data = UI(bpy.type.propertyGroup),SHADER(a provided default pattern provided in glsl_manager.gl.shader_pattren)
     """
-    UI     : Type
-    SHADER : Type
+    EXECUTE : Callable
+    UED     : Callable
 
 import moderngl
 # --- 1. CONTEXT FLAGS (For ctx.enable / ctx.disable) ---

@@ -1,6 +1,6 @@
 import bpy,moderngl
-from glsl_manager.gl.util import util_types as t
-from glsl_manager.gl.shader_pattren import ShaderBase, ui_base
+from glsl_studio.gl.util import util_types as t
+from glsl_studio.gl.shader_pattren import ShaderBase, ui_base
 import numpy as np
 from typing import cast 
 # this is a simple dot product implementation.

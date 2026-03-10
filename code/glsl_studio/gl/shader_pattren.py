@@ -1,7 +1,7 @@
 import moderngl,bpy
 import numpy as np
-from glsl_manager.gl.modrenGL_lib import GLContext
-from glsl_manager.gl.util import util_types as t
+from glsl_studio.gl.modrenGL_lib import GLContext
+from glsl_studio.gl.util import util_types as t
 
 
 class ShaderBase:
@@ -10,9 +10,9 @@ class ShaderBase:
 
     a child class MUST override: NAME, VERT_SRC and FRAG_SRC and render_object().
 
-    helper functions start with '_'
+    Fucntions starts with '_' Are internal helpers (NOT CALLED FROM OUTSIDE THE CLASS)
     """
-    __slots__ = ['ctx', 'prog', 'vao', 'fbo']  # Optimize memory usage by defining fixed attributes
+    __slots__ = ['ctx', 'prog', 'vao', 'fbo']
     NAME = "BaseShader"
     VERT_SRC = """
         #version 330
@@ -34,7 +34,7 @@ class ShaderBase:
     
     def __init__(self):
         """
-        Compile only (program creation), using the child's source code strings. #version 330
+        Compile only. (program creation), using the child's source code strings. #version 330
         
         Adds an additional ctx,prog,FBO,VAO
         """
@@ -43,11 +43,6 @@ class ShaderBase:
                                     fragment_shader=self.FRAG_SRC)
         self.vao = None
         self.fbo = None
-
-    def render_object(self):
-        """
-        Must overide, will be called in addon's internals.
-        """
     
     def _release(self):
         if self.vao:
@@ -65,14 +60,13 @@ class ShaderBase:
         Execute render with specified GPU state flags.
         
         Args:
-            width, height: Render target size
             gl_flags: ModernGL flags from ctx.enable() (DEPTH_TEST, BLEND, etc.)
             clear: Whether to clear framebuffer before render
         """
-        # Setup framebuffer
         if self.fbo is None or self.fbo.size != (width, height):
             if self.fbo:
-                self.fbo.release() 
+                self.fbo.release()
+            
             depth_buffer = self.ctx.depth_renderbuffer((width, height))
             
             self.fbo = self.ctx.framebuffer(
@@ -81,7 +75,7 @@ class ShaderBase:
             )
 
         self.fbo.use()
-        # Apply render state flags
+        
         if gl_flags:
             self.ctx.enable(gl_flags)
         
@@ -100,7 +94,6 @@ class ShaderBase:
                          t.GL_FLAGS['BLEND'] |        
                          t.GL_FLAGS['PROGRAM_POINT_SIZE'] |        
                          t.GL_FLAGS['RASTERIZER_DISCARD'] )
-        # Read pixels
         return pixels 
     
 class ui_base(bpy.types.PropertyGroup):
@@ -110,7 +103,6 @@ class ui_base(bpy.types.PropertyGroup):
     must override draw_self_to_panel_canvas to draw the UI in the panel.
     must override unregister to clean up locale data.
     """ 
-        
     def draw_self_to_panel_canvas(self,canvas:bpy.types.UILayout):
         """
         Canvas is a box() passed boy the addon internal machine.

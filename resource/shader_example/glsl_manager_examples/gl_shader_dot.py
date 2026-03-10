@@ -1,6 +1,6 @@
 import bpy,moderngl
-from glsl_manager.gl.util import util_types as t
-from glsl_manager.gl.shader_pattren import ShaderBase, ui_base
+from glsl_studio.gl.util import util_types as t
+from glsl_studio.gl.shader_pattren import ShaderBase, ui_base
 import numpy as np
 from typing import cast 
 # this is a simple dot product implementation.
@@ -56,25 +56,26 @@ def execute_bake(self, context):
         traceback.print_exc()
 
 class bpy_ui(ui_base):
+    __slots__ = ['shader_obj','Bake', 'baking_target_img', 'clear', 'show_settings', # Center
+                 'depth_test','blend_mode','cull_face', # Center2
+                 'color','Object','vector'] # Peripheral
     # center
-    shader_obj = Shader()
-    Bake: bpy.props.BoolProperty(default=False,update=execute_bake) # pyright: ignore[reportInvalidTypeForm]
+    shader_obj         = Shader()
+    Bake:              bpy.props.BoolProperty(default=False,update=execute_bake) # pyright: ignore[reportInvalidTypeForm]
     baking_target_img: bpy.props.PointerProperty(type=bpy.types.Image) # pyright: ignore[reportInvalidTypeForm]
-    clear : bpy.props.BoolProperty(default=True) # pyright: ignore[reportInvalidTypeForm]
-    show_settings: bpy.props.BoolProperty(default=False) # pyright: ignore[reportInvalidTypeForm]
+    clear :            bpy.props.BoolProperty(default=True) # pyright: ignore[reportInvalidTypeForm]
+    show_settings:     bpy.props.BoolProperty(default=False) # pyright: ignore[reportInvalidTypeForm]
     
     depth_test: bpy.props.EnumProperty(
         name="Depth Test", 
         description="How to handle depth buffer",
         default="LESS_EQUAL", # Changed from no default to valid dict key
         items=[(i,i,'') for i in t.DEPTH_FUNCS.keys()] ) # pyright: ignore[reportInvalidTypeForm]
-    
     blend_mode: bpy.props.EnumProperty(
         name="Blend Mode",
         description="How to blend colors",
         default="NONE",  # Changed from "0" to valid dict key
         items=[(i,i,'') for i in t.BLEND_PRESETS.keys()]) # pyright: ignore[reportInvalidTypeForm]
-    
     cull_face: bpy.props.EnumProperty(
         name="Cull Faces", 
         description="Which faces to skip drawing",
@@ -122,7 +123,6 @@ class bpy_ui(ui_base):
     def _get_gl_flags(self): # Note the underscore prefix, this is an internal helper method not meant to be called from outside.
         """Convert UI settings to ModernGL flags for ctx.enable()"""
         flags = 0
-        
         if self.depth_test != 'NONE':
             flags |= moderngl.DEPTH_TEST
         if self.blend_mode != 'NONE':
@@ -193,20 +193,19 @@ class bpy_ui(ui_base):
             m_proj  = np.array(cam.calc_matrix_camera(deps,x=w,y=h).transposed(), dtype=np.float32).flatten()
 
             shader._uniform(
-                color=(ui.color[0], ui.color[1], ui.color[2], ui.color[3]),
-                mOBJ = m_world,
-                mCAM = m_view,
-                mPROJ = m_proj,
-                point = (point[0],point[1],point[2]))
+                color = (ui.color[0], ui.color[1], ui.color[2], ui.color[3]),
+                point = (point[0],point[1],point[2]),
+                mOBJ  = m_world,
+                mCAM  = m_view,
+                mPROJ = m_proj)
             
             # Upload geometry
-            i,p,n = cast(np.array,self._get_mesh_data_for_gpu(obj))
-
-            VAO_p = shader.ctx.buffer(p)
-            VAO_n = shader.ctx.buffer(n)
+            i,p,n = ui._get_mesh_data_for_gpu(obj)
+            VBO_p = shader.ctx.buffer(p)
+            VBO_n = shader.ctx.buffer(n)
             shader.vao = shader.ctx.vertex_array(shader.prog,
-                    [(VAO_p, '3f', t.ATTR_POS),
-                    (VAO_n, '3f', t.ATTR_NORMAL)])
+                    [(VBO_p, '3f', t.ATTR_POS),
+                     (VBO_n, '3f', t.ATTR_NORMAL)])
             
             f = ui._get_gl_flags()
             if f: 
@@ -220,7 +219,6 @@ class bpy_ui(ui_base):
                 
             p = shader._exec(w,h,clear=ui.clear)
             
-            # Assign to image
             img.pixels.foreach_set(p.astype(np.float32).reshape(-1) / 255.0)
             img.update()
         except Exception as e:
