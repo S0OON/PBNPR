@@ -1,26 +1,15 @@
-import os
-import sys
-
-# make the parent of `glsl_studio` visible when running this module directly
-sys.path.append("E:\soon\projects\PBNPR\code")
-
-# now these imports will succeed
-import bpy                  # harmless outside Blender
+import os,bpy,sys
 import importlib.util
 from PySide6 import QtWidgets, QtCore
-from glsl_studio.ui import gl_main_ui_ui as UIm
-from glsl_studio.ui.gl_main_ui_ui import Ui_Form 
-from glsl_studio.ui.gl_instance_ui import Ui_Frame
-from glsl_studio.util import util_types as t
-from glsl_studio.gl.example import gl_shader2D_template as GLSL_DEFAULT
-from PySide6 import QtWidgets
 from typing import cast
+from gl_studio.ui.gl_main_ui_ui import Ui_Form 
+from gl_studio.ui.gl_instance_ui import Ui_Frame
+from gl_studio.gl import gl_shader2D_template as GLSL_DEFAULT 
 
 global_qt_app = None
 global_studio_window = None
 
 
-images = {'A.png':1.0,'B.CFV':2.0}
 # ============================================= 
 
 class GLStudioWindow(QtWidgets.QWidget):
@@ -39,8 +28,8 @@ class GLStudioWindow(QtWidgets.QWidget):
 
         stack_IMG = self.ui.CoB_2d_Target_IMG
         stack_IMG.label="Target"
-        stack_IMG.PreSuper_Popup = self.IMG_refresh
-        stack_IMG.activated.connect(self.IMG_target_selected)
+        #stack_IMG.PreSuper_Popup = self.IMG_refresh
+        #stack_IMG.activated.connect(self.IMG_target_selected)
         self.IMG_refresh()
         stackA = self.ui.CoB_2d_stack_add
         stackA.label="Add"
@@ -58,11 +47,31 @@ class GLStudioWindow(QtWidgets.QWidget):
         event.ignore() 
         self.hide()
 
+    def importing(self):
+        file_path, _ = QtWidgets.QFileDialog.getOpenFileName(
+            self, 
+            "Import Shader Module", 
+            "", 
+            "Python Files (*.py)"
+        )
+        if not file_path: return
+
+        module_name = os.path.basename(file_path).split('.')[0]
+        try:
+            spec = importlib.util.spec_from_file_location(module_name, file_path) 
+            mod = importlib.util.module_from_spec(spec) 
+            spec.loader.exec_module(mod)
+
+            self.IO[module_name]=mod
+
+        except Exception as e:
+            print(f"FAILED TO IMPORT: {e}")
+   
     def IMG_refresh(self):
         stack = self.ui.CoB_2d_Target_IMG 
         stack.clear()
         stack.addItem(stack.label)
-        for i, j in images.items():
+        for i, j in bpy.data.images.items():
             stack.addItem(i,j)
     
     def IMG_target_selected(self,index):
@@ -76,6 +85,7 @@ class GLStudioWindow(QtWidgets.QWidget):
         stack.addItem(stack.label)
         for i, j in self.IO.items():
             stack.addItem(i,j)
+   
     def TYPE_refresh2(self):
         stack = self.ui.CoB_2d_stack_remove
         stack.clear()
@@ -106,11 +116,7 @@ class GLStudioWindow(QtWidgets.QWidget):
                 break
 
     def add_stack_instance(self, title: str,index:int):
-        """Create a new layer/frame UI and insert it into the vertical scroll area.
-
-        The frame has Up/Down/Delete buttons wired to helper methods.
-        """
-        # create a container widget and set up the designer UI on it
+        
         widget = QtWidgets.QFrame()
         widget.ui = Ui_Frame()
         widget.main = self.ui.CoB_2d_stack_add.itemData(index).MAIN()
@@ -171,26 +177,6 @@ class GLStudioWindow(QtWidgets.QWidget):
         widget.setParent(None)
         widget.deleteLater()
 
-    def importing(self):
-        file_path, _ = QtWidgets.QFileDialog.getOpenFileName(
-            self, 
-            "Import Shader Module", 
-            "", 
-            "Python Files (*.py)"
-        )
-        if not file_path: return
-
-        module_name = os.path.basename(file_path).split('.')[0]
-        try:
-            spec = importlib.util.spec_from_file_location(module_name, file_path) 
-            mod = importlib.util.module_from_spec(spec) 
-            spec.loader.exec_module(mod)
-
-            self.IO[module_name]=mod
-
-        except Exception as e:
-            print(f"FAILED TO IMPORT: {e}")
-   
     def instance_active(self):
         for i in self.stack_items:
             j = cast(Ui_Frame,i.ui)

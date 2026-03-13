@@ -19,7 +19,7 @@ from PySide6.QtWidgets import (QApplication, QFrame, QGroupBox, QHBoxLayout,
     QPushButton, QSizePolicy, QSpacerItem, QVBoxLayout,
     QWidget)
 
-from glsl_studio.ui.util.HotCheckBox import HotCheckBox
+from gl_studio.ui.util.HotCheckBox import HotCheckBox
 
 class Ui_Frame(object):
     def setupUi(self, Frame):

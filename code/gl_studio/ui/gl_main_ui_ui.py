@@ -19,7 +19,7 @@ from PySide6.QtWidgets import (QApplication, QGroupBox, QHBoxLayout, QPushButton
     QScrollArea, QSizePolicy, QSpacerItem, QTabWidget,
     QVBoxLayout, QWidget)
 
-from glsl_studio.ui.util.HotCombo import HotCombo
+from gl_studio.ui.util.HotCombo import HotCombo
 
 class Ui_Form(object):
     def setupUi(self, Form):

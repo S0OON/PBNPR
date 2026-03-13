@@ -1,5 +1,5 @@
 import bpy,sys
-from glsl_studio.ui.ui_window import GLStudioWindow,QtWidgets,global_studio_window,global_qt_app
+from gl_studio.ui.ui_window import GLStudioWindow,QtWidgets,global_studio_window,global_qt_app
 
 OP_EXEC_WINDOW = "wm.open_gl_studio"
 # =========================================
