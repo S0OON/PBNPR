@@ -116,7 +116,6 @@ class GLStudioWindow(QtWidgets.QWidget):
                 break
 
     def add_stack_instance(self, title: str,index:int):
-        
         widget = QtWidgets.QFrame()
         widget.ui = Ui_Frame()
         widget.main = self.ui.CoB_2d_stack_add.itemData(index).MAIN()
@@ -124,7 +123,7 @@ class GLStudioWindow(QtWidgets.QWidget):
         ui.setupUi(widget)
         ui.groupBox.setTitle(title)
 
-        ui.checkBox.Pre_SuperClick = self.instance_active
+        ui.checkBox.Pre_SuperClick = self.instances_off
         ui.checkBox.clicked.connect(self.Inspect_active_props)
         ui.Btn_UP.clicked.connect(lambda _, w=widget: self.move_stack_item_up(w))
         ui.Btn_Down.clicked.connect(lambda _, w=widget: self.move_stack_item_down(w))
@@ -177,7 +176,7 @@ class GLStudioWindow(QtWidgets.QWidget):
         widget.setParent(None)
         widget.deleteLater()
 
-    def instance_active(self):
+    def instances_off(self):
         for i in self.stack_items:
             j = cast(Ui_Frame,i.ui)
             j.checkBox.setChecked(False)

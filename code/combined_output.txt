@@ -43,7 +43,7 @@ E:\soon\projects\PBNPR\code\gl_studio\__init__.py
 # This file belongs to S00N's PBNPR Blender Add-on
 # all rights reserved (C) 2026 S00N
 bl_info = {
-    "name": "PBNPR: GLSLXXXXXXXXXX Manager",
+    "name": "PBNPR: GL studio",
     "author": "S00N",
     "version": (1, 0),
     "blender": (5, 0, 1),
@@ -51,26 +51,24 @@ bl_info = {
     "description": "High-performance GLSL viewport manager and baker",
     "category"   : "Render",
 }
-import bpy 
-from gl_studio.ui.ui_bpy import register
+
+from .ui.ui_bpy import register
 # ============================================================
 if __name__ == '__main__':
     register()
 ========================================
 E:\soon\projects\PBNPR\code\gl_studio\gl\gl_shader2D_template.py
 ========================================
-# DONT CHANGE CAPITLIZED NAMES!
+# DONT CHANGE CAPITLIZED NAMES! (called from the plugin)
 from PySide6 import QtWidgets
-from gl_studio.gl import modrenGL_lib as GL
-import PIL as image
 import moderngl,bpy
+from PIL import Image
 import numpy as np
-from gl_studio.gl.modrenGL_lib import GLContext
+from gl_studio.gl.modrenGL_lib import GLContext as GL
 from gl_studio.util import util_types as t
+from gl_studio.ui.util.HotCombo import HotCombo
 
 class ShaderBase:
-    __slots__ = ['ctx', 'prog', 'vao', 'fbo']
-
     vertex_shader=f"""#version 330
 
     in vec2 in_vert;
@@ -78,7 +76,7 @@ class ShaderBase:
         void main() {{
             gl_Position = vec4(in_vert, 0.0, 1.0);
         }}
-    """
+"""
     fragment_shader=f"""#version 330
 
     out vec4 f_color;
@@ -88,15 +86,16 @@ class ShaderBase:
             f_color = vec4(gl_FragCoord.x / 800.0, 0.5, gl_FragCoord.y / 600.0, 1.0);
         }}
 """
-    def __init__(self):
+    __slots__ = ['ctx', 'prog', 'vao', 'fbo']
+    def __init__(self): # __family__ lol
         """
         Compile only. (program creation), using the child's source code strings. #version 330
         
         Adds an additional ctx,prog,FBO,VAO
         """
-        self.ctx = GLContext.get()
-        self.prog = self.ctx.program(vertex_shader=self.VERT_SRC,
-                                    fragment_shader=self.FRAG_SRC)
+        self.ctx = GL.get()
+        self.prog = self.ctx.program(vertex_shader=self.vertex_shader,
+                                    fragment_shader=self.fragment_shader)
         self.vao = None
         self.fbo = None
     
@@ -108,6 +107,7 @@ class ShaderBase:
         self.prog.release()
 
     def Execute(self, width, height, gl_flags=None, clear=True):
+        W, H = int(width),int(height)
         if self.fbo is None or self.fbo.size != (width, height):
             if self.fbo:
                 self.fbo.release()
@@ -135,52 +135,67 @@ class ShaderBase:
             dtype=np.uint8)
 
         # WARNING, WILL BREAK BLENDER UI IF THIS IS SNIPPET DELETED
-        self.ctx.disable(t.GL_FLAGS['DEPTH_TEST'] |
-                         t.GL_FLAGS['CULL_FACE'] |        
-                         t.GL_FLAGS['BLEND'] |        
+        self.ctx.disable(t.GL_FLAGS['DEPTH_TEST'        ] |
+                         t.GL_FLAGS['CULL_FACE'         ] |        
+                         t.GL_FLAGS['BLEND'             ] |        
                          t.GL_FLAGS['PROGRAM_POINT_SIZE'] |        
                          t.GL_FLAGS['RASTERIZER_DISCARD'] )
         return pixels 
 
 class MAIN:
-    __slots__ = ['shader',
-                 'width','height']
-   
+    __slots__ = ['data', '__weakref__', #<- DONT CHANGE, remove  __slots__ if further errors occure amigo.
+                 'shader', # main
+                 'width','height','targetOBJ','sliderUV'] # peripheral
     def __init__(self):
+        self.shader = ShaderBase()
         self.width = 512.0
         self.height = 512.0
-        self.shader = ShaderBase()
+        self.targetOBJ = ''
+        self.sliderUV = None
 
     def BUILD_UI(self, target_layout:QtWidgets.QVBoxLayout):
-        # --- Width ---
-        row_w = QtWidgets.QHBoxLayout()
-        row_w.addWidget(QtWidgets.QLabel("Width:"))
-        
-        spin_w = QtWidgets.QDoubleSpinBox()
-        spin_w.setMaximum(4096.0)
-        spin_w.setValue(self.width)
-        spin_w.valueChanged.connect(self.on_width_changed) # Owned connection 
-        
-        row_w.addWidget(spin_w)
-        target_layout.addLayout(row_w)
+        # --- object name ---
+        row = QtWidgets.QHBoxLayout()
+        row.addWidget(QtWidgets.QLabel("Object name"))
+        field = QtWidgets.QLineEdit()
+        field.setText(self.targetOBJ)
+        field.textChanged.connect(self.on_targetOBJ_change)
+        row.addWidget(field)
 
-        # --- Height ---
-        row_h = QtWidgets.QHBoxLayout()
-        row_h.addWidget(QtWidgets.QLabel("Height:"))
+        target_layout.addLayout(row) 
+        # --- uv map  ---
+        row = QtWidgets.QHBoxLayout()
+        row.addWidget(QtWidgets.QLabel("UV map:"))
+        combo = HotCombo()
+        combo.PreSuper_Popup = self.on_UV_activated_reload
+        combo.activated.connect(self.on_UV_activated)
+        self.sliderUV = combo
+        row.addWidget(combo)
         
-        spin_h = QtWidgets.QDoubleSpinBox()
-        spin_h.setMaximum(4096.0)
-        spin_h.setValue(self.height)
-        spin_h.valueChanged.connect(self.on_height_changed)
-        
-        row_h.addWidget(spin_h)
-        target_layout.addLayout(row_h)
+        target_layout.addLayout(row) 
 
     def EXECUTE(self):
-        pixels = self.shader.Execute(
-            self.width,self.height,
-            gl_flags=None,clear=None)
+        return
+        pixels = self.shader.Execute(self.width,self.height,
+                                     gl_flags=None,clear=None)
         
+        img = Image.frombytes('RGB', pixels.size, pixels).transpose(Image.FLIP_TOP_BOTTOM)
+        img.show()
+
+    def on_targetOBJ_change(self,text):
+        self.targetOBJ = text
+
+    def on_UV_activated_reload(self):
+        obj = bpy.data.objects.get(self.targetOBJ)
+        if obj:
+            uv_slider = self.sliderUV
+            uv_slider.clear()
+            for i,j in obj.data.uv_layers.items():
+                uv_slider.addItem(i,j)
+
+    def on_UV_activated(self, index):
+        pass
+
 
     def on_width_changed(self, value):
         self.width = value
@@ -542,29 +557,18 @@ def register():
 ========================================
 E:\soon\projects\PBNPR\code\gl_studio\ui\ui_window.py
 ========================================
-import os
-import sys
-
-# make the parent of `glsl_studio` visible when running this module directly
-sys.path.append("E:\soon\projects\PBNPR\code")
-
-# now these imports will succeed
-import bpy                  # harmless outside Blender
+import os,bpy,sys
 import importlib.util
 from PySide6 import QtWidgets, QtCore
-from gl_studio.ui import gl_main_ui_ui as UIm
+from typing import cast
 from gl_studio.ui.gl_main_ui_ui import Ui_Form 
 from gl_studio.ui.gl_instance_ui import Ui_Frame
-from gl_studio.util import util_types as t
-from gl_studio.gl import gl_shader2D_template as GLSL_DEFAULT
-from PySide6 import QtWidgets
-from typing import cast
+from gl_studio.gl import gl_shader2D_template as GLSL_DEFAULT 
 
 global_qt_app = None
 global_studio_window = None
 
 
-images = {'A.png':1.0,'B.CFV':2.0}
 # ============================================= 
 
 class GLStudioWindow(QtWidgets.QWidget):
@@ -583,8 +587,8 @@ class GLStudioWindow(QtWidgets.QWidget):
 
         stack_IMG = self.ui.CoB_2d_Target_IMG
         stack_IMG.label="Target"
-        stack_IMG.PreSuper_Popup = self.IMG_refresh
-        stack_IMG.activated.connect(self.IMG_target_selected)
+        #stack_IMG.PreSuper_Popup = self.IMG_refresh
+        #stack_IMG.activated.connect(self.IMG_target_selected)
         self.IMG_refresh()
         stackA = self.ui.CoB_2d_stack_add
         stackA.label="Add"
@@ -602,6 +606,26 @@ class GLStudioWindow(QtWidgets.QWidget):
         event.ignore() 
         self.hide()
 
+    def importing(self):
+        file_path, _ = QtWidgets.QFileDialog.getOpenFileName(
+            self, 
+            "Import Shader Module", 
+            "", 
+            "Python Files (*.py)"
+        )
+        if not file_path: return
+
+        module_name = os.path.basename(file_path).split('.')[0]
+        try:
+            spec = importlib.util.spec_from_file_location(module_name, file_path) 
+            mod = importlib.util.module_from_spec(spec) 
+            spec.loader.exec_module(mod)
+
+            self.IO[module_name]=mod
+
+        except Exception as e:
+            print(f"FAILED TO IMPORT: {e}")
+   
     def IMG_refresh(self):
         stack = self.ui.CoB_2d_Target_IMG 
         stack.clear()
@@ -651,11 +675,6 @@ class GLStudioWindow(QtWidgets.QWidget):
                 break
 
     def add_stack_instance(self, title: str,index:int):
-        """Create a new layer/frame UI and insert it into the vertical scroll area.
-
-        The frame has Up/Down/Delete buttons wired to helper methods.
-        """
-        # create a container widget and set up the designer UI on it
         widget = QtWidgets.QFrame()
         widget.ui = Ui_Frame()
         widget.main = self.ui.CoB_2d_stack_add.itemData(index).MAIN()
@@ -663,7 +682,7 @@ class GLStudioWindow(QtWidgets.QWidget):
         ui.setupUi(widget)
         ui.groupBox.setTitle(title)
 
-        ui.checkBox.Pre_SuperClick = self.instance_active
+        ui.checkBox.Pre_SuperClick = self.instances_off
         ui.checkBox.clicked.connect(self.Inspect_active_props)
         ui.Btn_UP.clicked.connect(lambda _, w=widget: self.move_stack_item_up(w))
         ui.Btn_Down.clicked.connect(lambda _, w=widget: self.move_stack_item_down(w))
@@ -716,27 +735,7 @@ class GLStudioWindow(QtWidgets.QWidget):
         widget.setParent(None)
         widget.deleteLater()
 
-    def importing(self):
-        file_path, _ = QtWidgets.QFileDialog.getOpenFileName(
-            self, 
-            "Import Shader Module", 
-            "", 
-            "Python Files (*.py)"
-        )
-        if not file_path: return
-
-        module_name = os.path.basename(file_path).split('.')[0]
-        try:
-            spec = importlib.util.spec_from_file_location(module_name, file_path) 
-            mod = importlib.util.module_from_spec(spec) 
-            spec.loader.exec_module(mod)
-
-            self.IO[module_name]=mod
-
-        except Exception as e:
-            print(f"FAILED TO IMPORT: {e}")
-   
-    def instance_active(self):
+    def instances_off(self):
         for i in self.stack_items:
             j = cast(Ui_Frame,i.ui)
             j.checkBox.setChecked(False)
@@ -975,8 +974,8 @@ import os
 from pathlib import Path
 
 # Define paths
-REPO_SOURCE = r"E:\soon\projects\PBNPR\code\glsl_studio"
-BLENDER_DEST = r"C:\Users\ADMINI~1\AppData\Roaming\Blender Foundation\Blender\5.0\scripts\addons\glsl_studio"
+REPO_SOURCE = r"E:\soon\projects\PBNPR\code\gl_studio"
+BLENDER_DEST = r"C:\Users\ADMINI~1\AppData\Roaming\Blender Foundation\Blender\5.0\scripts\addons\gl_studio"
 
 def sync_to_blender():
     """Sync bpy_glsl_manager from repo to Blender addons (forced overwrite)"""
