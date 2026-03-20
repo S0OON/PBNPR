@@ -5,7 +5,7 @@ from pathlib import Path
 
 # Define paths
 REPO_SOURCE = r"E:\soon\projects\PBNPR\code\gl_studio"
-BLENDER_DEST = r"C:\Users\ADMINI~1\AppData\Roaming\Blender Foundation\Blender\5.0\scripts\addons\gl_studio"
+BLENDER_DEST = r"C:\Users\ADMINI~1\AppData\Roaming\Blender Foundation\Blender\5.1\scripts\addons\gl_studio"
 
 def sync_to_blender():
     """Sync bpy_glsl_manager from repo to Blender addons (forced overwrite)"""

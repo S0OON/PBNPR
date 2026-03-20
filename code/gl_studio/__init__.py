@@ -10,7 +10,8 @@ bl_info = {
     "category"   : "Render",
 }
 
-from .ui.ui_bpy import register
 # ============================================================
 if __name__ == '__main__':
-    register()
+    from .ui import dpg_ui
+    dpg_ui.register()
+
