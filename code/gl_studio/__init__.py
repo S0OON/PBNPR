@@ -10,8 +10,8 @@ bl_info = {
     "category"   : "Render",
 }
 
+from gl_studio.ui.ui_bpy import register
+from gl_studio.ui.ui_bpy import unregister
 # ============================================================
 if __name__ == '__main__':
-    from .ui import dpg_ui
-    dpg_ui.register()
-
+    register()

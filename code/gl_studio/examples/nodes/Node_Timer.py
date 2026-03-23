@@ -1,42 +1,72 @@
 import dearpygui.dearpygui as dpg
-import time
+from collections import defaultdict
 
-def attch():
-    print("SUUUUUUUPPPPPPPPPPPPPP")
 
-def timer(DeadLine:float):
-    time = dpg.get_total_time() - dpg.get_delta_time()
-    if DeadLine <= time:
-        attch()
 
 class NODE_INTERFACE:
-    main_node_editor = "node_editor_main"
-    label = "Timer node"
-    ID = None
+    LABEL = "Timer"
 
-    IN_t   = None
-    IN_bol = ''
-
-    def BUILD(self, sender, app_data):
+    def __init__(self,parent):
+        self.PARENT = parent # as in node editor
         self.ID     = dpg.generate_uuid()
-        self.T      = f"NODE_IN_TIMER_{self.ID}"
-        self.IN_bol = f"NODE_IN_BOl_{self.ID}"
+        self.GUI_CB = self.on_gui
+        self.EXEC_CB= self.on_execute
+        self.EXEC_ON_CRAWLER_CB = self.on_execute_crawler
+        self.LOOP_CB= self.on_execute_after_frame
+        self.SHOULD_EXEC_CB=self.on_should_execute
+        self.ENABLE = False
+        self.ACTIVE = False
+        self.IS_ROOT= True
+        self.CRAWLER= None
+        self.LINKS  = set()             # filled by plugin
+        self.PINS   = {'CRAWLERS':set(), # filled by plugin
+                       'INPUTS' :set(), # self
+                       'OUTPUTS':set()} # self
+        #custom
+        self.floater  = 1.0
+        
+    def on_gui(self):
+        with dpg.node(label=self.LABEL,parent=self.PARENT,tag=self.ID):
+            #static 
+            with dpg.node_attribute(attribute_type=dpg.mvNode_Attr_Static):
+                dpg.add_button(label="Execute",callback=self.EXEC_CB)
+                dpg.add_checkbox(label="Enable",callback=self.on_enable)
+                dpg.add_checkbox(label="Active",callback=self.on_active)
+            
+            #inputs
+            floater_tag = dpg.add_node_attribute(attribute_type=dpg.mvNode_Attr_Input)
+            self.PINS['INPUTS'].add(floater_tag)
+            dpg.add_input_float(callback=self.on_float_change,parent=floater_tag)
 
-        with dpg.node(label=self.label, parent=self.main_node_editor):
+            #outs
+            out_tag = dpg.add_node_attribute(label="Out ->",attribute_type=dpg.mvNode_Attr_Output)
+            self.PINS['OUTPUTS'].add(out_tag)
+            #Crawler
+            self.CRAWLER = dpg.add_node_attribute(label="<- Crawling chain",shape=dpg.mvNode_PinShape_Quad,attribute_type=dpg.mvNode_Attr_Input)
 
-            with dpg.node_attribute(label="Float",
-                                    attribute_type=dpg.mvNode_Attr_Static):
-                self.IN_t = dpg.add_input_float(label="Seconds", default_value=1.0, width=100)
-                dpg.add_checkbox(label="Activate",tag=self.IN_bol)
+    def on_enable(self,sender,app_data):
+        self.ENABLE = app_data
 
-            with dpg.node_attribute(label="Execute", 
-                                    attribute_type=dpg.mvNode_Attr_Input,
-                                    shape=dpg.mvNode_PinShape_Triangle):
-                dpg.add_text("-> Execute Branch")
+    def on_active(self,sender,app_data):
+        self.ACTIVE = app_data
 
-    def AFTER_DRAW_CALL(self):
-        if dpg.get_value(self.IN_bol):
-            print(dpg.get_value(self.IN_t))
-        #    timer(dpg.get_value(self.IN_t))
+    def on_float_change(self,sender,app_data):
+        self.float = app_data
+        print(self.float)
 
-cfg = NODE_INTERFACE()
+    def on_should_execute(self):
+        return True
+
+    def on_execute(self):
+        if not self.ENABLE: return
+        print(f"Im example: {self.ID}.")
+
+    def on_execute_crawler(self):
+        self.on_execute()
+
+    def on_execute_after_frame(self):
+        if not self.ACTIVE: return
+        print(f"Im example's loop: {self.ID}.")
+
+
+

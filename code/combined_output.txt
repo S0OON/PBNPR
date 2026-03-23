@@ -1,0 +1,732 @@
+
+========================================
+E:\soon\projects\PBNPR\code\export_to_txt.py
+========================================
+
+import os
+
+# Define which file extensions to include
+INCLUDE_EXTENSIONS = {'.py', '.glsl', '.txt', '.md'}
+
+# Output file name
+OUTPUT_FILE = 'combined_output.txt'
+
+def collect_files(base_dir):
+    """Recursively collect files with target extensions."""
+    collected = []
+    for root, _, files in os.walk(base_dir):
+        for file in files:
+            if os.path.splitext(file)[1] in INCLUDE_EXTENSIONS:
+                collected.append(os.path.join(root, file))
+    return collected
+
+def write_combined_output(files, output_path):
+    """Write contents of all files into one output file."""
+    with open(output_path, 'w', encoding='utf-8') as out:
+        for file_path in files:
+            out.write(f"\n{'='*40}\n{file_path}\n{'='*40}\n")
+            try:
+                with open(file_path, 'r', encoding='utf-8') as f:
+                    out.write(f.read())
+            except Exception as e:
+                out.write(f"[Error reading {file_path}: {e}]\n")
+
+if __name__ == "__main__":
+    current_dir = os.path.dirname(os.path.abspath(__file__))
+    subfolder = os.path.join(current_dir)  # or specify a subfolder like 'src'
+    files = collect_files(subfolder)
+    write_combined_output(files, os.path.join(current_dir, OUTPUT_FILE))
+    print(f"✅ Combined {len(files)} files into {OUTPUT_FILE}")
+========================================
+E:\soon\projects\PBNPR\code\gl_studio\__init__.py
+========================================
+# This file belongs to S00N's PBNPR Blender Add-on
+# all rights reserved (C) 2026 S00N
+bl_info = {
+    "name": "PBNPR: GL studio",
+    "author": "S00N",
+    "version": (1, 0),
+    "blender": (5, 0, 1),
+    "location": "View3D > N-Panel > PBNPR",
+    "description": "High-performance GLSL viewport manager and baker",
+    "category"   : "Render",
+}
+
+from .ui import ui_bpy
+# ============================================================
+if __name__ == '__main__':
+    ui_bpy.register()
+========================================
+E:\soon\projects\PBNPR\code\gl_studio\examples\nodes\Node_template.py
+========================================
+import dearpygui.dearpygui as dpg
+from collections import defaultdict
+
+
+
+class NODE_INTERFACE:
+    LABEL = "Node"
+
+    def __init__(self,parent):
+        self.PARENT = parent # as in node editor
+        self.ID     = dpg.generate_uuid()
+        self.GUI_CB = self.on_gui
+        self.EXEC_CB= self.on_execute
+        self.EXEC_ON_CRAWLER_CB = self.on_execute_crawler
+        self.LOOP_CB= self.on_execute_after_frame
+        self.SHOULD_EXEC_CB=self.on_should_execute
+        self.ENABLE = False
+        self.ACTIVE = False
+        self.IS_ROOT= False
+        self.CRAWLER= None
+        self.LINKS  = set()             # filled by plugin
+        self.PINS   = {'CRAWLERS':set(), # filled by plugin
+                       'INPUTS' :set(), # self
+                       'OUTPUTS':set()} # self
+        #custom
+        self.floater  = 1.0
+        
+    def on_gui(self):
+        with dpg.node(label=self.LABEL,parent=self.PARENT,tag=self.ID):
+            #static 
+            with dpg.node_attribute(attribute_type=dpg.mvNode_Attr_Static):
+                dpg.add_button(label="Execute",callback=self.EXEC_CB)
+                dpg.add_checkbox(label="Enable",callback=self.on_enable)
+                dpg.add_checkbox(label="Active",callback=self.on_active)
+            
+            #inputs
+            floater_tag = dpg.add_node_attribute(attribute_type=dpg.mvNode_Attr_Input)
+            self.PINS['INPUTS'].add(floater_tag)
+            dpg.add_input_float(callback=self.on_float_change,parent=floater_tag)
+
+            #outs
+            out_tag = dpg.add_node_attribute(label="Out ->",attribute_type=dpg.mvNode_Attr_Output)
+            self.PINS['OUTPUTS'].add(out_tag)
+            #Crawler
+            self.CRAWLER = dpg.add_node_attribute(label="<- Crawling chain",shape=dpg.mvNode_PinShape_Quad,attribute_type=dpg.mvNode_Attr_Input)
+
+    def on_enable(self,sender,app_data):
+        self.ENABLE = app_data
+
+    def on_active(self,sender,app_data):
+        self.ACTIVE = app_data
+
+    def on_float_change(self,sender,app_data):
+        self.float = app_data
+        print(self.float)
+
+    def on_should_execute(self):
+        return True
+
+    def on_execute(self):
+        if not self.ENABLE: return
+        print(f"Im example: {self.ID}.")
+
+    def on_execute_crawler(self):
+        self.on_execute()
+
+    def on_execute_after_frame(self):
+        if not self.ACTIVE: return
+        print(f"Im example's loop: {self.ID}.")
+
+
+
+
+========================================
+E:\soon\projects\PBNPR\code\gl_studio\examples\nodes\Node_Timer.py
+========================================
+import dearpygui.dearpygui as dpg
+from collections import defaultdict
+
+
+
+class NODE_INTERFACE:
+    LABEL = "Timer"
+
+    def __init__(self,parent):
+        self.PARENT = parent # as in node editor
+        self.ID     = dpg.generate_uuid()
+        self.GUI_CB = self.on_gui
+        self.EXEC_CB= self.on_execute
+        self.EXEC_ON_CRAWLER_CB = self.on_execute_crawler
+        self.LOOP_CB= self.on_execute_after_frame
+        self.SHOULD_EXEC_CB=self.on_should_execute
+        self.ENABLE = False
+        self.ACTIVE = False
+        self.IS_ROOT= True
+        self.CRAWLER= None
+        self.LINKS  = set()             # filled by plugin
+        self.PINS   = {'CRAWLERS':set(), # filled by plugin
+                       'INPUTS' :set(), # self
+                       'OUTPUTS':set()} # self
+        #custom
+        self.floater  = 1.0
+        
+    def on_gui(self):
+        with dpg.node(label=self.LABEL,parent=self.PARENT,tag=self.ID):
+            #static 
+            with dpg.node_attribute(attribute_type=dpg.mvNode_Attr_Static):
+                dpg.add_button(label="Execute",callback=self.EXEC_CB)
+                dpg.add_checkbox(label="Enable",callback=self.on_enable)
+                dpg.add_checkbox(label="Active",callback=self.on_active)
+            
+            #inputs
+            floater_tag = dpg.add_node_attribute(attribute_type=dpg.mvNode_Attr_Input)
+            self.PINS['INPUTS'].add(floater_tag)
+            dpg.add_input_float(callback=self.on_float_change,parent=floater_tag)
+
+            #outs
+            out_tag = dpg.add_node_attribute(label="Out ->",attribute_type=dpg.mvNode_Attr_Output)
+            self.PINS['OUTPUTS'].add(out_tag)
+            #Crawler
+            self.CRAWLER = dpg.add_node_attribute(label="<- Crawling chain",shape=dpg.mvNode_PinShape_Quad,attribute_type=dpg.mvNode_Attr_Input)
+
+    def on_enable(self,sender,app_data):
+        self.ENABLE = app_data
+
+    def on_active(self,sender,app_data):
+        self.ACTIVE = app_data
+
+    def on_float_change(self,sender,app_data):
+        self.float = app_data
+        print(self.float)
+
+    def on_should_execute(self):
+        return True
+
+    def on_execute(self):
+        if not self.ENABLE: return
+        print(f"Im example: {self.ID}.")
+
+    def on_execute_crawler(self):
+        self.on_execute()
+
+    def on_execute_after_frame(self):
+        if not self.ACTIVE: return
+        print(f"Im example's loop: {self.ID}.")
+
+
+
+
+========================================
+E:\soon\projects\PBNPR\code\gl_studio\ui\dpg_internals.py
+========================================
+import dearpygui.dearpygui as dpg
+from dataclasses import dataclass
+
+class DPG_INTERFACE:
+    been_registererd = False
+    win_label = "gl studio"
+    win_size = (800,600)
+    def __init__(self):    
+        self.win_main_id = dpg.generate_uuid()
+        self.win1_id = dpg.generate_uuid() # used bpy dpg_node_editor.py
+        self.win2_id = dpg.generate_uuid() # future debugger
+
+cfg = DPG_INTERFACE()
+
+def INIT():
+    dpg.create_context()
+
+def SHUTDOWN():
+    dpg.stop_dearpygui()
+    dpg.destroy_context()
+
+def THEME():
+    with dpg.theme() as global_theme:
+        with dpg.theme_component(dpg.mvAll):
+            dpg.add_theme_color(dpg.mvThemeCol_WindowBg, (30, 30, 30))
+            dpg.add_theme_style(dpg.mvStyleVar_FrameRounding, 5)
+    dpg.bind_theme(global_theme)
+    
+def WIN_close(sender,app_data):
+    #dpg.stop_dearpygui()
+    # do nothing
+    pass
+
+def WIN_CREATE():
+    W,H = cfg.win_size
+    with dpg.window(tag=cfg.win_main_id,on_close=WIN_close):pass
+    with dpg.window(tag=cfg.win1_id,on_close=WIN_close):pass
+    with dpg.window(tag=cfg.win2_id,on_close=WIN_close):pass
+
+def VIEWPORT():
+    W,H = cfg.win_size
+    dpg.create_viewport(title=cfg.win_label, width=W, height=H)
+    dpg.setup_dearpygui()
+    dpg.show_viewport()
+    dpg.set_primary_window(cfg.win_main_id, True)
+
+========================================
+E:\soon\projects\PBNPR\code\gl_studio\ui\dpg_node_editor.py
+========================================
+import dearpygui.dearpygui as dpg
+import shutil
+import os,sys
+import importlib
+from importlib.util import spec_from_file_location,module_from_spec
+from typing import cast
+from collections import defaultdict
+
+from gl_studio.ui import dpg_internals
+from gl_studio.examples.nodes import Node_template
+# ---------------------------------------
+class DPG_INTERFACE:
+    win_label='Node editor'
+    win_tag  = dpg_internals.cfg.win1_id
+    editor_tag = dpg.generate_uuid()
+    editor_map = False
+    editor_menuDirs = dpg.generate_uuid()
+    editor_menuTypes= dpg.generate_uuid()
+    editor_map_loc = dpg.mvNodeMiniMap_Location_BottomRight
+    
+    dirs  = {}
+    module_registry = {}
+    nodes = {}
+
+cfg = DPG_INTERFACE()
+
+class DAG:
+    def start(self):
+        self.queue = []
+        self.visited = set()
+
+        for obj in cfg.nodes.values():
+            if obj.IS_ROOT and obj.ENABLE and obj.SHOULD_EXEC_CB():
+                self.evaluate(obj)
+
+        self.queue.reverse()
+        self.execute_queue()
+
+    def evaluate(self, obj):
+        if not obj or obj in self.visited:
+            return
+
+        self.visited.add(obj)
+
+        # go upstream first
+        for out_id in obj.PINS['CRAWLERS']:
+            node_out = dpg.get_item_parent(out_id)
+            obj_out = cfg.nodes.get(node_out)
+            self.evaluate(obj_out)
+
+        if obj.ENABLE:
+            self.queue.append(obj)
+
+    def execute_queue(self):
+        for obj in self.queue:
+            obj.EXEC_ON_CRAWLER_CB()
+
+dag = DAG()
+# ---------------------------------------
+
+def on_node_types_reload():
+    global cfg
+    dpg.delete_item(cfg.editor_menuTypes,children_only=True)
+    for j in cfg.dirs.values():
+        if not os.path.isdir(j):
+            continue
+            
+        for filename in os.listdir(j):
+            filename=cast(str,filename)
+            if filename.endswith('.py') and filename != '__init__.py':
+                module_name = filename[:-3]
+                file_path = os.path.join(j, filename)
+                
+                spec = spec_from_file_location(module_name, file_path)
+                if spec and spec.loader:
+                    module = module_from_spec(spec)
+                    spec.loader.exec_module(module)
+                    if module in cfg.module_registry.values():
+                        importlib.reload(module)
+                        continue
+                    try:
+                        node_interface = getattr(module,'NODE_INTERFACE')
+                        if not node_interface: return
+                        
+                        def node_creation(sender,app_data):
+                            node_obj = cast(Node_template.NODE_INTERFACE,
+                                            node_interface(parent=cfg.editor_tag))
+                            cfg.nodes[node_obj.ID]=node_obj
+                            node_obj.GUI_CB()
+
+                        dpg.add_menu_item(label=node_interface.LABEL,
+                                          callback=node_creation,
+                                          parent=cfg.editor_menuTypes)
+
+                        cfg.module_registry[module_name] = module
+                    except Exception as e: 
+                        print(f"FAILED TO IMPORT {module_name}, EXCEPTION: {e}")
+
+def on_directory_change(sender,app_data):
+    cfg.dirs[sender]=dpg.get_value(sender)
+
+def on_add_directory():
+    dpg.add_input_text(label="Directory",parent=cfg.editor_menuDirs,callback=on_directory_change)
+
+def on_after_frame_callbacks():
+    for node in cfg.nodes.values():
+        node = cast(Node_template.NODE_INTERFACE,node)
+        if node.ACTIVE:
+            node.LOOP_CB()
+
+def link_callback(sender, app_data):
+    out_id, in_id = app_data
+        
+    #input node
+    node_in = dpg.get_item_parent(in_id)
+    obj_in = cast(Node_template.NODE_INTERFACE,cfg.nodes.get(node_in))
+    if not obj_in: return
+    #output node
+    node_out = dpg.get_item_parent(out_id)
+    obj_out = cast(Node_template.NODE_INTERFACE,cfg.nodes.get(node_out))
+    if not obj_out: return
+
+    link_id = dpg.add_node_link(out_id, in_id, parent=sender, user_data=(out_id, in_id))
+    obj_in.LINKS.add(link_id)
+    obj_out.LINKS.add(link_id)
+
+    if in_id == obj_in.CRAWLER:
+        obj_in.PINS['CRAWLERS'].add(out_id)
+
+        # Track in your custom config
+        #if out_id not in cfg.active_links:
+        #    cfg.active_links[out_id] = set()
+        #cfg.active_links[out_id].add(in_id)
+
+def delink_callback(sender, app_data):
+    link_id = app_data
+    link_info = dpg.get_item_user_data(link_id)
+    
+    if link_info:
+        out_id, in_id = link_info
+        #input node
+        node_in = dpg.get_item_parent(in_id)        
+        obj_in = cast(Node_template.NODE_INTERFACE,cfg.nodes.get(node_in))
+        if not obj_in: return
+        #output node
+        node_out = dpg.get_item_parent(out_id)        
+        obj_out = cast(Node_template.NODE_INTERFACE,cfg.nodes.get(node_out))
+        if not obj_out: return
+
+        obj_in.LINKS.discard(link_id)
+        obj_out.LINKS.discard(link_id)
+
+        if in_id == obj_in.CRAWLER:
+            obj_in.PINS['CRAWLERS'].discard(out_id)
+        
+        dpg.delete_item(link_id)
+        #if out_id in cfg.active_links:
+        #    cfg.active_links[out_id].discard(in_id)
+        #    if not cfg.active_links[out_id]:
+        #        del cfg.active_links[out_id]
+
+def register():
+    with dpg.menu_bar(parent=cfg.win_tag):
+            with dpg.menu(label="Nodes stream"):
+                dpg.add_button(label="Update node types from directories",
+                               callback=on_node_types_reload)
+                dpg.add_button(label="Add directory",
+                               callback=on_add_directory)
+            
+            with dpg.menu(label="Add Node",tag=cfg.editor_menuTypes):
+                pass
+
+    with dpg.node_editor(
+            tag=cfg.editor_tag,
+            callback=link_callback,          # Called when link created
+            delink_callback=delink_callback, # Called when link deleted
+            minimap=cfg.editor_map,
+            minimap_location=cfg.editor_map_loc):
+        pass
+    
+    base_path  = os.path.dirname(__file__)
+    nodes_path = os.path.abspath(os.path.join(base_path, "..", "examples", "nodes"))
+    cfg.dirs["DEFAULT"] = nodes_path
+    on_node_types_reload()
+
+def unregister():
+    cfg.dirs.clear()
+    cfg.module_registry.clear()
+    cfg.nodes.clear()
+
+========================================
+E:\soon\projects\PBNPR\code\gl_studio\ui\ui_bpy.py
+========================================
+import bpy
+from gl_studio.ui import dpg_node_editor
+from  dearpygui import dearpygui as dpg  
+
+# ---------------------------------------
+ID_OP_EXEC_WINDOW = "wm.open_gl_studio"
+
+# ---------------------------------------
+class OPEN_OT_gl_studio(bpy.types.Operator):
+    bl_idname = ID_OP_EXEC_WINDOW
+    bl_label = "Open DPG Studio"
+    _timer = None
+    _FPS = (1/30)
+
+    def modal(self, context, event):
+        if event.type == 'TIMER':
+            if dpg.is_dearpygui_running():
+                dpg.render_dearpygui_frame()
+                if dpg_node_editor.dag:
+                    try: 
+                        dpg_node_editor.dag.start()
+                        dpg_node_editor.on_after_frame_callbacks()
+                    except Exception as e:
+                        print(f"Dag error: {e}")
+            else:
+                self.cancel(context)
+                return {'FINISHED'}
+        return {'PASS_THROUGH'}
+
+    def execute(self, context):
+        if not dpg_node_editor.dpg_internals.cfg.been_registererd:
+            dpg_node_editor.dpg_internals.INIT()
+            dpg_node_editor.dpg_internals.THEME()
+            dpg_node_editor.dpg_internals.WIN_CREATE()
+            dpg_node_editor.dpg_internals.VIEWPORT()
+            dpg_node_editor.register()
+        dpg_node_editor.dpg_internals.cfg.been_registererd = True
+        
+        self._timer = context.window_manager.event_timer_add(self._FPS, window=context.window)
+        context.window_manager.modal_handler_add(self)
+        return {'RUNNING_MODAL'}
+    
+    def cancel(self, context):
+        if self._timer:
+            context.window_manager.event_timer_remove(self._timer)
+        dpg_node_editor.unregister()
+
+class gl_PT(bpy.types.Panel):
+    bl_label = "gl manager"
+    bl_space_type = 'VIEW_3D'
+    bl_region_type = 'UI'
+    bl_category = 'PBNPR'
+
+    def draw(self, context):
+        layout = self.layout
+        row = layout.row(align=True)
+        row.operator(ID_OP_EXEC_WINDOW)
+
+# ---------------------------------------
+cls = (
+   OPEN_OT_gl_studio, 
+   gl_PT
+)
+
+def register():
+    for cl in cls:
+        bpy.utils.register_class(cl)
+
+def unregister():
+    for cl in cls:
+        bpy.utils.unregister_class(cl)
+    dpg_node_editor.unregister()
+    dpg_node_editor.dpg_internals.SHUTDOWN()
+========================================
+E:\soon\projects\PBNPR\code\gl_studio\util\util_types.py
+========================================
+from dataclasses import dataclass
+from typing import Callable, Type
+import moderngl
+
+@dataclass
+class MOD_INTERP:
+    """
+    This is for the addon's internals to understand the current python file.
+    
+    data = UI(bpy.type.propertyGroup),SHADER(a provided default pattern provided in glsl_manager.gl.shader_pattren)
+    """
+    EXECUTE : Callable
+    UED     : Callable
+
+import moderngl
+# --- 1. CONTEXT FLAGS (For ctx.enable / ctx.disable) ---
+# Combine these using bitwise OR (|) when building flags for ctx.enable()
+GL_FLAGS = {
+    'DEPTH_TEST'        : moderngl.DEPTH_TEST,
+    'CULL_FACE'         : moderngl.CULL_FACE,
+    'BLEND'             : moderngl.BLEND,
+    'PROGRAM_POINT_SIZE': moderngl.PROGRAM_POINT_SIZE,
+    'RASTERIZER_DISCARD': moderngl.RASTERIZER_DISCARD,
+    'NONE': 0  # Safe fallback if UI is set to None/Off
+}
+
+# --- 2. DEPTH FUNCTIONS (For ctx.depth_func) ---
+# ModernGL relies on simple math strings instead of confusing C++ integer constants.
+DEPTH_FUNCS = {
+    'LESS'      : '<',      # Standard: Draw if closer to camera
+    'LESS_EQUAL': '<=',     # Draw if closer or equal (ModernGL Default)
+    'EQUAL'     : '==',     # Draw only if exactly equal
+    'NOT_EQUAL' : '!=',     # Draw if different
+    'ALWAYS'    : '1',      # Always draw, ignoring depth
+    'NEVER'     : '0'       # Never draw
+}
+
+# --- 3. CULL FACE MODES (For ctx.cull_face) ---
+# ModernGL uses simple strings.
+CULL_MODES = {
+    'BACK'          : 'back',            # Standard optimization: Don't draw inside faces
+    'FRONT'         : 'front',           # Inside-out view: Don't draw outside faces
+    'FRONT_AND_BACK': 'front_and_back'   # Draw nothing, idk wtf this
+}
+
+# --- 4. BLEND PRESETS (For ctx.blend_func) ---
+# Format is a tuple: (Source, Destination)
+BLEND_PRESETS = {
+    'ALPHA'        : (moderngl.SRC_ALPHA, moderngl.ONE_MINUS_SRC_ALPHA), # Standard transparency
+    'ADDITIVE'     : (moderngl.ONE,       moderngl.ONE),                 # Glows, fire, lasers
+    'MULTIPLY'     : (moderngl.DST_COLOR, moderngl.ZERO),                # Darkening, shadows
+    'PREMULTIPLIED': (moderngl.ONE,       moderngl.ONE_MINUS_SRC_ALPHA), # Premultiplied alpha
+    'NONE': None                                                         # Disable blending entirely
+}
+
+# --- 5. DATA TYPES (For buffer attributes) ---
+# ModernGL uses struct format strings (data type + bytes per component).
+# e.g., 'f4' = Float 4-byte (32-bit float). 'i1' = Integer 1-byte(idk i think its either an boolean).
+GL_TYPES = {
+    'FLOAT' : 'f4',      # 32-bit float (Standard for vertices/normals)
+    'DOUBLE': 'f8',      # 64-bit float
+    'INT'   : 'i4',      # 32-bit signed integer
+    'UINT'  : 'u4',      # 32-bit unsigned integer
+    'SHORT' : 'i2',      # 16-bit signed integer
+    'BYTE'  : 'i1',      # 8-bit signed integer
+    'UBYTE' : 'f1'       # 8-bit unsigned int (Standard for 0-255 color data)
+}
+
+# --- 6. PRIMITIVE TYPES (For vao.render(mode=...)) ---
+# These are the standard geometric drawing modes.
+PRIMITIVES = {
+    'POINTS'        : moderngl.POINTS,
+    'LINES'         : moderngl.LINES,
+    'LINE_STRIP'    : moderngl.LINE_STRIP,
+    'LINE_LOOP'     : moderngl.LINE_LOOP,
+    'TRIANGLES'     : moderngl.TRIANGLES,       # Standard 3D 
+    'TRIANGLE_STRIP': moderngl.TRIANGLE_STRIP,
+    'TRIANGLE_FAN'  : moderngl.TRIANGLE_FAN
+}
+
+# --- blender specific ---
+bl_verts = 'vertices'
+bl_Co = 'co'
+bl_normal = 'normal'
+bl_loop_triangles = 'loop_triangles'
+
+# --- Data Types (for CreateInfo) ---
+FLOAT    = 'FLOAT'
+INT      = 'INT'
+UINT     = 'UINT'
+VEC2     = 'VEC2'
+VEC3     = 'VEC3'
+VEC4     = 'VEC4'
+MAT3     = 'MAT3'
+MAT4     = 'MAT4'
+IVEC2    = 'IVEC2'
+IVEC3    = 'IVEC3'
+IVEC4    = 'IVEC4'
+UVEC2    = 'UVEC2'
+UVEC3    = 'UVEC3'
+UVEC4    = 'UVEC4'
+# --- Texture Sampler Types ---
+SAMPLER_1D           = 'FLOAT_1D'
+SAMPLER_2D           = 'FLOAT_2D'
+SAMPLER_3D           = 'FLOAT_3D'
+SAMPLER_CUBE         = 'FLOAT_CUBE'
+SAMPLER_BUFFER       = 'FLOAT_BUFFER'
+SAMPLER_1D_ARRAY     = 'FLOAT_1D_ARRAY'
+SAMPLER_2D_ARRAY     = 'FLOAT_2D_ARRAY'
+SAMPLER_CUBE_ARRAY   = 'FLOAT_CUBE_ARRAY'
+SAMPLER_2D_SHADOW    = 'FLOAT_2D_SHADOW'  # For depth maps
+
+# --- Standard Attribute Names (Blender Conventions) ---
+ATTR_POS      = "pos"      # Standard position (vec3)
+ATTR_NORMAL   = "normal"   # Standard normal (vec3)
+ATTR_UV       = "uv"       # Standard UV map (vec2)
+ATTR_COLOR    = "color"    # Vertex color (vec4)
+ATTR_TANGENT  = "tangent"  # Tangent (vec4)
+ATTR_POINT    = "point"    # Point (vec3)
+ATTR_VIEW_MAT = "viewMat"  # View Matrix (mat4)
+# --- Standard Output Names ---
+ATTR_OUT_FRAG_COLOR = "fragColor" # Standard Fragment Output
+ATTR_OUT_V          = "gl_Position"
+
+# --- GPU State Constants ---
+DEPTH_NONE    = 'NONE'       # Disable depth testing
+DEPTH_ALWAYS  = 'ALWAYS'     # Always draw, regardless of depth
+DEPTH_LESS    = 'LESS'       # Standard: Draw if closer
+DEPTH_LEQUAL  = 'LESS_EQUAL' # Draw if closer or equal (Default)
+DEPTH_GREATER = 'GREATER'    # Draw if further away
+DEPTH_GEQUAL  = 'GREATER_EQUAL'
+
+BLEND_NONE    = 'NONE'
+BLEND_ALPHA   = 'ALPHA'              # Standard transparency
+BLEND_ADD     = 'ADDITIVE'           # Light accumulation (fire, lasers)
+BLEND_ADD_ALPHA = 'ADDITIVE_ALPHA'   # Additive but respects alpha
+BLEND_MULTIPLY = 'MULTIPLY'          # Darkening (shadows)
+
+CULL_NONE     = 'NONE'     # Draw both sides of faces
+CULL_BACK     = 'BACK'     # Don't draw back-faces (Standard optimization)
+CULL_FRONT    = 'FRONT'    # Don't draw front-faces (Inside-out view)
+
+# --- Primitive Types (for batch_for_shader) ---
+PRIM_POINTS     = 'POINTS'
+PRIM_LINES      = 'LINES'
+PRIM_TRIS       = 'TRIS'
+PRIM_LINE_STRIP = 'LINE_STRIP'
+PRIM_TRI_STRIP  = 'TRI_STRIP'
+
+#--- utlis ---
+SHADER_V = 'vert.glsl'
+SHADER_F = 'frag.glsl'
+SHADER_DRAW_REGION_WINDOW  = 'WINDOW'
+SHADER_DRAW_TYPE_POST_PIXEL= 'POST_PIXEL'# Usually  for 2D drawing and 
+SHADER_DRAW_TYPE_POST_VIEW = 'POST_VIEW'  # for 3D drawing. 
+SHADER_DRAW_TYPE_PRE_VIEW  = 'PRE_VIEW'   # for 3D drawing before the main scene is drawn. Useful for backgrounds or effects that should appear behind everything else.
+
+========================================
+E:\soon\projects\PBNPR\code\util\sync_to_blender.py
+========================================
+
+import shutil
+import os
+from pathlib import Path
+
+# Define paths
+REPO_SOURCE = r"E:\soon\projects\PBNPR\code\gl_studio"
+BLENDER_DEST = r"C:\Users\ADMINI~1\AppData\Roaming\Blender Foundation\Blender\5.1\scripts\addons\gl_studio"
+
+def sync_to_blender():
+    """Sync bpy_glsl_manager from repo to Blender addons (forced overwrite)"""
+    
+    # Verify source exists
+    if not os.path.exists(REPO_SOURCE):
+        print(f"❌ ERROR: Source directory not found: {REPO_SOURCE}")
+        return False
+    
+    # Verify destination exists
+    if not os.path.exists(BLENDER_DEST):
+        os.makedirs(BLENDER_DEST)
+    
+    try:
+        # Remove existing destination
+        if os.path.exists(BLENDER_DEST):
+            print(f"🗑️  Removing existing directory: {BLENDER_DEST}")
+            shutil.rmtree(BLENDER_DEST)
+        
+        # Copy entire directory
+        print(f"📋 Copying from: {REPO_SOURCE}")
+        print(f"📍 Copying to:   {BLENDER_DEST}")
+        shutil.copytree(REPO_SOURCE, BLENDER_DEST)
+        
+        print("✅ SUCCESS: Files synced to Blender addons!")
+        return True
+        
+    except Exception as e:
+        print(f"❌ ERROR during sync: {e}")
+        return False
+
+if __name__ == "__main__":
+    sync_to_blender()
