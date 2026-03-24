@@ -52,161 +52,100 @@ bl_info = {
     "category"   : "Render",
 }
 
-from .ui import ui_bpy
+from gl_studio.ui.ui_bpy import register
+from gl_studio.ui.ui_bpy import unregister
 # ============================================================
 if __name__ == '__main__':
-    ui_bpy.register()
+    register()
 ========================================
 E:\soon\projects\PBNPR\code\gl_studio\examples\nodes\Node_template.py
 ========================================
 import dearpygui.dearpygui as dpg
-from collections import defaultdict
-
 
 
 class NODE_INTERFACE:
     LABEL = "Node"
 
     def __init__(self,parent):
-        self.PARENT = parent # as in node editor
-        self.ID     = dpg.generate_uuid()
-        self.GUI_CB = self.on_gui
-        self.EXEC_CB= self.on_execute
+        self.PARENT  = parent # as in node editor
+        self.ID      = dpg.generate_uuid()
+
+        self.EXEC_GUI_CB  = self.on_gui
+        self.EXEC_CB      = self.on_execute
         self.EXEC_ON_CRAWLER_CB = self.on_execute_crawler
-        self.LOOP_CB= self.on_execute_after_frame
-        self.SHOULD_EXEC_CB=self.on_should_execute
-        self.ENABLE = False
-        self.ACTIVE = False
-        self.IS_ROOT= False
-        self.CRAWLER= None
-        self.LINKS  = set()             # filled by plugin
-        self.PINS   = {'CRAWLERS':set(), # filled by plugin
-                       'INPUTS' :set(), # self
-                       'OUTPUTS':set()} # self
+        self.EXEC_ON_LOOP_CB    = self.on_execute_after_frame
+
+        self.SHOULD_EXEC_CB     =self.on_should_execute
+        self.SHOULD_CRAWL_CB    =self.on_should_crawl
+        self.SHOULD_BE_ACTIVE   =self.on_should_active
+
+        self.ENABLE  = False
+        self.ACTIVE  = False
+
+        self.CRAWLER = None
+        self.LINKS   = set()              # filled by plugin
+        self.PINS    = {'CRAWLERS':set(), # filled by plugin
+                        'INPUTS'  :set(), # self
+                        'OUTPUTS' :set()} # self
         #custom
         self.floater  = 1.0
-        
+    
     def on_gui(self):
+        """Node GUI"""
         with dpg.node(label=self.LABEL,parent=self.PARENT,tag=self.ID):
             #static 
             with dpg.node_attribute(attribute_type=dpg.mvNode_Attr_Static):
                 dpg.add_button(label="Execute",callback=self.EXEC_CB)
-                dpg.add_checkbox(label="Enable",callback=self.on_enable)
-                dpg.add_checkbox(label="Active",callback=self.on_active)
+                dpg.add_checkbox(label="Enable",callback=self.on_enable_change)
+                dpg.add_checkbox(label="Active",callback=self.on_active_change)
             
             #inputs
             floater_tag = dpg.add_node_attribute(attribute_type=dpg.mvNode_Attr_Input)
-            self.PINS['INPUTS'].add(floater_tag)
             dpg.add_input_float(callback=self.on_float_change,parent=floater_tag)
+            self.PINS['INPUTS'].add(floater_tag)
 
-            #outs
-            out_tag = dpg.add_node_attribute(label="Out ->",attribute_type=dpg.mvNode_Attr_Output)
-            self.PINS['OUTPUTS'].add(out_tag)
+            #outputs
+            output = dpg.add_node_attribute(attribute_type=dpg.mvNode_Attr_Output)
+            dpg.add_text("Output ->",parent=output)
+            self.PINS['OUTPUTS'].add(output)
+
             #Crawler
             self.CRAWLER = dpg.add_node_attribute(label="<- Crawling chain",shape=dpg.mvNode_PinShape_Quad,attribute_type=dpg.mvNode_Attr_Input)
 
-    def on_enable(self,sender,app_data):
+    def on_enable_change(self,sender,app_data):
+        """at Enable button click"""
         self.ENABLE = app_data
 
-    def on_active(self,sender,app_data):
+    def on_active_change(self,sender,app_data):
+        """at Active button click"""
         self.ACTIVE = app_data
 
     def on_float_change(self,sender,app_data):
+        """Custom"""
         self.float = app_data
-        print(self.float)
-
+    
     def on_should_execute(self):
-        return True
+        """Check if should execute"""
+        return self.ENABLE
+    
+    def on_should_active(self):
+        return (self.ACTIVE and self.ENABLE)
+
+    def on_should_crawl(self):
+        """check if should crawl"""
+        return self.CRAWLER # None if shouldnt init a crawl.
 
     def on_execute(self):
-        if not self.ENABLE: return
-        print(f"Im example: {self.ID}.")
+        """Execution"""
+        print(f"Im node example exec: {self.ID}")
 
     def on_execute_crawler(self):
-        self.on_execute()
+        """on-Crawler-call Execution"""
+        print(f"Im node example crawled exec: {self.ID}")
 
     def on_execute_after_frame(self):
-        if not self.ACTIVE: return
-        print(f"Im example's loop: {self.ID}.")
-
-
-
-
-========================================
-E:\soon\projects\PBNPR\code\gl_studio\examples\nodes\Node_Timer.py
-========================================
-import dearpygui.dearpygui as dpg
-from collections import defaultdict
-
-
-
-class NODE_INTERFACE:
-    LABEL = "Timer"
-
-    def __init__(self,parent):
-        self.PARENT = parent # as in node editor
-        self.ID     = dpg.generate_uuid()
-        self.GUI_CB = self.on_gui
-        self.EXEC_CB= self.on_execute
-        self.EXEC_ON_CRAWLER_CB = self.on_execute_crawler
-        self.LOOP_CB= self.on_execute_after_frame
-        self.SHOULD_EXEC_CB=self.on_should_execute
-        self.ENABLE = False
-        self.ACTIVE = False
-        self.IS_ROOT= True
-        self.CRAWLER= None
-        self.LINKS  = set()             # filled by plugin
-        self.PINS   = {'CRAWLERS':set(), # filled by plugin
-                       'INPUTS' :set(), # self
-                       'OUTPUTS':set()} # self
-        #custom
-        self.floater  = 1.0
-        
-    def on_gui(self):
-        with dpg.node(label=self.LABEL,parent=self.PARENT,tag=self.ID):
-            #static 
-            with dpg.node_attribute(attribute_type=dpg.mvNode_Attr_Static):
-                dpg.add_button(label="Execute",callback=self.EXEC_CB)
-                dpg.add_checkbox(label="Enable",callback=self.on_enable)
-                dpg.add_checkbox(label="Active",callback=self.on_active)
-            
-            #inputs
-            floater_tag = dpg.add_node_attribute(attribute_type=dpg.mvNode_Attr_Input)
-            self.PINS['INPUTS'].add(floater_tag)
-            dpg.add_input_float(callback=self.on_float_change,parent=floater_tag)
-
-            #outs
-            out_tag = dpg.add_node_attribute(label="Out ->",attribute_type=dpg.mvNode_Attr_Output)
-            self.PINS['OUTPUTS'].add(out_tag)
-            #Crawler
-            self.CRAWLER = dpg.add_node_attribute(label="<- Crawling chain",shape=dpg.mvNode_PinShape_Quad,attribute_type=dpg.mvNode_Attr_Input)
-
-    def on_enable(self,sender,app_data):
-        self.ENABLE = app_data
-
-    def on_active(self,sender,app_data):
-        self.ACTIVE = app_data
-
-    def on_float_change(self,sender,app_data):
-        self.float = app_data
-        print(self.float)
-
-    def on_should_execute(self):
-        return True
-
-    def on_execute(self):
-        if not self.ENABLE: return
-        print(f"Im example: {self.ID}.")
-
-    def on_execute_crawler(self):
-        self.on_execute()
-
-    def on_execute_after_frame(self):
-        if not self.ACTIVE: return
-        print(f"Im example's loop: {self.ID}.")
-
-
-
+        """On-Loop-call Execution"""
+        print(f"Im node example loop exec: {self.ID}.")
 
 ========================================
 E:\soon\projects\PBNPR\code\gl_studio\ui\dpg_internals.py
@@ -218,15 +157,17 @@ class DPG_INTERFACE:
     been_registererd = False
     win_label = "gl studio"
     win_size = (800,600)
-    def __init__(self):    
+    def INIT(self):    
         self.win_main_id = dpg.generate_uuid()
         self.win1_id = dpg.generate_uuid() # used bpy dpg_node_editor.py
         self.win2_id = dpg.generate_uuid() # future debugger
+    
 
 cfg = DPG_INTERFACE()
 
 def INIT():
     dpg.create_context()
+    cfg.INIT()
 
 def SHUTDOWN():
     dpg.stop_dearpygui()
@@ -258,6 +199,39 @@ def VIEWPORT():
     dpg.set_primary_window(cfg.win_main_id, True)
 
 ========================================
+E:\soon\projects\PBNPR\code\gl_studio\ui\dpg_main.py
+========================================
+import dearpygui.dearpygui as dpg
+from gl_studio.ui import dpg_internals
+from gl_studio.ui import dpg_node_editor
+
+def register():
+    if not dpg_node_editor.dpg_internals.cfg.been_registererd:
+        dpg_node_editor.dpg_internals.INIT()
+        dpg_node_editor.dpg_internals.THEME()
+        dpg_node_editor.dpg_internals.WIN_CREATE()
+        dpg_node_editor.dpg_internals.VIEWPORT()
+        dpg_node_editor.register()
+    dpg_node_editor.dpg_internals.cfg.been_registererd = True
+
+def unregister():
+      dpg_node_editor.unregister()
+      dpg_internals.SHUTDOWN()
+
+def check_state():
+    return dpg.is_dearpygui_running()
+
+def render_a_frame():
+    dpg.render_dearpygui_frame()
+    if dpg_node_editor.pag:
+        try: 
+            dpg_node_editor.pag.start()
+        except Exception as e:
+            print(f"Dag error: {e}")
+    dpg_node_editor.on_after_frame_callbacks()
+
+
+========================================
 E:\soon\projects\PBNPR\code\gl_studio\ui\dpg_node_editor.py
 ========================================
 import dearpygui.dearpygui as dpg
@@ -273,12 +247,14 @@ from gl_studio.examples.nodes import Node_template
 # ---------------------------------------
 class DPG_INTERFACE:
     win_label='Node editor'
-    win_tag  = dpg_internals.cfg.win1_id
-    editor_tag = dpg.generate_uuid()
-    editor_map = False
-    editor_menuDirs = dpg.generate_uuid()
-    editor_menuTypes= dpg.generate_uuid()
-    editor_map_loc = dpg.mvNodeMiniMap_Location_BottomRight
+    
+    def INIT(self):
+        self.win_tag  = dpg_internals.cfg.win1_id
+        self.editor_tag = dpg.generate_uuid()
+        self.editor_menuDirs = dpg.generate_uuid()
+        self.editor_menuTypes= dpg.generate_uuid()
+        self.editor_map = False
+        self.editor_map_loc = dpg.mvNodeMiniMap_Location_BottomRight
     
     dirs  = {}
     module_registry = {}
@@ -286,38 +262,36 @@ class DPG_INTERFACE:
 
 cfg = DPG_INTERFACE()
 
-class DAG:
+class PAG:
+    """Pull-based Access Graph"""
     def start(self):
         self.queue = []
         self.visited = set()
 
         for obj in cfg.nodes.values():
-            if obj.IS_ROOT and obj.ENABLE and obj.SHOULD_EXEC_CB():
+            if obj.SHOULD_CRAWL_CB():
                 self.evaluate(obj)
 
-        self.queue.reverse()
         self.execute_queue()
 
     def evaluate(self, obj):
-        if not obj or obj in self.visited:
-            return
-
+        if not obj or obj in self.visited: return
         self.visited.add(obj)
-
-        # go upstream first
+        
         for out_id in obj.PINS['CRAWLERS']:
             node_out = dpg.get_item_parent(out_id)
             obj_out = cfg.nodes.get(node_out)
             self.evaluate(obj_out)
 
-        if obj.ENABLE:
+        if obj.SHOULD_EXEC_CB():
             self.queue.append(obj)
 
     def execute_queue(self):
+        self.queue.reverse()
         for obj in self.queue:
             obj.EXEC_ON_CRAWLER_CB()
 
-dag = DAG()
+pag = PAG()
 # ---------------------------------------
 
 def on_node_types_reload():
@@ -348,7 +322,7 @@ def on_node_types_reload():
                             node_obj = cast(Node_template.NODE_INTERFACE,
                                             node_interface(parent=cfg.editor_tag))
                             cfg.nodes[node_obj.ID]=node_obj
-                            node_obj.GUI_CB()
+                            node_obj.EXEC_GUI_CB()
 
                         dpg.add_menu_item(label=node_interface.LABEL,
                                           callback=node_creation,
@@ -367,8 +341,8 @@ def on_add_directory():
 def on_after_frame_callbacks():
     for node in cfg.nodes.values():
         node = cast(Node_template.NODE_INTERFACE,node)
-        if node.ACTIVE:
-            node.LOOP_CB()
+        if node.SHOULD_BE_ACTIVE():
+            node.EXEC_ON_LOOP_CB()
 
 def link_callback(sender, app_data):
     out_id, in_id = app_data
@@ -422,6 +396,7 @@ def delink_callback(sender, app_data):
         #        del cfg.active_links[out_id]
 
 def register():
+    cfg.INIT()
     with dpg.menu_bar(parent=cfg.win_tag):
             with dpg.menu(label="Nodes stream"):
                 dpg.add_button(label="Update node types from directories",
@@ -434,6 +409,7 @@ def register():
 
     with dpg.node_editor(
             tag=cfg.editor_tag,
+            parent=cfg.win_tag,
             callback=link_callback,          # Called when link created
             delink_callback=delink_callback, # Called when link deleted
             minimap=cfg.editor_map,
@@ -454,9 +430,7 @@ def unregister():
 E:\soon\projects\PBNPR\code\gl_studio\ui\ui_bpy.py
 ========================================
 import bpy
-from gl_studio.ui import dpg_node_editor
-from  dearpygui import dearpygui as dpg  
-
+from gl_studio.ui import dpg_main
 # ---------------------------------------
 ID_OP_EXEC_WINDOW = "wm.open_gl_studio"
 
@@ -469,36 +443,23 @@ class OPEN_OT_gl_studio(bpy.types.Operator):
 
     def modal(self, context, event):
         if event.type == 'TIMER':
-            if dpg.is_dearpygui_running():
-                dpg.render_dearpygui_frame()
-                if dpg_node_editor.dag:
-                    try: 
-                        dpg_node_editor.dag.start()
-                        dpg_node_editor.on_after_frame_callbacks()
-                    except Exception as e:
-                        print(f"Dag error: {e}")
+            if dpg_main.check_state(): 
+                dpg_main.render_a_frame()
             else:
                 self.cancel(context)
                 return {'FINISHED'}
         return {'PASS_THROUGH'}
 
     def execute(self, context):
-        if not dpg_node_editor.dpg_internals.cfg.been_registererd:
-            dpg_node_editor.dpg_internals.INIT()
-            dpg_node_editor.dpg_internals.THEME()
-            dpg_node_editor.dpg_internals.WIN_CREATE()
-            dpg_node_editor.dpg_internals.VIEWPORT()
-            dpg_node_editor.register()
-        dpg_node_editor.dpg_internals.cfg.been_registererd = True
-        
+        dpg_main.register()
         self._timer = context.window_manager.event_timer_add(self._FPS, window=context.window)
         context.window_manager.modal_handler_add(self)
         return {'RUNNING_MODAL'}
     
     def cancel(self, context):
+        dpg_main.unregister()
         if self._timer:
             context.window_manager.event_timer_remove(self._timer)
-        dpg_node_editor.unregister()
 
 class gl_PT(bpy.types.Panel):
     bl_label = "gl manager"
@@ -524,8 +485,7 @@ def register():
 def unregister():
     for cl in cls:
         bpy.utils.unregister_class(cl)
-    dpg_node_editor.unregister()
-    dpg_node_editor.dpg_internals.SHUTDOWN()
+    dpg_main.unregister()
 ========================================
 E:\soon\projects\PBNPR\code\gl_studio\util\util_types.py
 ========================================

@@ -26,39 +26,36 @@ class DPG_INTERFACE:
 
 cfg = DPG_INTERFACE()
 
-class DAG:
-    """Pull based Direct Access Graph"""
+class PAG:
+    """Pull-based Access Graph"""
     def start(self):
         self.queue = []
         self.visited = set()
 
         for obj in cfg.nodes.values():
-            if obj.IS_ROOT and obj.ENABLE and obj.SHOULD_EXEC_CB():
+            if obj.SHOULD_CRAWL_CB():
                 self.evaluate(obj)
 
-        self.queue.reverse()
         self.execute_queue()
 
     def evaluate(self, obj):
-        if not obj or obj in self.visited:
-            return
-
+        if not obj or obj in self.visited: return
         self.visited.add(obj)
-
-        # go upstream first
+        
         for out_id in obj.PINS['CRAWLERS']:
             node_out = dpg.get_item_parent(out_id)
             obj_out = cfg.nodes.get(node_out)
             self.evaluate(obj_out)
 
-        if obj.ENABLE:
+        if obj.SHOULD_EXEC_CB():
             self.queue.append(obj)
 
     def execute_queue(self):
+        self.queue.reverse()
         for obj in self.queue:
             obj.EXEC_ON_CRAWLER_CB()
 
-dag = DAG()
+pag = PAG()
 # ---------------------------------------
 
 def on_node_types_reload():
@@ -89,7 +86,7 @@ def on_node_types_reload():
                             node_obj = cast(Node_template.NODE_INTERFACE,
                                             node_interface(parent=cfg.editor_tag))
                             cfg.nodes[node_obj.ID]=node_obj
-                            node_obj.GUI_CB()
+                            node_obj.EXEC_GUI_CB()
 
                         dpg.add_menu_item(label=node_interface.LABEL,
                                           callback=node_creation,
@@ -108,8 +105,8 @@ def on_add_directory():
 def on_after_frame_callbacks():
     for node in cfg.nodes.values():
         node = cast(Node_template.NODE_INTERFACE,node)
-        if node.ACTIVE:
-            node.LOOP_CB()
+        if node.SHOULD_BE_ACTIVE():
+            node.EXEC_ON_LOOP_CB()
 
 def link_callback(sender, app_data):
     out_id, in_id = app_data
