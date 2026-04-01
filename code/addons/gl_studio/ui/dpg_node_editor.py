@@ -10,10 +10,11 @@ from gl_studio.ui import dpg_internals
 from gl_studio.examples.nodes import Node_template
 # ---------------------------------------
 class DPG_INTERFACE:
+    """nodes = {node_id:node_obj}"""
     win_label='Node editor'
     
     def INIT(self):
-        self.win_tag  = dpg_internals.cfg.win1_id
+        self.win_tag  = dpg_internals.cfg.win_main_id
         self.editor_tag = dpg.generate_uuid()
         self.editor_menuDirs = dpg.generate_uuid()
         self.editor_menuTypes= dpg.generate_uuid()
@@ -22,38 +23,83 @@ class DPG_INTERFACE:
     
     dirs  = {}
     module_registry = {}
-    nodes = {}
+    nodes = {}        
+    active_links = {}  # link_id : (in , out)
 
 cfg = DPG_INTERFACE()
 
+class node_helper:
+    def node_from_socket(self,socket_id):
+        return cast(Node_template.NODE_INTERFACE,
+                    dpg.get_item_parent(socket_id))
+    
+    def node_adjacnet_from_input(self,input_socket_id):
+        """ID of the node that is connected to an input"""
+        output = cfg.active_links.get(input_socket_id)
+        return cast(Node_template.NODE_INTERFACE, 
+                    self.node_from_socket(output))
+
+
+nh = node_helper()
+
 class PAG:
-    """Pull-based Access Graph"""
-    def start(self):
-        self.queue = []
-        self.visited = set()
+    """Pull-based Access Graph - WITH DATA FLOW"""
+    queue   = []
+    visited = []
+    sorted_matrix=[] # [int] = [Output_id,input,input...etc]
 
-        for obj in cfg.nodes.values():
-            if obj.SHOULD_CRAWL_CB():
-                self.evaluate(obj)
+    def reset(self):
+        self.queue.clear()
+        self.visited.clear()
+        self.sorted_matrix.clear()
 
-        self.execute_queue()
+    def start(self): 
+        for node_id, node_obj in cfg.nodes.items(): 
+            node_obj = cast(Node_template.NODE_INTERFACE, node_obj)
+            if node_obj.SHOULD_CRAWL_CB():
+                self.reset()
+                self.order(node_obj)
+                self.execs()
 
-    def evaluate(self, obj):
-        if not obj or obj in self.visited: return
-        self.visited.add(obj)
+    def order(self, node_obj):
+        # recursion guard 
+        if not node_obj or node_obj.ID in self.visited: 
+            return 
+        self.visited.append(node_obj.ID)
         
-        for out_id in obj.PINS['CRAWLERS']:
-            node_out = dpg.get_item_parent(out_id)
-            obj_out = cfg.nodes.get(node_out)
-            self.evaluate(obj_out)
+        obj_curnt = cast(Node_template.NODE_INTERFACE, node_obj)
+        links_for_this_node = []
 
-        if obj.SHOULD_EXEC_CB():
-            self.queue.append(obj)
+        if hasattr(obj_curnt, 'inputs'):
+            for input_pin_id in obj_curnt.inputs:
+                outer_pin_id = cfg.active_links.get(input_pin_id)
+                if outer_pin_id:
+                    links_for_this_node.append([outer_pin_id, input_pin_id])
+                    adj_node_id = dpg.get_item_parent(outer_pin_id)
+                    self.order(cfg.nodes.get(adj_node_id))
 
-    def execute_queue(self):
-        self.queue.reverse()
-        for obj in self.queue:
-            obj.EXEC_ON_CRAWLER_CB()
+        if links_for_this_node:
+            self.sorted_matrix.append(links_for_this_node)
+
+
+    def execs(self):
+        for link_group in self.sorted_matrix:
+            # link_group is a list of [output_id, input_id] 
+            for o_pin, i_pin in link_group:
+                sender_node = cfg.nodes.get(dpg.get_item_parent(o_pin))
+                receiver_node = cfg.nodes.get(dpg.get_item_parent(i_pin))
+                
+                if not sender_node or not receiver_node: continue
+
+                crawl_results = sender_node.EXEC_ON_CRAWLER_CB() 
+
+                send_pin_dict = sender_node.outputs.get(o_pin)
+                rec_pin_dict = receiver_node.inputs.get(i_pin)
+
+                if send_pin_dict and rec_pin_dict:
+                    # 3. Transfer the value if types match (or 'any')
+                    if rec_pin_dict['type'] == send_pin_dict['type'] or rec_pin_dict['type'] == 'any':
+                        rec_pin_dict['value'] = send_pin_dict['value']
 
 pag = PAG()
 # ---------------------------------------
@@ -110,27 +156,8 @@ def on_after_frame_callbacks():
 
 def link_callback(sender, app_data):
     out_id, in_id = app_data
-        
-    #input node
-    node_in = dpg.get_item_parent(in_id)
-    obj_in = cast(Node_template.NODE_INTERFACE,cfg.nodes.get(node_in))
-    if not obj_in: return
-    #output node
-    node_out = dpg.get_item_parent(out_id)
-    obj_out = cast(Node_template.NODE_INTERFACE,cfg.nodes.get(node_out))
-    if not obj_out: return
-
     link_id = dpg.add_node_link(out_id, in_id, parent=sender, user_data=(out_id, in_id))
-    obj_in.LINKS.add(link_id)
-    obj_out.LINKS.add(link_id)
-
-    if in_id == obj_in.CRAWLER:
-        obj_in.PINS['CRAWLERS'].add(out_id)
-
-        # Track in your custom config
-        #if out_id not in cfg.active_links:
-        #    cfg.active_links[out_id] = set()
-        #cfg.active_links[out_id].add(in_id)
+    cfg.active_links[in_id] = out_id
 
 def delink_callback(sender, app_data):
     link_id = app_data
@@ -138,26 +165,8 @@ def delink_callback(sender, app_data):
     
     if link_info:
         out_id, in_id = link_info
-        #input node
-        node_in = dpg.get_item_parent(in_id)        
-        obj_in = cast(Node_template.NODE_INTERFACE,cfg.nodes.get(node_in))
-        if not obj_in: return
-        #output node
-        node_out = dpg.get_item_parent(out_id)        
-        obj_out = cast(Node_template.NODE_INTERFACE,cfg.nodes.get(node_out))
-        if not obj_out: return
+        cfg.active_links.pop(in_id, None)
 
-        obj_in.LINKS.discard(link_id)
-        obj_out.LINKS.discard(link_id)
-
-        if in_id == obj_in.CRAWLER:
-            obj_in.PINS['CRAWLERS'].discard(out_id)
-        
-        dpg.delete_item(link_id)
-        #if out_id in cfg.active_links:
-        #    cfg.active_links[out_id].discard(in_id)
-        #    if not cfg.active_links[out_id]:
-        #        del cfg.active_links[out_id]
 
 def register():
     cfg.INIT()

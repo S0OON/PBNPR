@@ -3,7 +3,6 @@ import shutil
 import os
 from pathlib import Path
 
-# Define paths
 REPO_SOURCE = r"E:\soon\projects\PBNPR\code\addons\gl_studio"
 BLENDER_DEST = r"C:\Users\ADMINI~1\AppData\Roaming\Blender Foundation\Blender\5.1\scripts\addons\gl_studio"
 
@@ -37,5 +36,18 @@ def sync_to_blender():
         print(f"❌ ERROR during sync: {e}")
         return False
 
-if __name__ == "__main__":
-    sync_to_blender()
+sync_to_blender()
+
+import sys
+sys.path.append(r"E:\soon\projects\PBNPR\code\addons\\")
+import gl_studio
+import bpy
+import gl_studio.ui.dpg_main as main
+import dearpygui.dearpygui as dpg
+from importlib import reload
+
+
+main.register()
+print(bpy.data.objects['Cube'])
+while dpg.is_dearpygui_running():
+    main.render_a_frame()

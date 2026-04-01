@@ -9,9 +9,10 @@ def register():
         dpg_node_editor.dpg_internals.WIN_CREATE()
         dpg_node_editor.dpg_internals.VIEWPORT()
         dpg_node_editor.register()
-    dpg_node_editor.dpg_internals.cfg.been_registererd = True
+        dpg_node_editor.dpg_internals.cfg.been_registererd = True
 
 def unregister():
+    if dpg_internals.cfg.been_registererd:
       dpg_node_editor.unregister()
       dpg_internals.SHUTDOWN()
 
@@ -24,6 +25,8 @@ def render_a_frame():
         try: 
             dpg_node_editor.pag.start()
         except Exception as e:
-            print(f"Dag error: {e}")
+            print(f"Pag error: {e}")
     dpg_node_editor.on_after_frame_callbacks()
 
+
+    
