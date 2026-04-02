@@ -38,6 +38,16 @@ def sync_to_blender():
 
 sync_to_blender()
 
+import debugpy
+
+# Open port 5678 on localhost
+debugpy.listen(("localhost", 5678))
+print("Waiting for VS Code debugger to attach...")
+
+# This will literally pause Blender here until you hit F5 in VS Code
+debugpy.wait_for_client() 
+print("Debugger attached! Resuming execution...")
+
 import sys
 sys.path.append(r"E:\soon\projects\PBNPR\code\addons\\")
 import gl_studio
@@ -45,8 +55,9 @@ import bpy
 import gl_studio.ui.dpg_main as main
 import dearpygui.dearpygui as dpg
 from importlib import reload
+from gl_studio.gl.ModernOpenGL import GLctx as GL
 
-
+GL.INIT()
 main.register()
 print(bpy.data.objects['Cube'])
 while dpg.is_dearpygui_running():

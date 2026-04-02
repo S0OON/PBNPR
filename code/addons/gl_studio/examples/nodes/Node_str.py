@@ -45,8 +45,7 @@ class NODE_INTERFACE:
                 dpg.add_input_text(width=80,callback=self.on_str_change)
 
             # outs
-            with dpg.node_attribute(attribute_type=dpg.mvNode_Attr_Output,tag=self.O_str.ID):
-                dpg.add_text(label="Output ->")
+            with dpg.node_attribute(attribute_type=dpg.mvNode_Attr_Output,tag=self.O_str.ID):pass
 #Center
     def on_enable_change(self, sender, app_data):
         self.ENABLE = app_data
@@ -73,7 +72,7 @@ class NODE_INTERFACE:
         print(self.O_str.value)
     
     def on_execute_crawler(self, input_data=None):
-        if self.ENABLE:
+        if self.SHOULD_EXEC_CB():
             self.on_execute()
     
     def on_execute_after_frame(self):

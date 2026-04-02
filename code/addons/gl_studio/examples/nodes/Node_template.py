@@ -45,12 +45,12 @@ class NODE_INTERFACE:
 
             # inputs
             with dpg.node_attribute(attribute_type=dpg.mvNode_Attr_Input,tag=self.I_f.ID):
-                dpg.add_text(label="<- Input")
+                dpg.add_text("<- Input")
                 dpg.add_input_float(label='im a float boi',callback=self.on_float_change,width=80)
             
             # outs
             with dpg.node_attribute(attribute_type=dpg.mvNode_Attr_Output,tag=self.O_f.ID):
-                dpg.add_text(label="Output ->")
+                dpg.add_text("Output ->")
 #Center
     def on_enable_change(self, sender, app_data):
         self.ENABLE = app_data

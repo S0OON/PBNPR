@@ -11,4 +11,9 @@ class NodeSocket:
 
 F = 'float'
 F2= '2float'
+F4= '4float'
+F16= '16float'
+RGBA = 'rgba'
 STR = 'string'
+ANY = 'any'
+NONE = 'none'
