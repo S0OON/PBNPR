@@ -102,6 +102,14 @@ class PAG:
 
 pag = PAG()
 # ---------------------------------------
+def Node_initlizer(node_interface):
+    def node_creation(sender, app_data,user_data):
+        node_obj = cast(Node_template.NODE_INTERFACE,
+                        node_interface(parent=cfg.editor_tag))
+                        
+        cfg.nodes[node_obj.ID] = node_obj
+        node_obj.EXEC_GUI_CB()
+    return node_creation
 
 def on_node_types_reload():
     global cfg
@@ -126,15 +134,9 @@ def on_node_types_reload():
                     try:
                         node_interface = getattr(module,'NODE_INTERFACE')
                         if not node_interface: return
-                        
-                        def node_creation(sender,app_data):
-                            node_obj = cast(Node_template.NODE_INTERFACE,
-                                            node_interface(parent=cfg.editor_tag))
-                            cfg.nodes[node_obj.ID]=node_obj
-                            node_obj.EXEC_GUI_CB()
 
                         dpg.add_menu_item(label=node_interface.LABEL,
-                                          callback=node_creation,
+                                          callback=Node_initlizer(node_interface),
                                           parent=cfg.editor_menuTypes)
 
                         cfg.module_registry[module_name] = module

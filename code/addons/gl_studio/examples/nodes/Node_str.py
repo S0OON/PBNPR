@@ -4,11 +4,10 @@ from gl_studio.util import util_types as t
 
 
 class NODE_INTERFACE:
-    LABEL = "Template"
+    LABEL = "String"
     
     def __init__(self, parent):
-        self.I_f = t.NodeSocket(dpg.generate_uuid(),t.F)
-        self.O_f = t.NodeSocket(dpg.generate_uuid(),t.F)
+        self.O_str = t.NodeSocket(dpg.generate_uuid(),t.STR)
 
         self.PARENT = parent
         self.ID = dpg.generate_uuid()
@@ -28,11 +27,11 @@ class NODE_INTERFACE:
         
         # Node sockets:
         # PLUGIN inputs/outputs system
-        self.inputs = {
-            self.I_f.ID : self.I_f} 
+        self.inputs = {} 
         
         self.outputs = {
-            self.O_f.ID : self.O_f}
+            self.O_str.ID : self.O_str}
+
 
     def on_gui(self):
         with dpg.node(label=self.LABEL, parent=self.PARENT, tag=self.ID):
@@ -41,15 +40,12 @@ class NODE_INTERFACE:
                 dpg.add_button(label="Execute",  callback=self.EXEC_CB)
                 dpg.add_checkbox(label="Enable", callback=self.on_enable_change)
                 dpg.add_checkbox(label="Active", callback=self.on_active_change)
-                dpg.add_checkbox(label="Crawl",  callback=self.on_crawl_change)
 
-            # inputs
-            with dpg.node_attribute(attribute_type=dpg.mvNode_Attr_Input,tag=self.I_f.ID):
-                dpg.add_text(label="<- Input")
-                dpg.add_input_float(label='im a float boi',callback=self.on_float_change,width=80)
-            
+                # inputs
+                dpg.add_input_text(width=80,callback=self.on_str_change)
+
             # outs
-            with dpg.node_attribute(attribute_type=dpg.mvNode_Attr_Output,tag=self.O_f.ID):
+            with dpg.node_attribute(attribute_type=dpg.mvNode_Attr_Output,tag=self.O_str.ID):
                 dpg.add_text(label="Output ->")
 #Center
     def on_enable_change(self, sender, app_data):
@@ -59,26 +55,25 @@ class NODE_INTERFACE:
         self.ACTIVE = app_data
         
     def on_crawl_change(self, sender, app_data):
-        self.CRAWL = app_data
+        pass
 #Peripheral
-    def on_float_change(self, sender, app_data):
-        self.I_f.value = app_data
+    def on_str_change(self, sender, app_data):
+        self.O_str.value = app_data
 #Center
     def on_should_execute(self):
         return self.ENABLE
     
     def on_should_crawl(self):
-        return self.CRAWL
+        return None
     
     def on_should_active(self):
         return self.ACTIVE and self.ENABLE
     
     def on_execute(self):
-        self.O_f.value = self.I_f.value
-        print(self.I_f.value, " : ", self.O_f.value)
+        print(self.O_str.value)
     
     def on_execute_crawler(self, input_data=None):
-        if self.SHOULD_EXEC_CB():
+        if self.ENABLE:
             self.on_execute()
     
     def on_execute_after_frame(self):

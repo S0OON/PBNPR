@@ -11,3 +11,4 @@ class NodeSocket:
 
 F = 'float'
 F2= '2float'
+STR = 'string'
