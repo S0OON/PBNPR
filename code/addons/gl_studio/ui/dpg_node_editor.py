@@ -8,6 +8,7 @@ from collections import defaultdict
 
 from gl_studio.ui import dpg_internals
 from gl_studio.examples.nodes import Node_template
+from gl_studio.util import util_types as t
 # ---------------------------------------
 class DPG_INTERFACE:
     """nodes = {node_id:node_obj}"""
@@ -44,14 +45,15 @@ nh = node_helper()
 
 class PAG:
     """Pull-based Access Graph - WITH DATA FLOW"""
-    queue   = []
-    visited = []
-    sorted_matrix=[] # [int] = [Output_id,input,input...etc]
+    def __init__(self):
+        self.queue = []
+        self.visited = set()
+        self.exec_order = []  # Stores nodes in topological order
 
     def reset(self):
         self.queue.clear()
         self.visited.clear()
-        self.sorted_matrix.clear()
+        self.exec_order.clear()
 
     def start(self): 
         for node_id, node_obj in cfg.nodes.items(): 
@@ -60,46 +62,43 @@ class PAG:
                 self.reset()
                 self.order(node_obj)
                 self.execs()
+                node_obj.EXEC_ON_CRAWLER_CB()
 
     def order(self, node_obj):
-        # recursion guard 
         if not node_obj or node_obj.ID in self.visited: 
             return 
-        self.visited.append(node_obj.ID)
         
-        obj_curnt = cast(Node_template.NODE_INTERFACE, node_obj)
-        links_for_this_node = []
-
-        if hasattr(obj_curnt, 'inputs'):
-            for input_pin_id in obj_curnt.inputs:
+        self.visited.add(node_obj.ID)
+        
+        if hasattr(node_obj, 'inputs'):
+            for input_pin_id in node_obj.inputs:
                 outer_pin_id = cfg.active_links.get(input_pin_id)
                 if outer_pin_id:
-                    links_for_this_node.append([outer_pin_id, input_pin_id])
                     adj_node_id = dpg.get_item_parent(outer_pin_id)
-                    self.order(cfg.nodes.get(adj_node_id))
-
-        if links_for_this_node:
-            self.sorted_matrix.append(links_for_this_node)
-
+                    adj_node = cfg.nodes.get(adj_node_id)
+                    self.order(adj_node)
+        
+        self.exec_order.append(node_obj)
 
     def execs(self):
-        for link_group in self.sorted_matrix:
-            # link_group is a list of [output_id, input_id] 
-            for o_pin, i_pin in link_group:
-                sender_node = cfg.nodes.get(dpg.get_item_parent(o_pin))
-                receiver_node = cfg.nodes.get(dpg.get_item_parent(i_pin))
-                
-                if not sender_node or not receiver_node: continue
+        for node in self.exec_order:
+            if hasattr(node, 'inputs'):
+                for input_pin_id, in_pin_socket in node.inputs.items():
+                    outer_pin_id = cfg.active_links.get(input_pin_id)
+                    
+                    if outer_pin_id:
+                        sender_node = cfg.nodes.get(dpg.get_item_parent(outer_pin_id))
+                        if sender_node and hasattr(sender_node, 'outputs'):
+                            send_pin_socket = sender_node.outputs.get(outer_pin_id)
+                            I = cast(t.NodeSocket,in_pin_socket)
+                            O = cast(t.NodeSocket,send_pin_socket)
+                            if send_pin_socket:
+                                # Clone the value if types match (or 'any')
+                                if I.data_type == O.data_type or I.data_type.lower() == 'any':
+                                    I.value = O.value
 
-                crawl_results = sender_node.EXEC_ON_CRAWLER_CB() 
-
-                send_pin_dict = sender_node.outputs.get(o_pin)
-                rec_pin_dict = receiver_node.inputs.get(i_pin)
-
-                if send_pin_dict and rec_pin_dict:
-                    # 3. Transfer the value if types match (or 'any')
-                    if rec_pin_dict['type'] == send_pin_dict['type'] or rec_pin_dict['type'] == 'any':
-                        rec_pin_dict['value'] = send_pin_dict['value']
+            # 2. Execute the node itself (now that inputs are populated)
+            node.EXEC_ON_CRAWLER_CB()
 
 pag = PAG()
 # ---------------------------------------
