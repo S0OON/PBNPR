@@ -3,54 +3,35 @@ import dearpygui.dearpygui as dpg
 from gl_studio.util import util_types as t
 import numpy as np
 from PIL import Image
+from gl_studio.examples.nodes.Node_zPattren import NODE_BASE_INTERFACE as BASE_NODE
 
-class NODE_INTERFACE:
-    LABEL = "RGBA Viewer"
-    
+class NODE_INTERFACE(BASE_NODE):
+    LABEL = 'RGBA viewer'
+
     def __init__(self, parent):
-        self.PARENT = parent
-        self.ID = dpg.generate_uuid()
-        
-        # --- Socket Setup ---
-        self.I_pixels = t.NodeSocket(dpg.generate_uuid(), t.RGBA, '<- RGBA Pixels')
-        self.O_out = t.NodeSocket(dpg.generate_uuid(),    t.NONE, 'Unused Output ->') # Placeholder to connect to a pulse node
-        
-        # --- Standard Callbacks ---
-        self.EXEC_GUI_CB        = self.on_gui
-        self.EXEC_CB            = self.on_execute
-        self.EXEC_ON_CRAWLER_CB = self.on_execute_crawler
-        self.EXEC_ON_LOOP_CB    = self.on_execute_after_frame
-        
-        self.SHOULD_EXEC_CB     = self.on_should_execute
-        self.SHOULD_CRAWL_CB    = self.on_should_crawl
-        self.SHOULD_BE_ACTIVE   = self.on_should_active
-        
-        # This is an endpoint node, so it doesn't need to enable/crawl downstream
-        self.ENABLE = True
-        self.ACTIVE = False
-        self.CRAWL  = False
-        
-        self.inputs = {
-            self.I_pixels.ID : self.I_pixels
-        } 
-        self.outputs = {}
+        super().__init__(parent)
+
+        self.EXECUTE = True
+        self.ENABLE  = True
+
+        self.I_RGBA_pixels = t.NodeSocket(dpg.generate_uuid(),t.RGBA,'<- RGBA viewer')
+
+        self._resgister_IO(
+            output_sockets=[self.I_RGBA_pixels],
+        )
 
     def on_gui(self):
-        with dpg.node(label=self.LABEL, parent=self.PARENT, tag=self.ID):
-            with dpg.node_attribute(attribute_type=dpg.mvNode_Attr_Static):
-                dpg.add_button(label="View Image (PIL)", callback=self.on_view_button)
+        super().on_gui()
 
-            # Input Socket
-            with dpg.node_attribute(attribute_type=dpg.mvNode_Attr_Input, tag=self.I_pixels.ID):
-                dpg.add_text(self.I_pixels.name)
+        pixels = self._create_input_attr(self.I_RGBA_pixels)
+        
 
-            #otuputs
-            with dpg.node_attribute(attribute_type=dpg.mvNode_Attr_Output, tag=self.O_out.ID):
-                dpg.add_text(self.O_out.name)
+    def on_should_execute(self): return self.ENABLE
 
-    # --- Execution Callbacks ---
-    def on_view_button(self, sender, app_data):
-        pixels = self.I_pixels.value
+    def on_execute_crawler(self, input_data=None): self.on_execute()
+
+    def on_execute(self):
+        pixels = self.I_RGBA_pixels.value
         
         if pixels is None or not isinstance(pixels, np.ndarray):
             print(f"[{self.LABEL}] Error: No valid pixel data found. Execute the render node first!")
@@ -68,15 +49,3 @@ class NODE_INTERFACE:
             print(f"[{self.LABEL}] Opened image in default viewer.")
         except Exception as e:
             print(f"[{self.LABEL}] Failed to open image: {e}")
-
-    # Standard boilerplate returning safe defaults
-    def on_should_execute(self): return False
-    def on_should_crawl(self): return False
-    def on_should_active(self): return False
-    def on_execute(self): pass
-    
-    def on_execute_crawler(self, input_data=None):
-        if self.SHOULD_EXEC_CB():
-            self.on_execute()
-        
-    def on_execute_after_frame(self): pass

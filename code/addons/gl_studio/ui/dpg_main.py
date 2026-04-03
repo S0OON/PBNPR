@@ -21,12 +21,7 @@ def check_state():
 
 def render_a_frame():
     dpg.render_dearpygui_frame()
-    if dpg_node_editor.pag:
-        try: 
-            dpg_node_editor.pag.start()
-        except Exception as e:
-            print(f"Pag error: {e}")
-    dpg_node_editor.on_after_frame_callbacks()
+    dpg_node_editor.run()
 
 
     

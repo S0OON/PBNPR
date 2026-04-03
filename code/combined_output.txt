@@ -38,23 +38,65 @@ if __name__ == "__main__":
     write_combined_output(files, os.path.join(current_dir, OUTPUT_FILE))
     print(f"✅ Combined {len(files)} files into {OUTPUT_FILE}")
 ========================================
-E:\soon\projects\PBNPR\code\addons\gl_studio\examples\nodes\Node_template.py
+E:\soon\projects\PBNPR\code\addons\gl_studio\__init__.py
 ========================================
-# Node_template_advanced.py
+# This file belongs to S00N's PBNPR Blender Add-on
+# all rights reserved (C) 2026 S00N
+bl_info = {
+    "name": "PBNPR: GL studio",
+    "author": "S00N",
+    "version": (1, 0),
+    "blender": (5, 0, 1),
+    "location": "View3D > N-Panel > PBNPR",
+    "description": "High-performance GLSL viewport manager and baker",
+    "category"   : "Render",
+}
+
+from gl_studio.ui.ui_bpy import register
+from gl_studio.ui.ui_bpy import unregister
+# ============================================================
+if __name__ == '__main__':
+    register()
+========================================
+E:\soon\projects\PBNPR\code\addons\gl_studio\examples\nodes\Node_bpy_camData.py
+========================================
+# Node_camera_data.py
 import dearpygui.dearpygui as dpg
 from gl_studio.util import util_types as t
-import time
+import numpy as np
+import bpy
 
-class NODE_INTERFACE:
-    LABEL = "Template"
+def eval_camera_matrices(cam_obj, width, height):
+    depsgraph = bpy.context.evaluated_depsgraph_get()
+    m_view = np.array(cam_obj.matrix_world.inverted().transposed(), dtype=np.float32).flatten()
+    m_proj = np.array(cam_obj.calc_matrix_camera(depsgraph, x=width, y=height).transposed(), dtype=np.float32).flatten()
+    return [m_view, m_proj]
+
+class X:
+    LABEL = "Camera Data"
     
     def __init__(self, parent):
-        self.I_f = t.NodeSocket(dpg.generate_uuid(),t.F)
-        self.O_f = t.NodeSocket(dpg.generate_uuid(),t.F)
-
         self.PARENT = parent
-        self.ID = dpg.generate_uuid()
+        self.ID     = dpg.generate_uuid()
         
+# --- 1. Sockets Setup ---
+        self.I_cam_name = t.NodeSocket(dpg.generate_uuid(), t.STR, 'Camera Name')
+        self.I_Width    = t.NodeSocket(dpg.generate_uuid(), t.F,   'Width')
+        self.I_Height   = t.NodeSocket(dpg.generate_uuid(), t.F,   'Height')
+        
+        self.O_view     = t.NodeSocket(dpg.generate_uuid(), t.F16, 'View Matrix ->')
+        self.O_proj     = t.NodeSocket(dpg.generate_uuid(), t.F16, 'Proj Matrix ->')
+        
+        # Fallback identity matrices
+        self.I_cam_name.value = 'active'
+        self.I_Width.value    = 64
+        self.I_Height.value   = 64
+        self.O_view.value     = np.eye(4, dtype=np.float32)
+        self.O_proj.value     = np.eye(4, dtype=np.float32)
+        #self.O_Width.value    = self.I_Width.value
+        #self.O_Height.value   = self.O_Height.value
+        
+# --- Standard Callbacks ---
         self.EXEC_GUI_CB        = self.on_gui
         self.EXEC_CB            = self.on_execute
         self.EXEC_ON_CRAWLER_CB = self.on_execute_crawler
@@ -64,76 +106,634 @@ class NODE_INTERFACE:
         self.SHOULD_CRAWL_CB    = self.on_should_crawl
         self.SHOULD_BE_ACTIVE   = self.on_should_active
         
-        self.ENABLE = False
+        self.ENABLE = True
         self.ACTIVE = False
         self.CRAWL  = False
         
-        # Node sockets:
-        # PLUGIN inputs/outputs system
         self.inputs = {
-            self.I_f.ID : self.I_f} 
+            self.I_cam_name.ID : self.I_cam_name,
+            self.I_Width.ID    : self.I_Width,
+            self.I_Height.ID   : self.I_Height
+        } 
         
         self.outputs = {
-            self.O_f.ID : self.O_f}
-
-        # previous vars are called from the plugin.
-        # util User customization (private)
-        self.code_snippet = "result = input_text.upper()"
-        self.blender_operation = "None"  # bpy.ops.mesh, etc.
+            self.O_view.ID   : self.O_view,
+            self.O_proj.ID   : self.O_proj,
+            #self.O_Width.ID  : self.O_Width,
+            #self.O_Height.ID : self.O_Height
+        }
 
     def on_gui(self):
         with dpg.node(label=self.LABEL, parent=self.PARENT, tag=self.ID):
-            # Static 
+            with dpg.node_attribute(attribute_type=dpg.mvNode_Attr_Static):
+                dpg.add_button(label="Execute", callback=self.EXEC_CB)
+                dpg.add_checkbox(label="Enable", callback=self.on_enable_change, default_value=self.ENABLE)
+# INputs
+            with dpg.node_attribute(attribute_type=dpg.mvNode_Attr_Input, tag=self.I_cam_name.ID):
+                dpg.add_input_text(label=self.I_cam_name.name, default_value=self.I_cam_name.value, callback=self.on_string_change, width=100)
+            
+            with dpg.node_attribute(attribute_type=dpg.mvNode_Attr_Input, tag=self.I_Width.ID):
+                dpg.add_text(self.I_Width.name)
+                dpg.add_input_float(callback=self.on_W_change,width=80)
+
+            with dpg.node_attribute(attribute_type=dpg.mvNode_Attr_Input, tag=self.I_Height.ID):
+                dpg.add_text(self.I_Height.name)
+                dpg.add_input_float(callback=self.on_H_change,width=80)
+# outputs
+            with dpg.node_attribute(attribute_type=dpg.mvNode_Attr_Output, tag=self.O_view.ID):
+                dpg.add_text(self.O_view.name)
+            with dpg.node_attribute(attribute_type=dpg.mvNode_Attr_Output, tag=self.O_proj.ID):
+                dpg.add_text(self.O_proj.name)
+
+    def on_enable_change(self, sender, app_data): self.ENABLE = app_data
+    def on_string_change(self, sender, app_data): self.I_cam_name.value = app_data
+    def on_should_execute(self):  return self.ENABLE
+    def on_should_crawl(self):    return self.CRAWL
+    def on_should_active(self):   return self.ACTIVE and self.ENABLE
+    
+    def on_W_change(self, sender, app_data):
+        self.I_Width.value = app_data
+
+    def on_H_change(self, sender, app_data):
+        self.I_Height.value = app_data
+
+    def on_execute(self):
+        cam_name = self.I_cam_name.value.strip()
+        
+        if cam_name.lower() == 'active':
+            cam_obj = bpy.context.scene.camera
+        else:
+            cam_obj = bpy.data.objects.get(cam_name)
+            
+        if not cam_obj or cam_obj.type != 'CAMERA':
+            print(f"[{self.LABEL}] Error: Could not find valid camera '{cam_name}'.")
+            return
+
+        self.O_view.value , self.O_proj.value = eval_camera_matrices(cam_obj, int(self.I_Width.value), int(self.I_Height.value))
+    
+        print(f"[{self.LABEL}] Extracted matrices from '{cam_obj.name}'.")
+
+    def on_execute_crawler(self, input_data=None):
+        if self.SHOULD_EXEC_CB(): self.on_execute()
+        
+    def on_execute_after_frame(self): pass
+========================================
+E:\soon\projects\PBNPR\code\addons\gl_studio\examples\nodes\Node_bpy_object eval.py
+========================================
+# Node_object_evaluation.py
+import dearpygui.dearpygui as dpg
+from gl_studio.util import util_types as t
+import bpy
+import numpy as np
+
+def _get_mesh_data_for_gpu(obj:bpy.types.Object):
+    """Returns [ i, pos[], n[], mat4, UV(active) ]"""
+    depsgraph = bpy.context.evaluated_depsgraph_get()
+    eval_obj  = obj.evaluated_get(depsgraph)
+    mesh      = eval_obj.to_mesh()
+    mesh.calc_loop_triangles()
+    
+    tris_count = len(mesh.loop_triangles)
+    
+    loops_indices  = np.empty((tris_count * 3), dtype=np.int32)
+    mesh.loop_triangles.foreach_get("loops", loops_indices)
+
+    vertex_indices = np.empty((tris_count * 3), dtype=np.int32)
+    mesh.loop_triangles.foreach_get(t.bl_verts, vertex_indices)
+
+    all_pos   = np.empty((len(mesh.vertices), 3), dtype=np.float32)
+    mesh.vertices.foreach_get(t.bl_Co, all_pos.reshape(-1))
+    final_pos = all_pos[vertex_indices]
+
+    all_normals   = np.empty((len(mesh.loops), 3), dtype=np.float32)
+    mesh.loops.foreach_get(t.bl_normal, all_normals.reshape(-1))
+    final_normals = all_normals[loops_indices]
+    
+    mesh = obj.data
+    
+    if mesh.uv_layers.active:
+        uvs = np.empty(len(mesh.loops) * 2, dtype=np.float32)
+        mesh.uv_layers.active.data.foreach_get("uv", uvs)
+        final_UV = uvs.reshape(-1, 2)
+    else:
+        final_UV = np.array([]) 
+    
+    final_mat = np.array(obj.matrix_world, dtype=np.float32)
+
+    eval_obj.to_mesh_clear() 
+    return loops_indices, final_pos, final_normals, final_mat, final_UV
+
+
+class X:
+    LABEL = "Object Evaluation"
+    
+    def __init__(self, parent):
+        self.PARENT = parent
+        self.ID     = dpg.generate_uuid()
+        
+# --- 1. Sockets Setup ---
+        self.I_obj_name = t.NodeSocket(dpg.generate_uuid(), t.STR, 'obj name')
+        self.O_verts    = t.NodeSocket(dpg.generate_uuid(), t.F16, 'obj vertices')
+        self.O_normals  = t.NodeSocket(dpg.generate_uuid(), t.F16, 'obj normals')
+        self.O_mat      = t.NodeSocket(dpg.generate_uuid(), t.F16, 'obj matrix')
+        self.O_uvs      = t.NodeSocket(dpg.generate_uuid(), t.F16, 'obj uvs')
+# Defaults
+        self.I_obj_name.value = "" 
+# std calls
+        self.EXEC_GUI_CB        = self.on_gui
+        self.EXEC_CB            = self.on_execute
+        self.EXEC_ON_CRAWLER_CB = self.on_execute_crawler
+        self.EXEC_ON_LOOP_CB    = self.on_execute_after_frame
+        
+        self.SHOULD_EXEC_CB     = self.on_should_execute
+        self.SHOULD_CRAWL_CB    = self.on_should_crawl
+        self.SHOULD_BE_ACTIVE   = self.on_should_active
+        
+        self.ENABLE = True
+        self.ACTIVE = False
+        self.CRAWL  = False
+        
+        self.inputs = {
+            self.I_obj_name.ID : self.I_obj_name
+        } 
+        
+        self.outputs = {
+            self.O_verts.ID   : self.O_verts,
+            self.O_normals.ID : self.O_normals,
+            self.O_uvs.ID     : self.O_uvs,
+            self.O_mat.ID     : self.O_mat
+        }
+
+    def on_gui(self):
+        with dpg.node(label=self.LABEL, parent=self.PARENT, tag=self.ID):
             with dpg.node_attribute(attribute_type=dpg.mvNode_Attr_Static):
                 dpg.add_button(label="Execute",  callback=self.EXEC_CB)
-                dpg.add_checkbox(label="Enable", callback=self.on_enable_change)
-                dpg.add_checkbox(label="Active", callback=self.on_active_change)
-                dpg.add_checkbox(label="Crawl",  callback=self.on_crawl_change)
-
-            # inputs
-            with dpg.node_attribute(attribute_type=dpg.mvNode_Attr_Input,tag=self.I_f.ID):
-                dpg.add_text(label="<- Input")
-                dpg.add_input_float(label='im a float boi',callback=self.on_float_change)
+                dpg.add_checkbox(label="Enable", callback=self.on_enable_change, default_value=self.ENABLE)
+                
+            with dpg.node_attribute(attribute_type=dpg.mvNode_Attr_Input, tag=self.I_obj_name.ID):
+                dpg.add_input_text(label="Obj Name", callback=self.on_string_change, width=100)
             
-            # outs
-            with dpg.node_attribute(attribute_type=dpg.mvNode_Attr_Output,tag=self.O_f.ID):
-                dpg.add_text(label="Output ->")
-#Center
+            with dpg.node_attribute(attribute_type=dpg.mvNode_Attr_Output, tag=self.O_verts.ID):
+                dpg.add_text("Vertices (np) ->")
+            with dpg.node_attribute(attribute_type=dpg.mvNode_Attr_Output, tag=self.O_normals.ID):
+                dpg.add_text("Normals (np) ->")
+            with dpg.node_attribute(attribute_type=dpg.mvNode_Attr_Output, tag=self.O_mat.ID):
+                dpg.add_text("Matrix (np) ->")
+            with dpg.node_attribute(attribute_type=dpg.mvNode_Attr_Output, tag=self.O_uvs.ID):
+                dpg.add_text("UV Map (np) ->")
+
+
+    def on_enable_change(self, sender, app_data): self.ENABLE = app_data
+    def on_string_change(self, sender, app_data): self.I_obj_name.value = app_data
+
+    def on_should_execute(self): return self.ENABLE
+    def on_should_crawl(self):   return None
+    def on_should_active(self):  return None
+    
+    
+    def on_execute(self):
+        obj_name = self.I_obj_name.value
+        
+        if not obj_name or obj_name not in bpy.data.objects:
+            print(f"[{self.LABEL}] Error: Object '{obj_name}' not found.")
+            return
+            
+        obj  = bpy.data.objects[obj_name]
+        if obj.type != 'MESH':
+            print(f"[{self.LABEL}] Error: Object '{obj_name}' is not a MESH.")
+            return
+        
+        i, V, N, M, UV = _get_mesh_data_for_gpu(obj)
+
+        self.O_verts.value   = V
+        self.O_normals.value = N
+        self.O_mat.value     = M
+        self.O_uvs.value     = UV
+
+        print(f"[{self.LABEL}] Success! Extracted {len(self.O_verts.value)} vertices from {obj_name}.")
+    
+    def on_execute_crawler(self, input_data=None):
+        if self.SHOULD_EXEC_CB(): self.on_execute()
+    
+    def on_execute_after_frame(self): pass
+========================================
+E:\soon\projects\PBNPR\code\addons\gl_studio\examples\nodes\Node_float.py
+========================================
+import dearpygui.dearpygui as dpg
+from gl_studio.util import util_types as t
+from gl_studio.examples.nodes.Node_zPattren import NODE_BASE_INTERFACE as BASE_NODE
+
+
+class NODE_INTERFACE(BASE_NODE):
+    LABEL = 'Float'
+
+    def __init__(self, parent):
+        super().__init__(parent)
+
+        self.EXECUTE = True # testing
+
+        self.O_f = t.NodeSocket(dpg.generate_uuid(),t.F,'Float ->')
+
+        self._resgister_IO(
+            output_sockets=[
+                self.O_f,
+            ]
+        )
+
+    def on_gui(self):
+        super().on_gui()
+        
+        Fl = self._create_output_attr(self.O_f)
+        dpg.add_drag_float(default_value=self.O_f.value, callback=self._on_float_change, 
+                           parent=Fl,width=50)
+
+
+    def _on_float_change(self,sender,app_data):
+        self.O_f.value = app_data
+
+    def on_execute(self):
+        print(f"Executed! : {self.O_f.value}")
+
+    def on_execute_crawler(self, input_data=None):
+        self.on_execute()
+========================================
+E:\soon\projects\PBNPR\code\addons\gl_studio\examples\nodes\Node_mgl_bpy_opengl.py
+========================================
+
+========================================
+E:\soon\projects\PBNPR\code\addons\gl_studio\examples\nodes\Node_pulse.py
+========================================
+# Node_pulse.py
+import dearpygui.dearpygui as dpg
+from gl_studio.util import util_types as t
+import time
+from gl_studio.examples.nodes.Node_zPattren import NODE_BASE_INTERFACE as BASE_NODE
+
+
+class NODE_INTERFACE(BASE_NODE):
+    LABEL = "Pulse Trigger"
+
+    def __init__(self, parent):
+        super().__init__(parent)
+
+        self.EXECUTE=False
+        self.CRAWL = True
+
+        self.I_branch_socket = t.NodeSocket(dpg.generate_uuid(),t.NONE,'<- Crawl',value=5.0)
+        self.last_pulse_time = time.time() 
+                
+        self._resgister_IO(input_sockets=[self.I_branch_socket])
+
+    def on_gui(self):
+        super().on_gui()
+
+        float_time = self._create_input_attr(self.I_branch_socket)
+        dpg.add_drag_float(label="Interval (s)", callback=self.on_float_change, 
+                            default_value=self.I_interval.value, speed=0.05, width=100)
+
+
+# --- Execution Logic ---
     def on_enable_change(self, sender, app_data):
         self.ENABLE = app_data
-    
-    def on_active_change(self, sender, app_data):
-        self.ACTIVE = app_data
-        
-    def on_crawl_change(self, sender, app_data):
-        self.CRAWL = app_data
-#Peripheral
+        if self.ENABLE:
+            self.last_pulse_time = time.time() 
+
     def on_float_change(self, sender, app_data):
-        self.I_f.value = app_data
-#Center
-    def on_should_execute(self):
+        self.I_interval.value = max(0.016, app_data) # 0.016 is roughly 60fps
+
+    def on_should_execute(self): 
         return self.ENABLE
     
     def on_should_crawl(self):
-        return self.CRAWL
-    
-    def on_should_active(self):
-        return self.ACTIVE and self.ENABLE
-    
-    def on_execute(self):
-        self.O_f.value = self.I_f.value
-        print(self.I_f.value, " : ", self.O_f.value)
-    
+        if not self.ENABLE:
+            return False
+            
+        current_time = time.time()
+        
+        if current_time - self.last_pulse_time >= self.I_interval.value:
+            self.last_pulse_time = current_time
+            return True
+            
+        return False
+        
     def on_execute_crawler(self, input_data=None):
         if self.SHOULD_EXEC_CB():
             self.on_execute()
     
-    def on_execute_after_frame(self):
-        pass
+========================================
+E:\soon\projects\PBNPR\code\addons\gl_studio\examples\nodes\Node_RGBAviwer.py
+========================================
+# Node_image_viewer.py
+import dearpygui.dearpygui as dpg
+from gl_studio.util import util_types as t
+import numpy as np
+from PIL import Image
+from gl_studio.examples.nodes.Node_zPattren import NODE_BASE_INTERFACE as BASE_NODE
+
+class NODE_INTERFACE(BASE_NODE):
+    LABEL = 'RGBA viewer'
+
+    def __init__(self, parent):
+        super().__init__(parent)
+
+        self.EXECUTE = True
+        self.ENABLE  = True
+
+        self.I_RGBA_pixels = t.NodeSocket(dpg.generate_uuid(),t.RGBA,'<- RGBA viewer')
+
+        self._resgister_IO(
+            output_sockets=[self.I_RGBA_pixels],
+        )
+
+    def on_gui(self):
+        super().on_gui()
+
+        pixels = self._create_input_attr(self.I_RGBA_pixels)
+        
+
+    def on_should_execute(self): return self.ENABLE
+
+    def on_execute_crawler(self, input_data=None): self.on_execute()
+
+    def on_execute(self):
+        pixels = self.I_RGBA_pixels.value
+        
+        if pixels is None or not isinstance(pixels, np.ndarray):
+            print(f"[{self.LABEL}] Error: No valid pixel data found. Execute the render node first!")
+            return
+            
+        try:
+            # OpenGL framebuffers are read bottom-up. 
+            # We flip it vertically so it looks correct in PIL.
+            flipped_pixels = np.flipud(pixels)
+            
+            # Convert Numpy array to PIL Image and show it
+            img = Image.fromarray(flipped_pixels, 'RGBA')
+            img.show()
+            
+            print(f"[{self.LABEL}] Opened image in default viewer.")
+        except Exception as e:
+            print(f"[{self.LABEL}] Failed to open image: {e}")
+
+========================================
+E:\soon\projects\PBNPR\code\addons\gl_studio\examples\nodes\Node_str.py
+========================================
+import dearpygui.dearpygui as dpg
+from gl_studio.util import util_types as t
+from gl_studio.examples.nodes.Node_zPattren import NODE_BASE_INTERFACE as BASE_NODE
+
+
+class NODE_INTERFACE(BASE_NODE):
+    LABEL = 'String'
+
+    def __init__(self, parent):
+        super().__init__(parent)
+
+        self.EXECUTE = True # testing
+
+        self.O_str = t.NodeSocket(dpg.generate_uuid(),t.STR,'String ->',value="Hello World")
+
+        self._resgister_IO(
+            output_sockets=[
+                self.O_str,
+            ]
+        )
+
+    def on_gui(self):
+        super().on_gui()
+        
+        Str = self._create_output_attr(self.O_str)
+        dpg.add_input_text(default_value=self.O_str.value, callback=self._on_str_change, 
+                           parent=Str,width=60)
+
+    def _on_str_change(self,sender,app_data):
+        self.O_str.value = app_data
+
+    def on_execute(self):
+        print(f"Executed! : {self.O_str.value}")
+
+    def on_execute_crawler(self, input_data=None):
+        self.on_execute()
+========================================
+E:\soon\projects\PBNPR\code\addons\gl_studio\examples\nodes\Node_zPattren.py
+========================================
+# Node_template_advanced.py
+import dearpygui.dearpygui as dpg
+from gl_studio.util import util_types as t
+
+
+class NODE_BASE_INTERFACE:
+    LABEL = "BASE EMPTY NODE"
     
+    def __init__(self, parent):
+        """
+        base node class methods are 2 types / 2 phases Init and Runtime:
+
+        - on_gui -> for drawing the node ui
+
+        - Behavior methods: EACH makes nothing unless overriden
+
+            on_execute() -> called when user clicks execute button
+
+            on_execute_crawler(input_data) -> called by PAG system when the node is connected to a crawler branch node
+
+            on_execute_after_frame() -> called by PAG system when the node is active and after frame rendering.
+
+        CACHE = False, this is turned on by the PAG class so it wont execute twice in the same frame if its connected to multiple nodes, but you can also use it to make your node execute only once and cache the result for the next executions in the same frame. You can reset it by setting it to False again.
+
+            
+        x------------------------------------x
+
+        Base Class Provides:
+        
+        x------------------------------------x
+
+        PARENT = parent (paramter passed at init)
+
+        ID = dpg.generate_uuid()
+    
+        EXEC_GUI_CB        = self.on_gui
+
+        EXEC_ON_CRAWLER_CB = self.on_execute_crawler
+
+        EXEC_CB            = self.on_execute
+
+        EXEC_ON_LOOP_CB    = self.on_execute_after_frame
+    
+        
+        inputs = {} 
+    
+        outputs = {}
+    
+        # PAG CALLBACK:
+
+        -SHOULD_CRAWL_CB    = self.on_should_crawl 
+        
+        use it to tell PAG this is a root node in a node tree
+
+        
+        # (OPTIONAL) thses have also 2 phases / 2 uses; 1.Init  2.Runtime:
+
+        EXECUTE= False   - Button; ui only (manual)
+
+        ENABLE = False   - Chechbox; should it execute based on the checkbox state
+
+        ACTIVE = False   - Chechbox; should it execute after frame based on the checkbox state
+
+        CRAWL  = False   - Chechbox; should it execute crawler based on the checkbox state
+
+        1.Changed at __init__: to tell on_gui that you want to show the execute button and checkboxes
+
+        2.Changed by on_change methods: by You
+        """
+        self.PARENT = parent
+        self.ID = dpg.generate_uuid()
+        
+        self.EXEC_GUI_CB        = self.on_gui
+        self.EXEC_CB            = self.on_execute
+        self.EXEC_ON_CRAWLER_CB = self.on_execute_crawler
+        self.EXEC_ON_LOOP_CB    = self.on_execute_after_frame
+        
+        self.SHOULD_CRAWL_CB    = self.on_should_crawl
+        
+        # thses have 2 uses;
+        # 1. Changed at __init__         : to tell on_gui that you want to show the execute button and checkboxes
+        # 2. Changed by on_change methods:Used by node itself to decide if it should execute or not, based on the checkboxes state
+        self.EXECUTE= False
+        self.ENABLE = False
+        self.ACTIVE = False
+        self.CRAWL  = False
+        
+        self.CACHE = False
+
+        # Node sockets:
+        # PLUGIN inputs/outputs system
+        self.inputs = {} 
+        self.outputs = {}
+
+    def _resgister_IO(self, 
+                      input_sockets:list[t.NodeSocket]=None, 
+                      output_sockets:list[t.NodeSocket]=None):
+        if input_sockets:
+            for sock in input_sockets:
+                self.inputs[sock.ID] = sock
+
+        if output_sockets:
+            for sock in output_sockets:
+                self.outputs[sock.ID] = sock
+
+    def _create_input_attr(self, socket:t.NodeSocket):
+        id = dpg.node_attribute(attribute_type=dpg.mvNode_Attr_Input, parent=self.ID, tag=socket.ID)
+        return id
+
+    def _create_output_attr(self, socket:t.NodeSocket):
+        id = dpg.node_attribute(attribute_type=dpg.mvNode_Attr_Output, parent=self.ID, tag=socket.ID)
+        return id
+
+    def on_gui(self):
+        """
+        THE UI NODE TAG IS SAME AS ID.
+
+        The Base class Function does:-
+
+        
+        with dpg.node(label=self.LABEL, parent=self.PARENT, tag=self.ID):
+        
+            with dpg.node_attribute(attribute_type=dpg.mvNode_Attr_Static):
+                if self.EXECUTE:
+                    dpg.add_button(label="Execute",  callback=self.EXEC_CB)
+                if self.ENABLE:
+                    dpg.add_checkbox(label="Enable", callback=self.on_enable_change)
+                if self.ACTIVE:
+                    dpg.add_checkbox(label="Active", callback=self.on_active_change)
+                if self.CRAWL:
+                    dpg.add_checkbox(label="Crawl",  callback=self.on_crawl_change)
+        
+        """
+        with dpg.node(label=self.LABEL, parent=self.PARENT, tag=self.ID):
+            # Static 
+            with dpg.node_attribute(attribute_type=dpg.mvNode_Attr_Static):
+                if self.EXECUTE:
+                    dpg.add_button(label="Execute",  callback=self.EXEC_CB)
+                if self.ENABLE:
+                    dpg.add_checkbox(label="Enable", callback=self.on_enable_change)
+                if self.ACTIVE:
+                    dpg.add_checkbox(label="Active", callback=self.on_active_change)
+                if self.CRAWL:
+                    dpg.add_checkbox(label="Crawl",  callback=self.on_crawl_change)
+
+# Changers
+    def on_change_enable(self, sender, app_data):
+        self.ENABLE = app_data
+    
+    def on_change_active(self, sender, app_data):
+        self.ACTIVE = app_data
+        
+    def on_change_crawl(self, sender, app_data):
+        self.CRAWL = app_data
+# Executions behavior
+    def on_should_crawl(self):  return None
+    
+    def on_execute(self):"""Called when user clicks execute button"""
+    def on_execute_crawler(self, input_data=None): """Called by PAG system when the node is connected to a crawler branch node"""
+    def on_execute_after_frame(self):"""Execution after frame rendering"""
+
+========================================
+E:\soon\projects\PBNPR\code\addons\gl_studio\examples\nodes\__init__.py
+========================================
+
 ========================================
 E:\soon\projects\PBNPR\code\addons\gl_studio\gl\ModernOpenGL.py
 ========================================
+import moderngl
+import glfw
+from dataclasses import dataclass
+
+
+class GLctx:
+    ctx=None
+    LABEL = 'GLctx'
+    @classmethod
+    def INIT(self):
+        # --- Context Initialization with GLFW Hidden Window ---
+        try:
+            # 1. Primary: Try to hook into Blender's existing UI window
+            self.ctx = moderngl.create_context()
+            print(f"[{self.LABEL}] Hooked into Blender's existing OpenGL Context.")
+            
+        except Exception:
+            print(f"[{self.LABEL}] No active context. Attempting GLFW hidden window...")
+            try:
+                # 2. Fallback: The Hidden Window Hack
+                if not glfw.init():
+                    raise Exception("Failed to initialize GLFW.")
+                
+                # Tell GLFW not to actually show the window on the monitor
+                glfw.window_hint(glfw.VISIBLE, glfw.FALSE)
+                
+                # Create a tiny 100x100 dummy window in the background
+                self.glfw_window = glfw.create_window(100, 100, "Dummy", None, None)
+                if not self.glfw_window:
+                    glfw.terminate()
+                    raise Exception("Failed to create hidden GLFW window.")
+                
+                # Make this hidden window the "current" OpenGL target
+                glfw.make_context_current(self.glfw_window)
+                
+                # Now ModernGL will happily hook into the WGL context GLFW just built!
+                self.ctx = moderngl.create_context()
+                print(f"[{self.LABEL}] Hooked into Hidden GLFW Window via WGL.")
+                
+            except Exception as e:
+                print(f"[{self.LABEL}] GLFW Fallback failed: {e}. Forcing EGL...")
+                # 3. Last Resort: Force EGL offscreen rendering
+                self.ctx = moderngl.create_context(standalone=True, backend='egl')
+    @classmethod
+    def get(self):
+        if not self.ctx:
+            self.INIT()
+        return self.ctx
+    
 
 ========================================
 E:\soon\projects\PBNPR\code\addons\gl_studio\ui\dpg_internals.py
@@ -151,6 +751,8 @@ class DPG_INTERFACE:
         self.win2_id = dpg.generate_uuid() # future debugger
 
 cfg = DPG_INTERFACE()
+
+
 
 def INIT():
     dpg.create_context()
@@ -212,12 +814,7 @@ def check_state():
 
 def render_a_frame():
     dpg.render_dearpygui_frame()
-    if dpg_node_editor.pag:
-        try: 
-            dpg_node_editor.pag.start()
-        except Exception as e:
-            print(f"Pag error: {e}")
-    dpg_node_editor.on_after_frame_callbacks()
+    dpg_node_editor.run()
 
 
     
@@ -233,104 +830,149 @@ from typing import cast
 from collections import defaultdict
 
 from gl_studio.ui import dpg_internals
-from gl_studio.examples.nodes import Node_template
+from gl_studio.examples.nodes import Node_zPattren as Node_template
 from gl_studio.util import util_types as t
+import time,math
 # ---------------------------------------
-class DPG_INTERFACE:
+class NODE_EDITOR_INTERFACE:
     """nodes = {node_id:node_obj}"""
     win_label='Node editor'
     
     def INIT(self):
-        self.win_tag  = dpg_internals.cfg.win_main_id
-        self.editor_tag = dpg.generate_uuid()
-        self.editor_menuDirs = dpg.generate_uuid()
-        self.editor_menuTypes= dpg.generate_uuid()
-        self.editor_map = False
-        self.editor_map_loc = dpg.mvNodeMiniMap_Location_BottomRight
+        self.win_tag          = dpg_internals.cfg.win_main_id
+        self.editor_tag       = dpg.generate_uuid()
+        self.editor_menuDirs  = dpg.generate_uuid()
+        self.editor_menuTypes = dpg.generate_uuid()
+        self.editor_map       = False
+        self.editor_map_loc   = dpg.mvNodeMiniMap_Location_BottomRight
     
     dirs  = {}
     module_registry = {}
     nodes = {}        
-    active_links = {}  # link_id : (in , out)
-
-cfg = DPG_INTERFACE()
+    active_links = {}  # { Input_socket_id : Output_socket_id }
+    
+cfg = NODE_EDITOR_INTERFACE()
 
 class node_helper:
     def node_from_socket(self,socket_id):
         return cast(Node_template.NODE_INTERFACE,
                     dpg.get_item_parent(socket_id))
     
-    def node_adjacnet_from_input(self,input_socket_id):
+    def node_connected_to_input(self,input_socket_id):
         """ID of the node that is connected to an input"""
         output = cfg.active_links.get(input_socket_id)
-        return cast(Node_template.NODE_INTERFACE, 
-                    self.node_from_socket(output))
-
+        return self.node_from_socket(output)
 
 nh = node_helper()
 
+#===============
+Node = Node_template.NODE_BASE_INTERFACE
+Pin  = t.NodeSocket
+class ThemeManager:
+    pass
+#==============
 class PAG:
-    """Pull-based Access Graph - WITH DATA FLOW"""
     def __init__(self):
         self.queue = []
         self.visited = set()
-        self.exec_order = []  # Stores nodes in topological order
+        self.exec_order = []
+        self.active_ui_links = set()
 
-    def reset(self):
+    def Clear(self):
         self.queue.clear()
         self.visited.clear()
         self.exec_order.clear()
+        self.active_ui_links.clear()
 
-    def start(self): 
+    def run(self): 
         for node_id, node_obj in cfg.nodes.items(): 
-            node_obj = cast(Node_template.NODE_INTERFACE, node_obj)
-            if node_obj.SHOULD_CRAWL_CB():
-                self.reset()
-                self.order(node_obj)
-                self.execs()
-                node_obj.EXEC_ON_CRAWLER_CB()
+            n = cast(Node, node_obj)
 
-    def order(self, node_obj):
-        if not node_obj or node_obj.ID in self.visited: 
-            return 
+            if n.SHOULD_CRAWL_CB():
+                self.Clear()
+                self.order(n)
+                self.execs_order()
+
+                n.EXEC_ON_CRAWLER_CB()
+
+                self._reset_nodes()
+               
+                #TODO self.animate_active_graph()
+
+    def order(self, terminal_node_branch_obj):
+        n = cast(Node, terminal_node_branch_obj)
+
+        if not n or n.ID in self.visited: return 
+        self.visited.add(n.ID)
         
-        self.visited.add(node_obj.ID)
-        
-        if hasattr(node_obj, 'inputs'):
-            for input_pin_id in node_obj.inputs:
-                outer_pin_id = cfg.active_links.get(input_pin_id)
-                if outer_pin_id:
-                    adj_node_id = dpg.get_item_parent(outer_pin_id)
+        if hasattr(n, 'inputs'): 
+            for i in n.inputs:   # i/o = input_id/ouptput_id 
+                o = cfg.active_links.get(i)
+                if o:
+                    adj_node_id = dpg.get_item_parent(o)
                     adj_node = cfg.nodes.get(adj_node_id)
                     self.order(adj_node)
         
-        self.exec_order.append(node_obj)
+        self.exec_order.append(n)
 
-    def execs(self):
+    def execs_order(self):
         for node in self.exec_order:
+            node = cast(Node, node)
+            
             if hasattr(node, 'inputs'):
-                for input_pin_id, in_pin_socket in node.inputs.items():
-                    outer_pin_id = cfg.active_links.get(input_pin_id)
-                    
-                    if outer_pin_id:
-                        sender_node = cfg.nodes.get(dpg.get_item_parent(outer_pin_id))
-                        if sender_node and hasattr(sender_node, 'outputs'):
-                            send_pin_socket = sender_node.outputs.get(outer_pin_id)
-                            I = cast(t.NodeSocket,in_pin_socket)
-                            O = cast(t.NodeSocket,send_pin_socket)
-                            if send_pin_socket:
-                                # Clone the value if types match (or 'any')
-                                if I.data_type == O.data_type or I.data_type.lower() == 'any':
-                                    I.value = O.value
+                self._propagate_inputs(node)
+            
+            if not node.CACHE:
+                node.EXEC_ON_CRAWLER_CB()# Execute the node after inputs's-checkings
 
-            # 2. Execute the node itself (now that inputs are populated)
-            node.EXEC_ON_CRAWLER_CB()
+    def _propagate_inputs(self, node: Node):
+        """
+            Copy values from connected output pins to input pins if types match.
+        """
+        for input_pin_id, input_socket in node.inputs.items():
+            # IN
+            input_pin = cast(Pin, input_socket)
+            
+            # OUT
+            # Find the connected output pin
+            output_pin_id = cfg.active_links.get(input_pin_id)
+            if not output_pin_id:
+                continue
+            
+            # Get the sender node and its output pin
+            sender_node = cfg.nodes.get(dpg.get_item_parent(output_pin_id))
+            if not sender_node or not hasattr(sender_node, 'outputs'):
+                continue
+            
+            output_socket = sender_node.outputs.get(output_pin_id)
+            if not output_socket:
+                continue
+            
+            output_pin = cast(Pin, output_socket)
+            
+            # CLONE at match types
+            if (input_pin.data_type == output_pin.data_type or input_pin.data_type.lower() == 'any'):
+                input_pin.value = output_pin.value
+
+    def _reset_nodes(self):
+        for node in cfg.nodes.values():
+            node = cast(Node, node)
+            node.CACHE = False
 
 pag = PAG()
 # ---------------------------------------
+def Node_initlizer(node_interface:Node):
+    def node_creation(sender, app_data,user_data):
+        node_obj = cast(Node,node_interface(parent=cfg.editor_tag))
+        #CFG <- INTERFACE
+        cfg.nodes[node_obj.ID] = node_obj
+        #UI <- INTERACE
+        node_obj.EXEC_GUI_CB()
+        #RETURN FACTORY
+    return node_creation
 
 def on_node_types_reload():
-    global cfg
+    #UI - FORMAT 'ADD NODE'
     dpg.delete_item(cfg.editor_menuTypes,children_only=True)
     for j in cfg.dirs.values():
         if not os.path.isdir(j):
@@ -346,24 +988,19 @@ def on_node_types_reload():
                 if spec and spec.loader:
                     module = module_from_spec(spec)
                     spec.loader.exec_module(module)
+                    # CFG <- MODULE
                     if module in cfg.module_registry.values():
                         importlib.reload(module)
                         continue
                     try:
+                        cfg.module_registry[module_name] = module
+                        # UI <- INTERFACE            
                         node_interface = getattr(module,'NODE_INTERFACE')
                         if not node_interface: return
-                        
-                        def node_creation(sender,app_data):
-                            node_obj = cast(Node_template.NODE_INTERFACE,
-                                            node_interface(parent=cfg.editor_tag))
-                            cfg.nodes[node_obj.ID]=node_obj
-                            node_obj.EXEC_GUI_CB()
 
                         dpg.add_menu_item(label=node_interface.LABEL,
-                                          callback=node_creation,
-                                          parent=cfg.editor_menuTypes)
-
-                        cfg.module_registry[module_name] = module
+                                          callback=Node_initlizer(node_interface),
+                                          parent=cfg.editor_menuTypes) # Adds 'add ABC' item to 'add node' menu
                     except Exception as e: 
                         print(f"FAILED TO IMPORT {module_name}, EXCEPTION: {e}")
 
@@ -376,22 +1013,28 @@ def on_add_directory():
 def on_after_frame_callbacks():
     for node in cfg.nodes.values():
         node = cast(Node_template.NODE_INTERFACE,node)
-        if node.SHOULD_BE_ACTIVE():
-            node.EXEC_ON_LOOP_CB()
+        node.EXEC_ON_LOOP_CB()
 
+# In dpg_node_editor.py
 def link_callback(sender, app_data):
     out_id, in_id = app_data
-    link_id = dpg.add_node_link(out_id, in_id, parent=sender, user_data=(out_id, in_id))
+    #CFG
     cfg.active_links[in_id] = out_id
+    #UI - ID=(O,I)
+    link_id = dpg.add_node_link(out_id, in_id, parent=sender, 
+                                user_data=(
+                                    out_id, 
+                                    in_id))
 
 def delink_callback(sender, app_data):
     link_id = app_data
     link_info = dpg.get_item_user_data(link_id)
-    
+    # CFG
     if link_info:
-        out_id, in_id = link_info
+        out_id, in_id = link_info        
         cfg.active_links.pop(in_id, None)
-
+    #UI
+    dpg.delete_item(link_id)
 
 def register():
     cfg.INIT()
@@ -405,25 +1048,131 @@ def register():
             with dpg.menu(label="Add Node",tag=cfg.editor_menuTypes):
                 pass
 
-    with dpg.node_editor(
-            tag=cfg.editor_tag,
-            parent=cfg.win_tag,
-            callback=link_callback,          # Called when link created
-            delink_callback=delink_callback, # Called when link deleted
-            minimap=cfg.editor_map,
-            minimap_location=cfg.editor_map_loc):
-        pass
+    with dpg.node_editor(tag=cfg.editor_tag,
+                         parent=cfg.win_tag,
+                         callback=link_callback,          # Called when link created
+                         delink_callback=delink_callback, # Called when link deleted
+                         minimap=cfg.editor_map,
+                         minimap_location=cfg.editor_map_loc): pass
     
     base_path  = os.path.dirname(__file__)
     nodes_path = os.path.abspath(os.path.join(base_path, "..", "examples", "nodes"))
     cfg.dirs["DEFAULT"] = nodes_path
     on_node_types_reload()
 
-def unregister():
-    cfg.dirs.clear()
-    cfg.module_registry.clear()
-    cfg.nodes.clear()
+def run():
+    try: pag.run()
+    except Exception as e: print(f"Pag error: {e}")
+    finally:
+        pag._reset_nodes()  # Reset all caches for next execution cycle
+    on_after_frame_callbacks()
 
+def unregister():
+    global cfg
+    del cfg
+========================================
+E:\soon\projects\PBNPR\code\addons\gl_studio\ui\ui_bpy.py
+========================================
+import bpy
+from gl_studio.ui import dpg_main
+from typing import cast
+
+# ---------------------------------------
+ID_OP_EXEC_WINDOW = "wm.gl_open_gl_studio"
+
+# ---------------------------------------
+class gl_PT_main_settings(bpy.types.PropertyGroup):
+    fps: bpy.props.FloatProperty(
+        name="FPS",
+        description="Frames per second for DPG rendering",
+        default=30.0,
+        min=1.0,
+        max=120.0
+    ) # pyright: ignore[reportInvalidTypeForm]
+    is_running: bpy.props.BoolProperty(
+        name="Running State",
+        default=False
+    ) # pyright: ignore[reportInvalidTypeForm]
+
+class gl_OT_dpg(bpy.types.Operator):
+    bl_idname = ID_OP_EXEC_WINDOW
+    bl_label = "Open DPG Window"
+    _timer = None
+
+    def modal(self, context, event):
+        settings = cast(gl_PT_main_settings,context.scene.gl_studio_settings)
+        
+        if not settings.is_running:
+            self.cancel(context)
+            return {'FINISHED'}
+
+        if event.type == 'TIMER':
+            if dpg_main.check_state(): dpg_main.render_a_frame()
+            else:
+                self.cancel(context)
+                return {'FINISHED'}
+        return {'PASS_THROUGH'}
+
+    def execute(self, context):
+        settings = cast(gl_PT_main_settings,context.scene.gl_studio_settings)
+        
+        if settings.is_running:
+            self.report({'INFO'}, "DPG is already running")
+            return {'CANCELLED'}
+            
+        dpg_main.register()
+        settings.is_running = True
+        self._timer = context.window_manager.event_timer_add(
+            time_step=1.0/settings.fps, window=context.window)
+        context.window_manager.modal_handler_add(self)
+        
+        return {'RUNNING_MODAL'}
+    
+    def cancel(self, context):
+        if self._timer:
+            context.window_manager.event_timer_remove(self._timer)
+        settings = cast(gl_PT_main_settings,context.scene.gl_studio_settings)
+        settings.is_running = False
+        dpg_main.unregister()
+
+class gl_PT_main(bpy.types.Panel):
+    bl_label = "gl manager"
+    bl_idname = "gl_PT_main_panel"
+    bl_space_type = 'VIEW_3D'
+    bl_region_type = 'UI'
+    bl_category = 'PBNPR'
+
+    def draw(self, context):
+        layout = self.layout
+        settings = cast(gl_PT_main_settings,context.scene.gl_studio_settings)
+        
+        col = layout.column(align=True)
+        col.prop(settings, "fps", slider=True)
+        
+        if not settings.is_running:
+            col.operator(ID_OP_EXEC_WINDOW, text="Start DPG", icon='PLAY')
+        else:
+            # Shutdown button (Toggles the bool which the modal watches)
+            col.prop(settings, "is_running", text="Shutdown DPG", icon='QUIT', toggle=True)
+            col.label(text="DONT CLICK!")
+
+# ---------------------------------------
+cls = (
+   gl_PT_main_settings,
+   gl_OT_dpg, 
+   gl_PT_main
+)
+
+def register():
+    for cl in cls:
+        bpy.utils.register_class(cl)
+    bpy.types.Scene.gl_studio_settings = bpy.props.PointerProperty(type=gl_PT_main_settings)
+
+def unregister():
+    del bpy.types.Scene.gl_studio_settings
+    for cl in reversed(cls):
+        bpy.utils.unregister_class(cl)
+    dpg_main.unregister()
 ========================================
 E:\soon\projects\PBNPR\code\addons\gl_studio\util\util_types.py
 ========================================
@@ -440,7 +1189,17 @@ class NodeSocket:
 
 F = 'float'
 F2= '2float'
-
+F4= '4float'
+F16= '16float'
+RGBA = 'rgba'
+STR = 'string'
+ANY = 'any'
+NONE = 'none'
+# --- blender specific ---
+bl_verts = 'vertices'
+bl_Co = 'co'
+bl_normal = 'normal'
+bl_loop_triangles = 'loop_triangles'
 ========================================
 E:\soon\projects\PBNPR\code\util\blender_headless.py
 ========================================
@@ -484,6 +1243,7 @@ def sync_to_blender():
 
 sync_to_blender()
 
+
 import sys
 sys.path.append(r"E:\soon\projects\PBNPR\code\addons\\")
 import gl_studio
@@ -491,8 +1251,9 @@ import bpy
 import gl_studio.ui.dpg_main as main
 import dearpygui.dearpygui as dpg
 from importlib import reload
+from gl_studio.gl.ModernOpenGL import GLctx as GL
 
-
+GL.INIT()
 main.register()
 print(bpy.data.objects['Cube'])
 while dpg.is_dearpygui_running():

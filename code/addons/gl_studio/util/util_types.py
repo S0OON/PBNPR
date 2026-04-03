@@ -17,3 +17,8 @@ RGBA = 'rgba'
 STR = 'string'
 ANY = 'any'
 NONE = 'none'
+# --- blender specific ---
+bl_verts = 'vertices'
+bl_Co = 'co'
+bl_normal = 'normal'
+bl_loop_triangles = 'loop_triangles'

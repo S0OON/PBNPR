@@ -38,15 +38,6 @@ def sync_to_blender():
 
 sync_to_blender()
 
-import debugpy
-
-# Open port 5678 on localhost
-debugpy.listen(("localhost", 5678))
-print("Waiting for VS Code debugger to attach...")
-
-# This will literally pause Blender here until you hit F5 in VS Code
-debugpy.wait_for_client() 
-print("Debugger attached! Resuming execution...")
 
 import sys
 sys.path.append(r"E:\soon\projects\PBNPR\code\addons\\")
