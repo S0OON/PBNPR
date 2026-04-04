@@ -1,9 +1,7 @@
-# Node_pulse.py
 import dearpygui.dearpygui as dpg
 from gl_studio.util import util_types as t
 import time
 from gl_studio.examples.nodes.Node_zPattren import NODE_BASE_INTERFACE as BASE_NODE
-
 
 class NODE_INTERFACE(BASE_NODE):
     LABEL = "Pulse Trigger"
@@ -11,20 +9,19 @@ class NODE_INTERFACE(BASE_NODE):
     def __init__(self, parent):
         super().__init__(parent)
 
-        self.EXECUTE=False
         self.CRAWL = True
 
-        self.I_branch_socket = t.NodeSocket(dpg.generate_uuid(),t.NONE,'<- Crawl',value=5.0)
+        self.I_stream = t.NodeSocket(dpg.generate_uuid(),t.NONE,'<- Crawl',value=5.0)
         self.last_pulse_time = time.time() 
-                
-        self._resgister_IO(input_sockets=[self.I_branch_socket])
+
+        self._resgister_IO(input_sockets=[self.I_stream])
 
     def on_gui(self):
         super().on_gui()
 
         float_time = self._create_input_attr(self.I_branch_socket)
         dpg.add_drag_float(label="Interval (s)", callback=self.on_float_change, 
-                            default_value=self.I_interval.value, speed=0.05, width=100)
+                            default_value=5.0, speed=0.05, width=100)
 
 
 # --- Execution Logic ---

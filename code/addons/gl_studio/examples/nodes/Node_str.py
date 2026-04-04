@@ -26,6 +26,7 @@ class NODE_INTERFACE(BASE_NODE):
         dpg.add_input_text(default_value=self.O_str.value, callback=self._on_str_change, 
                            parent=Str,width=60)
 
+
     def _on_str_change(self,sender,app_data):
         self.O_str.value = app_data
 
