@@ -1,15 +1,12 @@
 import dearpygui.dearpygui as dpg
-import shutil
-import os,sys
-import importlib
+import os,importlib
 from importlib.util import spec_from_file_location,module_from_spec
 from typing import cast
-from collections import defaultdict
 
 from gl_studio.ui import dpg_internals
 from gl_studio.examples.nodes import Node_zPattren as Node_template
 from gl_studio.util import util_types as t
-import time,math
+
 # ---------------------------------------
 class NODE_EDITOR_INTERFACE:
     """nodes = {node_id:node_obj}"""
@@ -69,9 +66,6 @@ class PAG:
                 self.Clear()
                 self.order(n)
                 self.execs_order()
-
-                n.EXEC_ON_CRAWLER_CB()
-
                 self._reset_nodes()
                
                 #TODO self.animate_active_graph()
@@ -138,7 +132,7 @@ class PAG:
 
 pag = PAG()
 # ---------------------------------------
-def Node_initlizer(node_interface:Node):
+def Node_initlizer(node_interface):
     def node_creation(sender, app_data,user_data):
         node_obj = cast(Node,node_interface(parent=cfg.editor_tag))
         #CFG <- INTERFACE
@@ -189,7 +183,6 @@ def on_add_directory():
 
 def on_after_frame_callbacks():
     for node in cfg.nodes.values():
-        node = cast(Node_template.NODE_INTERFACE,node)
         node.EXEC_ON_LOOP_CB()
 
 # In dpg_node_editor.py
@@ -238,10 +231,10 @@ def register():
     on_node_types_reload()
 
 def run():
-    try: pag.run()
-    except Exception as e: print(f"Pag error: {e}")
-    finally:
-        pag._reset_nodes()  # Reset all caches for next execution cycle
+    try: 
+        pag.run()
+    except Exception as e: 
+        print(f"Pag error: {e}")
     on_after_frame_callbacks()
 
 def unregister():

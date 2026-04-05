@@ -9,26 +9,24 @@ class NODE_INTERFACE(BASE_NODE):
     def __init__(self, parent):
         super().__init__(parent)
 
-        self.EXECUTE = True # testing
-
         self.O_str = t.NodeSocket(dpg.generate_uuid(),t.STR,'String ->',value="Hello World")
 
         self._resgister_IO(
-            output_sockets=[
-                self.O_str,
-            ]
+            [],
+            [self.O_str]
         )
 
     def on_gui(self):
-        super().on_gui()
-        
+        Id = super().on_gui()
+
+        statics = self._create_static_attr()
+        dpg.add_button(label="Execute",  callback=self.EXEC_CB, parent=statics)
+
         Str = self._create_output_attr(self.O_str)
-        dpg.add_input_text(default_value=self.O_str.value, callback=self._on_str_change, 
-                           parent=Str,width=60)
+        dpg.add_input_text(parent=Str, callback=self._on_change_str, default_value=self.O_str.value,width=100,label=self.O_str.name)
 
-
-    def _on_str_change(self,sender,app_data):
-        self.O_str.value = app_data
+    def _on_change_str(self, s,a,u):
+        self.O_str.value = a
 
     def on_execute(self):
         print(f"Executed! : {self.O_str.value}")

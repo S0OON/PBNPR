@@ -1,54 +1,68 @@
 import dearpygui.dearpygui as dpg
 from gl_studio.util import util_types as t
-import time
 from gl_studio.examples.nodes.Node_zPattren import NODE_BASE_INTERFACE as BASE_NODE
+import time
 
 class NODE_INTERFACE(BASE_NODE):
-    LABEL = "Pulse Trigger"
+    LABEL = 'Pulse'
 
     def __init__(self, parent):
         super().__init__(parent)
 
-        self.CRAWL = True
+        self.ENABLE = False
+        self.Pulse  = False # one time pulse
 
-        self.I_stream = t.NodeSocket(dpg.generate_uuid(),t.NONE,'<- Crawl',value=5.0)
-        self.last_pulse_time = time.time() 
+        self.O_output = t.NodeSocket(   dpg.generate_uuid(),t.NONE)
+        self.I_intervals = t.NodeSocket(dpg.generate_uuid(),t.F,  '<- Intervals (seconds)')
+        self.I_stream = t.NodeSocket(   dpg.generate_uuid(),t.ANY,'<- Triggers Connections')
 
-        self._resgister_IO(input_sockets=[self.I_stream])
+        self.I_intervals.value = 5.0
+        self._last_pulse_time = time.time()
+
+        self._resgister_IO(
+            [self.I_stream, self.I_intervals],
+            [self.O_output]
+        )
 
     def on_gui(self):
-        super().on_gui()
+        Id = super().on_gui()
 
-        float_time = self._create_input_attr(self.I_branch_socket)
-        dpg.add_drag_float(label="Interval (s)", callback=self.on_float_change, 
-                            default_value=5.0, speed=0.05, width=100)
+        statics = self._create_static_attr()
+        dpg.add_button(label='execute connections', callback=self._on_change_pulse, parent=statics)
+        dpg.add_checkbox(label="Enable",  callback=self._on_change_enable, parent=statics)
 
+        intervals = self._create_input_attr(self.I_intervals)
+        dpg.add_drag_float(parent=intervals, callback=self._on_change_intervals, default_value=self.I_intervals.value, width=100)
+        dpg.add_text(self.I_intervals.name, parent=intervals)
 
-# --- Execution Logic ---
-    def on_enable_change(self, sender, app_data):
-        self.ENABLE = app_data
+        stream = self._create_input_attr(self.I_stream, dpg.mvNode_PinShape_TriangleFilled)
+        dpg.add_text(self.I_stream.name, parent=stream)
+
+    def _on_change_enable(self, s, a, u):
+        self.ENABLE = a
         if self.ENABLE:
-            self.last_pulse_time = time.time() 
+            self._last_pulse_time = time.time() # Reset the timer when enabling so it doesn't instantly fire
 
-    def on_float_change(self, sender, app_data):
-        self.I_interval.value = max(0.016, app_data) # 0.016 is roughly 60fps
+    def _on_change_pulse(self, s, a, u):
+        # Buttons don't pass a boolean state, so explicitly set True
+        self.Pulse = True 
 
-    def on_should_execute(self): 
-        return self.ENABLE
-    
-    def on_should_crawl(self):
-        if not self.ENABLE:
-            return False
-            
-        current_time = time.time()
-        
-        if current_time - self.last_pulse_time >= self.I_interval.value:
-            self.last_pulse_time = current_time
-            return True
-            
-        return False
-        
+    def _on_change_intervals(self, s, a, u):
+        self.I_intervals.value = a 
+
     def on_execute_crawler(self, input_data=None):
-        if self.SHOULD_EXEC_CB():
-            self.on_execute()
-    
+        print(f"Executed! : {self.LABEL}")
+        self.Pulse = False
+
+    def on_should_crawl(self):
+        if self.Pulse:
+            return True
+
+        if self.ENABLE:
+            current_time = time.time()
+            if current_time - self._last_pulse_time >= self.I_intervals.value:
+                self._last_pulse_time = current_time
+                return True
+            
+        # Explicitly return False if no conditions are met
+        return False

@@ -48,7 +48,6 @@ import dearpygui.dearpygui as dpg
 from importlib import reload
 from gl_studio.gl.ModernOpenGL import GLctx as GL
 
-GL.INIT()
 main.register()
 print(bpy.data.objects['Cube'])
 while dpg.is_dearpygui_running():

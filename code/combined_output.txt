@@ -58,264 +58,88 @@ from gl_studio.ui.ui_bpy import unregister
 if __name__ == '__main__':
     register()
 ========================================
-E:\soon\projects\PBNPR\code\addons\gl_studio\examples\nodes\Node_bpy_camData.py
+E:\soon\projects\PBNPR\code\addons\gl_studio\examples\nodes\Node_cam_bpy.py
 ========================================
-# Node_camera_data.py
 import dearpygui.dearpygui as dpg
 from gl_studio.util import util_types as t
-import numpy as np
-import bpy
-
-def eval_camera_matrices(cam_obj, width, height):
-    depsgraph = bpy.context.evaluated_depsgraph_get()
-    m_view = np.array(cam_obj.matrix_world.inverted().transposed(), dtype=np.float32).flatten()
-    m_proj = np.array(cam_obj.calc_matrix_camera(depsgraph, x=width, y=height).transposed(), dtype=np.float32).flatten()
-    return [m_view, m_proj]
-
-class X:
-    LABEL = "Camera Data"
-    
-    def __init__(self, parent):
-        self.PARENT = parent
-        self.ID     = dpg.generate_uuid()
-        
-# --- 1. Sockets Setup ---
-        self.I_cam_name = t.NodeSocket(dpg.generate_uuid(), t.STR, 'Camera Name')
-        self.I_Width    = t.NodeSocket(dpg.generate_uuid(), t.F,   'Width')
-        self.I_Height   = t.NodeSocket(dpg.generate_uuid(), t.F,   'Height')
-        
-        self.O_view     = t.NodeSocket(dpg.generate_uuid(), t.F16, 'View Matrix ->')
-        self.O_proj     = t.NodeSocket(dpg.generate_uuid(), t.F16, 'Proj Matrix ->')
-        
-        # Fallback identity matrices
-        self.I_cam_name.value = 'active'
-        self.I_Width.value    = 64
-        self.I_Height.value   = 64
-        self.O_view.value     = np.eye(4, dtype=np.float32)
-        self.O_proj.value     = np.eye(4, dtype=np.float32)
-        #self.O_Width.value    = self.I_Width.value
-        #self.O_Height.value   = self.O_Height.value
-        
-# --- Standard Callbacks ---
-        self.EXEC_GUI_CB        = self.on_gui
-        self.EXEC_CB            = self.on_execute
-        self.EXEC_ON_CRAWLER_CB = self.on_execute_crawler
-        self.EXEC_ON_LOOP_CB    = self.on_execute_after_frame
-        
-        self.SHOULD_EXEC_CB     = self.on_should_execute
-        self.SHOULD_CRAWL_CB    = self.on_should_crawl
-        self.SHOULD_BE_ACTIVE   = self.on_should_active
-        
-        self.ENABLE = True
-        self.ACTIVE = False
-        self.CRAWL  = False
-        
-        self.inputs = {
-            self.I_cam_name.ID : self.I_cam_name,
-            self.I_Width.ID    : self.I_Width,
-            self.I_Height.ID   : self.I_Height
-        } 
-        
-        self.outputs = {
-            self.O_view.ID   : self.O_view,
-            self.O_proj.ID   : self.O_proj,
-            #self.O_Width.ID  : self.O_Width,
-            #self.O_Height.ID : self.O_Height
-        }
-
-    def on_gui(self):
-        with dpg.node(label=self.LABEL, parent=self.PARENT, tag=self.ID):
-            with dpg.node_attribute(attribute_type=dpg.mvNode_Attr_Static):
-                dpg.add_button(label="Execute", callback=self.EXEC_CB)
-                dpg.add_checkbox(label="Enable", callback=self.on_enable_change, default_value=self.ENABLE)
-# INputs
-            with dpg.node_attribute(attribute_type=dpg.mvNode_Attr_Input, tag=self.I_cam_name.ID):
-                dpg.add_input_text(label=self.I_cam_name.name, default_value=self.I_cam_name.value, callback=self.on_string_change, width=100)
-            
-            with dpg.node_attribute(attribute_type=dpg.mvNode_Attr_Input, tag=self.I_Width.ID):
-                dpg.add_text(self.I_Width.name)
-                dpg.add_input_float(callback=self.on_W_change,width=80)
-
-            with dpg.node_attribute(attribute_type=dpg.mvNode_Attr_Input, tag=self.I_Height.ID):
-                dpg.add_text(self.I_Height.name)
-                dpg.add_input_float(callback=self.on_H_change,width=80)
-# outputs
-            with dpg.node_attribute(attribute_type=dpg.mvNode_Attr_Output, tag=self.O_view.ID):
-                dpg.add_text(self.O_view.name)
-            with dpg.node_attribute(attribute_type=dpg.mvNode_Attr_Output, tag=self.O_proj.ID):
-                dpg.add_text(self.O_proj.name)
-
-    def on_enable_change(self, sender, app_data): self.ENABLE = app_data
-    def on_string_change(self, sender, app_data): self.I_cam_name.value = app_data
-    def on_should_execute(self):  return self.ENABLE
-    def on_should_crawl(self):    return self.CRAWL
-    def on_should_active(self):   return self.ACTIVE and self.ENABLE
-    
-    def on_W_change(self, sender, app_data):
-        self.I_Width.value = app_data
-
-    def on_H_change(self, sender, app_data):
-        self.I_Height.value = app_data
-
-    def on_execute(self):
-        cam_name = self.I_cam_name.value.strip()
-        
-        if cam_name.lower() == 'active':
-            cam_obj = bpy.context.scene.camera
-        else:
-            cam_obj = bpy.data.objects.get(cam_name)
-            
-        if not cam_obj or cam_obj.type != 'CAMERA':
-            print(f"[{self.LABEL}] Error: Could not find valid camera '{cam_name}'.")
-            return
-
-        self.O_view.value , self.O_proj.value = eval_camera_matrices(cam_obj, int(self.I_Width.value), int(self.I_Height.value))
-    
-        print(f"[{self.LABEL}] Extracted matrices from '{cam_obj.name}'.")
-
-    def on_execute_crawler(self, input_data=None):
-        if self.SHOULD_EXEC_CB(): self.on_execute()
-        
-    def on_execute_after_frame(self): pass
-========================================
-E:\soon\projects\PBNPR\code\addons\gl_studio\examples\nodes\Node_bpy_object eval.py
-========================================
-# Node_object_evaluation.py
-import dearpygui.dearpygui as dpg
-from gl_studio.util import util_types as t
+from gl_studio.examples.nodes.Node_zPattren import NODE_BASE_INTERFACE as BASE_NODE
 import bpy
 import numpy as np
 
-def _get_mesh_data_for_gpu(obj:bpy.types.Object):
-    """Returns [ i, pos[], n[], mat4, UV(active) ]"""
-    depsgraph = bpy.context.evaluated_depsgraph_get()
-    eval_obj  = obj.evaluated_get(depsgraph)
-    mesh      = eval_obj.to_mesh()
-    mesh.calc_loop_triangles()
-    
-    tris_count = len(mesh.loop_triangles)
-    
-    loops_indices  = np.empty((tris_count * 3), dtype=np.int32)
-    mesh.loop_triangles.foreach_get("loops", loops_indices)
+class NODE_INTERFACE(BASE_NODE):
+    LABEL = 'Camera data'
 
-    vertex_indices = np.empty((tris_count * 3), dtype=np.int32)
-    mesh.loop_triangles.foreach_get(t.bl_verts, vertex_indices)
-
-    all_pos   = np.empty((len(mesh.vertices), 3), dtype=np.float32)
-    mesh.vertices.foreach_get(t.bl_Co, all_pos.reshape(-1))
-    final_pos = all_pos[vertex_indices]
-
-    all_normals   = np.empty((len(mesh.loops), 3), dtype=np.float32)
-    mesh.loops.foreach_get(t.bl_normal, all_normals.reshape(-1))
-    final_normals = all_normals[loops_indices]
-    
-    mesh = obj.data
-    
-    if mesh.uv_layers.active:
-        uvs = np.empty(len(mesh.loops) * 2, dtype=np.float32)
-        mesh.uv_layers.active.data.foreach_get("uv", uvs)
-        final_UV = uvs.reshape(-1, 2)
-    else:
-        final_UV = np.array([]) 
-    
-    final_mat = np.array(obj.matrix_world, dtype=np.float32)
-
-    eval_obj.to_mesh_clear() 
-    return loops_indices, final_pos, final_normals, final_mat, final_UV
-
-
-class X:
-    LABEL = "Object Evaluation"
-    
     def __init__(self, parent):
-        self.PARENT = parent
-        self.ID     = dpg.generate_uuid()
-        
-# --- 1. Sockets Setup ---
-        self.I_obj_name = t.NodeSocket(dpg.generate_uuid(), t.STR, 'obj name')
-        self.O_verts    = t.NodeSocket(dpg.generate_uuid(), t.F16, 'obj vertices')
-        self.O_normals  = t.NodeSocket(dpg.generate_uuid(), t.F16, 'obj normals')
-        self.O_mat      = t.NodeSocket(dpg.generate_uuid(), t.F16, 'obj matrix')
-        self.O_uvs      = t.NodeSocket(dpg.generate_uuid(), t.F16, 'obj uvs')
-# Defaults
-        self.I_obj_name.value = "" 
-# std calls
-        self.EXEC_GUI_CB        = self.on_gui
-        self.EXEC_CB            = self.on_execute
-        self.EXEC_ON_CRAWLER_CB = self.on_execute_crawler
-        self.EXEC_ON_LOOP_CB    = self.on_execute_after_frame
-        
-        self.SHOULD_EXEC_CB     = self.on_should_execute
-        self.SHOULD_CRAWL_CB    = self.on_should_crawl
-        self.SHOULD_BE_ACTIVE   = self.on_should_active
-        
+        super().__init__(parent)
+
         self.ENABLE = True
-        self.ACTIVE = False
-        self.CRAWL  = False
-        
-        self.inputs = {
-            self.I_obj_name.ID : self.I_obj_name
-        } 
-        
-        self.outputs = {
-            self.O_verts.ID   : self.O_verts,
-            self.O_normals.ID : self.O_normals,
-            self.O_uvs.ID     : self.O_uvs,
-            self.O_mat.ID     : self.O_mat
-        }
+
+        self.I_name = t.NodeSocket(dpg.generate_uuid(), t.STR, '<- Camera Name', value='active')
+        self.I_x = t.NodeSocket(dpg.generate_uuid(),    t.F,   '<- X',value=800)
+        self.I_y = t.NodeSocket(dpg.generate_uuid(),    t.F,   '<- Y',value=600)
+        self.O_mCam = t.NodeSocket(dpg.generate_uuid(), t.F16, 'view matrix ->')
+        self.O_proj = t.NodeSocket(dpg.generate_uuid(), t.F16, 'projection matrix ->')
+
+        self._resgister_IO(
+            [self.I_name, self.I_x, self.I_y],
+            [self.O_mCam, self.O_proj]
+        )
 
     def on_gui(self):
-        with dpg.node(label=self.LABEL, parent=self.PARENT, tag=self.ID):
-            with dpg.node_attribute(attribute_type=dpg.mvNode_Attr_Static):
-                dpg.add_button(label="Execute",  callback=self.EXEC_CB)
-                dpg.add_checkbox(label="Enable", callback=self.on_enable_change, default_value=self.ENABLE)
-                
-            with dpg.node_attribute(attribute_type=dpg.mvNode_Attr_Input, tag=self.I_obj_name.ID):
-                dpg.add_input_text(label="Obj Name", callback=self.on_string_change, width=100)
-            
-            with dpg.node_attribute(attribute_type=dpg.mvNode_Attr_Output, tag=self.O_verts.ID):
-                dpg.add_text("Vertices (np) ->")
-            with dpg.node_attribute(attribute_type=dpg.mvNode_Attr_Output, tag=self.O_normals.ID):
-                dpg.add_text("Normals (np) ->")
-            with dpg.node_attribute(attribute_type=dpg.mvNode_Attr_Output, tag=self.O_mat.ID):
-                dpg.add_text("Matrix (np) ->")
-            with dpg.node_attribute(attribute_type=dpg.mvNode_Attr_Output, tag=self.O_uvs.ID):
-                dpg.add_text("UV Map (np) ->")
+        Id = super().on_gui()
 
+        statics = self._create_static_attr()
+        dpg.add_button(label="Execute",  callback=self.EXEC_CB, parent=statics)
 
-    def on_enable_change(self, sender, app_data): self.ENABLE = app_data
-    def on_string_change(self, sender, app_data): self.I_obj_name.value = app_data
+        name = self._create_input_attr(self.I_name)
+        dpg.add_input_text(parent=name, callback=self._on_name_change,width=100,label=self.I_name.name, default_value=self.I_name.value)
 
-    def on_should_execute(self): return self.ENABLE
-    def on_should_crawl(self):   return None
-    def on_should_active(self):  return None
+        x = self._create_input_attr(self.I_x)
+        dpg.add_input_float(parent=x, callback=self._on_change_x,default_value=self.I_x.value,width=100,label=self.I_x.name)
+
+        y = self._create_input_attr(self.I_y)
+        dpg.add_input_float(parent=y, callback=self._on_change_y,default_value=self.I_y.value,width=100,label=self.I_y.name)
+
+        view = self._create_output_attr(self.O_mCam)
+        dpg.add_text(self.O_mCam.name, parent=view)
+        proj = self._create_output_attr(self.O_proj)
+        dpg.add_text(self.O_proj.name, parent=proj)
     
-    
+
+    def _on_name_change(self, s,a,u):
+        self.I_name.value = a
+
+    def _on_change_x(self, s,a,u):
+        self.I_x.value = a
+
+    def _on_change_y(self, s,a,u):
+        self.I_y.value = a
+
     def on_execute(self):
-        obj_name = self.I_obj_name.value
-        
-        if not obj_name or obj_name not in bpy.data.objects:
-            print(f"[{self.LABEL}] Error: Object '{obj_name}' not found.")
-            return
+            if not self.I_name.value or self.I_name.value.lower() == 'active':
+                cam = bpy.context.scene.camera
+            else:
+                cam = bpy.data.objects.get(self.I_name.value)
+
+            if not cam: 
+                print(f"Camera '{self.I_name.value}' not found!")
+                return
+             
             
-        obj  = bpy.data.objects[obj_name]
-        if obj.type != 'MESH':
-            print(f"[{self.LABEL}] Error: Object '{obj_name}' is not a MESH.")
-            return
-        
-        i, V, N, M, UV = _get_mesh_data_for_gpu(obj)
+            self.O_mCam.value = np.array(cam.matrix_world.inverted(), dtype=np.float32)
+             
+            proj_matrix = cam.calc_matrix_camera(
+                bpy.context.evaluated_depsgraph_get(), 
+                x=int(self.I_x.value), 
+                y=int(self.I_y.value)
+            )
+            self.O_proj.value = np.array(proj_matrix, dtype=np.float32)
 
-        self.O_verts.value   = V
-        self.O_normals.value = N
-        self.O_mat.value     = M
-        self.O_uvs.value     = UV
+            print(f"Executed! : {self.I_name.value}, view matrix: {self.O_mCam.value}, proj matrix: {self.O_proj.value}") 
 
-        print(f"[{self.LABEL}] Success! Extracted {len(self.O_verts.value)} vertices from {obj_name}.")
-    
     def on_execute_crawler(self, input_data=None):
-        if self.SHOULD_EXEC_CB(): self.on_execute()
-    
-    def on_execute_after_frame(self): pass
+        if self.ENABLE:
+            self.on_execute()
 ========================================
 E:\soon\projects\PBNPR\code\addons\gl_studio\examples\nodes\Node_float.py
 ========================================
@@ -330,151 +154,95 @@ class NODE_INTERFACE(BASE_NODE):
     def __init__(self, parent):
         super().__init__(parent)
 
-        self.EXECUTE = True # testing
-
-        self.O_f = t.NodeSocket(dpg.generate_uuid(),t.F,'Float ->')
+        self.O_float = t.NodeSocket(dpg.generate_uuid(),t.F,'Float ->',value=0.0)
 
         self._resgister_IO(
-            output_sockets=[
-                self.O_f,
-            ]
+            [],
+            [self.O_float]
         )
 
     def on_gui(self):
-        super().on_gui()
-        
-        Fl = self._create_output_attr(self.O_f)
-        dpg.add_drag_float(default_value=self.O_f.value, callback=self._on_float_change, 
-                           parent=Fl,width=50)
+        Id = super().on_gui()
 
+        statics = self._create_static_attr()
+        dpg.add_button(label="Execute",  callback=self.EXEC_CB, parent=statics)
 
-    def _on_float_change(self,sender,app_data):
-        self.O_f.value = app_data
+        Float = self._create_output_attr(self.O_float)
+        dpg.add_input_float(parent=Float, callback=self._on_change_float, default_value=self.O_float.value,width=100)
+        dpg.add_text(self.O_float.name, parent=Float)
+
+    def _on_change_float(self, s,a,u):
+        self.O_float.value = a
 
     def on_execute(self):
-        print(f"Executed! : {self.O_f.value}")
+        print(f"Executed! : {self.O_float.value}")
 
     def on_execute_crawler(self, input_data=None):
         self.on_execute()
 ========================================
-E:\soon\projects\PBNPR\code\addons\gl_studio\examples\nodes\Node_mgl_bpy_opengl.py
-========================================
-
-========================================
 E:\soon\projects\PBNPR\code\addons\gl_studio\examples\nodes\Node_pulse.py
 ========================================
-# Node_pulse.py
 import dearpygui.dearpygui as dpg
 from gl_studio.util import util_types as t
-import time
 from gl_studio.examples.nodes.Node_zPattren import NODE_BASE_INTERFACE as BASE_NODE
-
+import time
 
 class NODE_INTERFACE(BASE_NODE):
-    LABEL = "Pulse Trigger"
+    LABEL = 'Pulse'
 
     def __init__(self, parent):
         super().__init__(parent)
 
-        self.EXECUTE=False
-        self.CRAWL = True
+        self.ENABLE = False
 
-        self.I_branch_socket = t.NodeSocket(dpg.generate_uuid(),t.NONE,'<- Crawl',value=5.0)
-        self.last_pulse_time = time.time() 
-                
-        self._resgister_IO(input_sockets=[self.I_branch_socket])
+        self.O_output = t.NodeSocket(   dpg.generate_uuid(),t.NONE)
+        self.I_intervals = t.NodeSocket(dpg.generate_uuid(),t.F,  '<- Intervals (seconds)')
+        self.I_stream = t.NodeSocket(   dpg.generate_uuid(),t.ANY,'<- Triggers Connections')
+
+        self.I_intervals.value = 5.0
+        self._last_pulse_time = time.time()
+
+        self._resgister_IO(
+            [self.I_stream,self.I_intervals],
+            [self.O_output]
+        )
 
     def on_gui(self):
-        super().on_gui()
+        Id = super().on_gui()
 
-        float_time = self._create_input_attr(self.I_branch_socket)
-        dpg.add_drag_float(label="Interval (s)", callback=self.on_float_change, 
-                            default_value=self.I_interval.value, speed=0.05, width=100)
+        statics = self._create_static_attr()
+        dpg.add_checkbox(label="Enable",  callback=self._on_change_enable, parent=statics)
 
+        intervals = self._create_input_attr(self.I_intervals)
+        dpg.add_drag_float(parent=intervals, callback=self._on_change_intervals, default_value=self.I_intervals.value,width=100)
+        dpg.add_text(self.I_intervals.name, parent=intervals)
 
-# --- Execution Logic ---
-    def on_enable_change(self, sender, app_data):
-        self.ENABLE = app_data
+        stream = self._create_input_attr(self.I_stream, dpg.mvNode_PinShape_TriangleFilled)
+        dpg.add_text(self.I_stream.name, parent=stream)
+
+    def _on_change_enable(self, s,a,u):
+        self.ENABLE = a
+
+    def _on_change_intervals(self, s,a,u):
+        self.ENABLE = a
         if self.ENABLE:
-            self.last_pulse_time = time.time() 
+            self._last_pulse_time = time.time() 
 
-    def on_float_change(self, sender, app_data):
-        self.I_interval.value = max(0.016, app_data) # 0.016 is roughly 60fps
 
-    def on_should_execute(self): 
-        return self.ENABLE
-    
+    def on_execute_crawler(self, input_data=None):
+        print(f"Executed! : {self.LABEL}")
+
     def on_should_crawl(self):
         if not self.ENABLE:
             return False
             
         current_time = time.time()
         
-        if current_time - self.last_pulse_time >= self.I_interval.value:
-            self.last_pulse_time = current_time
+        if current_time - self._last_pulse_time >= self.I_intervals.value:
+            self._last_pulse_time = current_time
             return True
             
         return False
-        
-    def on_execute_crawler(self, input_data=None):
-        if self.SHOULD_EXEC_CB():
-            self.on_execute()
-    
-========================================
-E:\soon\projects\PBNPR\code\addons\gl_studio\examples\nodes\Node_RGBAviwer.py
-========================================
-# Node_image_viewer.py
-import dearpygui.dearpygui as dpg
-from gl_studio.util import util_types as t
-import numpy as np
-from PIL import Image
-from gl_studio.examples.nodes.Node_zPattren import NODE_BASE_INTERFACE as BASE_NODE
-
-class NODE_INTERFACE(BASE_NODE):
-    LABEL = 'RGBA viewer'
-
-    def __init__(self, parent):
-        super().__init__(parent)
-
-        self.EXECUTE = True
-        self.ENABLE  = True
-
-        self.I_RGBA_pixels = t.NodeSocket(dpg.generate_uuid(),t.RGBA,'<- RGBA viewer')
-
-        self._resgister_IO(
-            output_sockets=[self.I_RGBA_pixels],
-        )
-
-    def on_gui(self):
-        super().on_gui()
-
-        pixels = self._create_input_attr(self.I_RGBA_pixels)
-        
-
-    def on_should_execute(self): return self.ENABLE
-
-    def on_execute_crawler(self, input_data=None): self.on_execute()
-
-    def on_execute(self):
-        pixels = self.I_RGBA_pixels.value
-        
-        if pixels is None or not isinstance(pixels, np.ndarray):
-            print(f"[{self.LABEL}] Error: No valid pixel data found. Execute the render node first!")
-            return
-            
-        try:
-            # OpenGL framebuffers are read bottom-up. 
-            # We flip it vertically so it looks correct in PIL.
-            flipped_pixels = np.flipud(pixels)
-            
-            # Convert Numpy array to PIL Image and show it
-            img = Image.fromarray(flipped_pixels, 'RGBA')
-            img.show()
-            
-            print(f"[{self.LABEL}] Opened image in default viewer.")
-        except Exception as e:
-            print(f"[{self.LABEL}] Failed to open image: {e}")
-
 ========================================
 E:\soon\projects\PBNPR\code\addons\gl_studio\examples\nodes\Node_str.py
 ========================================
@@ -489,25 +257,24 @@ class NODE_INTERFACE(BASE_NODE):
     def __init__(self, parent):
         super().__init__(parent)
 
-        self.EXECUTE = True # testing
-
         self.O_str = t.NodeSocket(dpg.generate_uuid(),t.STR,'String ->',value="Hello World")
 
         self._resgister_IO(
-            output_sockets=[
-                self.O_str,
-            ]
+            [],
+            [self.O_str]
         )
 
     def on_gui(self):
-        super().on_gui()
-        
-        Str = self._create_output_attr(self.O_str)
-        dpg.add_input_text(default_value=self.O_str.value, callback=self._on_str_change, 
-                           parent=Str,width=60)
+        Id = super().on_gui()
 
-    def _on_str_change(self,sender,app_data):
-        self.O_str.value = app_data
+        statics = self._create_static_attr()
+        dpg.add_button(label="Execute",  callback=self.EXEC_CB, parent=statics)
+
+        Str = self._create_output_attr(self.O_str)
+        dpg.add_input_text(parent=Str, callback=self._on_change_str, default_value=self.O_str.value,width=100,label=self.O_str.name)
+
+    def _on_change_str(self, s,a,u):
+        self.O_str.value = a
 
     def on_execute(self):
         print(f"Executed! : {self.O_str.value}")
@@ -533,7 +300,7 @@ class NODE_BASE_INTERFACE:
 
         - Behavior methods: EACH makes nothing unless overriden
 
-            on_execute() -> called when user clicks execute button
+            on_execute() -> Utlity method for u <3
 
             on_execute_crawler(input_data) -> called by PAG system when the node is connected to a crawler branch node
 
@@ -569,22 +336,8 @@ class NODE_BASE_INTERFACE:
 
         -SHOULD_CRAWL_CB    = self.on_should_crawl 
         
-        use it to tell PAG this is a root node in a node tree
+        Tells PAG this is a root node in a node tree
 
-        
-        # (OPTIONAL) thses have also 2 phases / 2 uses; 1.Init  2.Runtime:
-
-        EXECUTE= False   - Button; ui only (manual)
-
-        ENABLE = False   - Chechbox; should it execute based on the checkbox state
-
-        ACTIVE = False   - Chechbox; should it execute after frame based on the checkbox state
-
-        CRAWL  = False   - Chechbox; should it execute crawler based on the checkbox state
-
-        1.Changed at __init__: to tell on_gui that you want to show the execute button and checkboxes
-
-        2.Changed by on_change methods: by You
         """
         self.PARENT = parent
         self.ID = dpg.generate_uuid()
@@ -595,14 +348,6 @@ class NODE_BASE_INTERFACE:
         self.EXEC_ON_LOOP_CB    = self.on_execute_after_frame
         
         self.SHOULD_CRAWL_CB    = self.on_should_crawl
-        
-        # thses have 2 uses;
-        # 1. Changed at __init__         : to tell on_gui that you want to show the execute button and checkboxes
-        # 2. Changed by on_change methods:Used by node itself to decide if it should execute or not, based on the checkboxes state
-        self.EXECUTE= False
-        self.ENABLE = False
-        self.ACTIVE = False
-        self.CRAWL  = False
         
         self.CACHE = False
 
@@ -622,58 +367,28 @@ class NODE_BASE_INTERFACE:
             for sock in output_sockets:
                 self.outputs[sock.ID] = sock
 
-    def _create_input_attr(self, socket:t.NodeSocket):
-        id = dpg.node_attribute(attribute_type=dpg.mvNode_Attr_Input, parent=self.ID, tag=socket.ID)
-        return id
+    def _create_static_attr(self, label=None):
+        return dpg.add_node_attribute(attribute_type=dpg.mvNode_Attr_Static, parent=self.ID, tag=dpg.generate_uuid(),label=label)
 
-    def _create_output_attr(self, socket:t.NodeSocket):
-        id = dpg.node_attribute(attribute_type=dpg.mvNode_Attr_Output, parent=self.ID, tag=socket.ID)
-        return id
+    def _create_input_attr(self, socket:t.NodeSocket,pin_shape=dpg.mvNode_PinShape_CircleFilled):
+        return dpg.add_node_attribute(attribute_type=dpg.mvNode_Attr_Input,
+                                      parent=self.ID, tag=socket.ID, 
+                                      shape=pin_shape)
+
+    def _create_output_attr(self, socket:t.NodeSocket,pin_shape=dpg.mvNode_PinShape_CircleFilled):
+        return dpg.add_node_attribute(attribute_type=dpg.mvNode_Attr_Output, 
+                                      parent=self.ID, tag=socket.ID,
+                                      shape=pin_shape)
+
 
     def on_gui(self):
         """
-        THE UI NODE TAG IS SAME AS ID.
-
-        The Base class Function does:-
-
-        
-        with dpg.node(label=self.LABEL, parent=self.PARENT, tag=self.ID):
-        
-            with dpg.node_attribute(attribute_type=dpg.mvNode_Attr_Static):
-                if self.EXECUTE:
-                    dpg.add_button(label="Execute",  callback=self.EXEC_CB)
-                if self.ENABLE:
-                    dpg.add_checkbox(label="Enable", callback=self.on_enable_change)
-                if self.ACTIVE:
-                    dpg.add_checkbox(label="Active", callback=self.on_active_change)
-                if self.CRAWL:
-                    dpg.add_checkbox(label="Crawl",  callback=self.on_crawl_change)
-        
+        creates a node and return ID (Same as self.ID)
         """
-        with dpg.node(label=self.LABEL, parent=self.PARENT, tag=self.ID):
-            # Static 
-            with dpg.node_attribute(attribute_type=dpg.mvNode_Attr_Static):
-                if self.EXECUTE:
-                    dpg.add_button(label="Execute",  callback=self.EXEC_CB)
-                if self.ENABLE:
-                    dpg.add_checkbox(label="Enable", callback=self.on_enable_change)
-                if self.ACTIVE:
-                    dpg.add_checkbox(label="Active", callback=self.on_active_change)
-                if self.CRAWL:
-                    dpg.add_checkbox(label="Crawl",  callback=self.on_crawl_change)
+        return dpg.add_node(label=self.LABEL, parent=self.PARENT, tag=self.ID)
 
-# Changers
-    def on_change_enable(self, sender, app_data):
-        self.ENABLE = app_data
-    
-    def on_change_active(self, sender, app_data):
-        self.ACTIVE = app_data
-        
-    def on_change_crawl(self, sender, app_data):
-        self.CRAWL = app_data
 # Executions behavior
-    def on_should_crawl(self):  return None
-    
+    def on_should_crawl(self):"""Return True if this node is a root for PAG crawler execution"""
     def on_execute(self):"""Called when user clicks execute button"""
     def on_execute_crawler(self, input_data=None): """Called by PAG system when the node is connected to a crawler branch node"""
     def on_execute_after_frame(self):"""Execution after frame rendering"""
@@ -822,17 +537,14 @@ def render_a_frame():
 E:\soon\projects\PBNPR\code\addons\gl_studio\ui\dpg_node_editor.py
 ========================================
 import dearpygui.dearpygui as dpg
-import shutil
-import os,sys
-import importlib
+import os,importlib
 from importlib.util import spec_from_file_location,module_from_spec
 from typing import cast
-from collections import defaultdict
 
 from gl_studio.ui import dpg_internals
 from gl_studio.examples.nodes import Node_zPattren as Node_template
 from gl_studio.util import util_types as t
-import time,math
+
 # ---------------------------------------
 class NODE_EDITOR_INTERFACE:
     """nodes = {node_id:node_obj}"""
@@ -893,7 +605,7 @@ class PAG:
                 self.order(n)
                 self.execs_order()
 
-                n.EXEC_ON_CRAWLER_CB()
+                #n.EXEC_ON_CRAWLER_CB()
 
                 self._reset_nodes()
                
@@ -961,7 +673,7 @@ class PAG:
 
 pag = PAG()
 # ---------------------------------------
-def Node_initlizer(node_interface:Node):
+def Node_initlizer(node_interface):
     def node_creation(sender, app_data,user_data):
         node_obj = cast(Node,node_interface(parent=cfg.editor_tag))
         #CFG <- INTERFACE
@@ -1012,7 +724,6 @@ def on_add_directory():
 
 def on_after_frame_callbacks():
     for node in cfg.nodes.values():
-        node = cast(Node_template.NODE_INTERFACE,node)
         node.EXEC_ON_LOOP_CB()
 
 # In dpg_node_editor.py
@@ -1061,10 +772,10 @@ def register():
     on_node_types_reload()
 
 def run():
-    try: pag.run()
-    except Exception as e: print(f"Pag error: {e}")
-    finally:
-        pag._reset_nodes()  # Reset all caches for next execution cycle
+    try: 
+        pag.run()
+    except Exception as e: 
+        print(f"Pag error: {e}")
     on_after_frame_callbacks()
 
 def unregister():
@@ -1187,6 +898,8 @@ class NodeSocket:
     value: Any = None
     connected_to: int | str | None = None
 
+BOL = 'bool'
+INT = 'int'
 F = 'float'
 F2= '2float'
 F4= '4float'
