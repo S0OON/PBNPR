@@ -21,10 +21,9 @@ class NODE_INTERFACE(BASE_NODE):
 
         statics = self._create_static_attr()
         dpg.add_button(label="Execute",  callback=self.EXEC_CB, parent=statics)
+        dpg.add_input_float(parent=statics, callback=self._on_change_float, default_value=self.O_float.value,width=100)
 
-        Float = self._create_output_attr(self.O_float)
-        dpg.add_input_float(parent=Float, callback=self._on_change_float, default_value=self.O_float.value,width=100)
-        dpg.add_text(self.O_float.name, parent=Float)
+        self._create_output_attr(self.O_float)
 
     def _on_change_float(self, s,a,u):
         self.O_float.value = a

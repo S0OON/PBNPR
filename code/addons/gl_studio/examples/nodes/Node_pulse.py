@@ -12,15 +12,15 @@ class NODE_INTERFACE(BASE_NODE):
         self.ENABLE = False
         self.Pulse  = False # one time pulse
 
-        self.O_output = t.NodeSocket(   dpg.generate_uuid(), t.NONE)
-        self.I_intervals = t.NodeSocket(dpg.generate_uuid(), t.F,  '<- Intervals (seconds)')
-        self.I_stream = t.NodeSocket(   dpg.generate_uuid(), t.ANY,'<- Triggers Connections')
+        self.O_output    = t.NodeSocket(dpg.generate_uuid(), t.NONE)
+        self.I_intervals = t.NodeSocket(dpg.generate_uuid(), t.F,  '<- Intervals (seconds)', 5.0)
+        self.I_stream    = t.NodeSocket(dpg.generate_uuid(), t.ANY,'<- Triggers Connections')
 
-        self.I_intervals.value = 5.0
         self._last_pulse_time = time.time()
 
         self._resgister_IO(
-            [self.I_stream, self.I_intervals],
+            [self.I_stream, 
+             self.I_intervals],
             [self.O_output]
         )
 
@@ -29,14 +29,11 @@ class NODE_INTERFACE(BASE_NODE):
 
         statics = self._create_static_attr()
         dpg.add_button(label='execute connections', callback=self._on_change_pulse, parent=statics)
-        dpg.add_checkbox(label="Enable",  callback=self._on_change_enable, parent=statics)
+        dpg.add_checkbox(label='Enable',   callback=self._on_change_enable, parent=statics)
+        dpg.add_drag_float(label='Seconds',parent=statics, callback=self._on_change_intervals, default_value=self.I_intervals.value, width=100)
 
-        intervals = self._create_input_attr(self.I_intervals)
-        dpg.add_drag_float(parent=intervals, callback=self._on_change_intervals, default_value=self.I_intervals.value, width=100)
-        dpg.add_text(self.I_intervals.name, parent=intervals)
-
-        stream = self._create_input_attr(self.I_stream, dpg.mvNode_PinShape_TriangleFilled)
-        dpg.add_text(self.I_stream.name, parent=stream)
+        self._create_input_attr(self.I_intervals)
+        self._create_input_attr(self.I_stream, dpg.mvNode_PinShape_TriangleFilled)
 
     def _on_change_enable(self, s, a, u):
         self.ENABLE = a

@@ -21,9 +21,9 @@ class NODE_INTERFACE(BASE_NODE):
 
         statics = self._create_static_attr()
         dpg.add_button(label="Execute",  callback=self.EXEC_CB, parent=statics)
+        dpg.add_input_text(parent=statics, callback=self._on_change_str, default_value=self.O_str.value,width=100)
 
-        Str = self._create_output_attr(self.O_str)
-        dpg.add_input_text(parent=Str, callback=self._on_change_str, default_value=self.O_str.value,width=100,label=self.O_str.name)
+        self._create_output_attr(self.O_str)
 
     def _on_change_str(self, s,a,u):
         self.O_str.value = a

@@ -153,15 +153,15 @@ class NODE_INTERFACE(BASE_NODE):
         # Static Controls
         statics = self._create_static_attr()
         dpg.add_button(label="Execute Render", callback=self.EXEC_CB, parent=statics)
-        dpg.add_input_int(label="Width",  default_value=self.I_w.value,  callback=self._on_width_change,  parent=statics, width=100)
+        dpg.add_input_int(label="Width",  default_value=self.I_w.value, callback=self._on_width_change,  parent=statics, width=100)
         dpg.add_input_int(label="Height", default_value=self.I_h.value, callback=self._on_height_change, parent=statics, width=100)
 
         # Inputs
-        self._create_input_attr(self.I_w      )
-        self._create_input_attr(self.I_h      )
-        self._create_input_attr(self.I_matrix )
-        self._create_input_attr(self.I_normals )
-        self._create_input_attr(self.I_pos    )
+        self._create_input_attr(self.I_w)
+        self._create_input_attr(self.I_h)
+        self._create_input_attr(self.I_pos)
+        self._create_input_attr(self.I_normals)
+        self._create_input_attr(self.I_matrix)
         self._create_input_attr(self.I_view)
         self._create_input_attr(self.I_proj)
 
@@ -170,12 +170,6 @@ class NODE_INTERFACE(BASE_NODE):
 
     def _on_width_change(self, s, a, u):  self.I_w.value = max(1, a)
     def _on_height_change(self, s, a, u): self.I_h.value = max(1, a)
-
-    def _create_input_attr(self, socket, pin_shape=dpg.mvNode_PinShape_CircleFilled,name=True):
-        Id = super()._create_input_attr(socket, pin_shape)
-        if name:
-            dpg.add_text(socket.name,parent=Id)
-        return Id
 
     def on_execute(self):
         Pos = self.I_pos.value

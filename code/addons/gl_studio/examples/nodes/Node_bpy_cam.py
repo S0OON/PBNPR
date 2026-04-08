@@ -28,20 +28,15 @@ class NODE_INTERFACE(BASE_NODE):
 
         statics = self._create_static_attr()
         dpg.add_button(label="Execute",  callback=self.EXEC_CB, parent=statics)
+        dpg.add_input_text(parent=statics, callback=self._on_name_change,width=100,label='Name', default_value=self.I_name.value)
+        dpg.add_input_float(parent=statics, callback=self._on_change_x,default_value=self.I_x.value,width=100,label='x')
+        dpg.add_input_float(parent=statics, callback=self._on_change_y,default_value=self.I_y.value,width=100,label='y')
 
-        name = self._create_input_attr(self.I_name)
-        dpg.add_input_text(parent=name, callback=self._on_name_change,width=100,label=self.I_name.name, default_value=self.I_name.value)
-
-        x = self._create_input_attr(self.I_x)
-        dpg.add_input_float(parent=x, callback=self._on_change_x,default_value=self.I_x.value,width=100,label=self.I_x.name)
-
-        y = self._create_input_attr(self.I_y)
-        dpg.add_input_float(parent=y, callback=self._on_change_y,default_value=self.I_y.value,width=100,label=self.I_y.name)
-
-        view = self._create_output_attr(self.O_mCam)
-        dpg.add_text(self.O_mCam.name, parent=view)
-        proj = self._create_output_attr(self.O_proj)
-        dpg.add_text(self.O_proj.name, parent=proj)
+        self._create_input_attr(self.I_name)
+        self._create_input_attr(self.I_x)
+        self._create_input_attr(self.I_y)
+        self._create_output_attr(self.O_mCam)
+        self._create_output_attr(self.O_proj)
     
 
     def _on_name_change(self, s,a,u):

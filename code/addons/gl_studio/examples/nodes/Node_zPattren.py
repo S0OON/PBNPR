@@ -84,15 +84,22 @@ class NODE_BASE_INTERFACE:
     def _create_static_attr(self, label=None):
         return dpg.add_node_attribute(attribute_type=dpg.mvNode_Attr_Static, parent=self.ID, tag=dpg.generate_uuid(),label=label)
 
-    def _create_input_attr(self, socket:t.NodeSocket,pin_shape=dpg.mvNode_PinShape_CircleFilled):
-        return dpg.add_node_attribute(attribute_type=dpg.mvNode_Attr_Input,
+    def _create_input_attr(self, socket:t.NodeSocket,pin_shape=dpg.mvNode_PinShape_CircleFilled,use_name=True):
+        Id = dpg.add_node_attribute(attribute_type=dpg.mvNode_Attr_Input,
                                       parent=self.ID, tag=socket.ID, 
                                       shape=pin_shape)
 
-    def _create_output_attr(self, socket:t.NodeSocket,pin_shape=dpg.mvNode_PinShape_CircleFilled):
-        return dpg.add_node_attribute(attribute_type=dpg.mvNode_Attr_Output, 
+        if use_name:
+            dpg.add_text(socket.name,parent=Id)
+        return Id
+
+    def _create_output_attr(self, socket:t.NodeSocket,pin_shape=dpg.mvNode_PinShape_CircleFilled,use_name=True):
+        Id = dpg.add_node_attribute(attribute_type=dpg.mvNode_Attr_Output, 
                                       parent=self.ID, tag=socket.ID,
                                       shape=pin_shape)
+        if use_name:
+            dpg.add_text(socket.name,parent=Id)
+        return Id
 
 
     def on_gui(self):

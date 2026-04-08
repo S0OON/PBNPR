@@ -32,25 +32,17 @@ class NODE_INTERFACE(BASE_NODE):
 
         # Add the Execute Button to the static header
         statics = self._create_static_attr()
-        dpg.add_button(  label="Execute", callback=self.EXEC_CB,           parent=statics)
-        dpg.add_checkbox(label="Enable",  callback=self._on_change_enable, parent=statics, default_value=self.ENABLE)
+        dpg.add_button(  label="Execute",  callback=self.EXEC_CB,           parent=statics)
+        dpg.add_checkbox(label="Enable",   callback=self._on_change_enable, parent=statics, default_value=self.ENABLE)
+        dpg.add_input_text(parent=statics, callback=self._on_name_change, default_value=self.I_name.value, width=120)
 
-        # Draw Inputs
-        name = self._create_input_attr(self.I_name)
-        dpg.add_input_text(parent=name, callback=self._on_name_change, default_value=self.I_name.value, width=120)
 
-        # Draw Outputs
-        pos = self._create_output_attr(self.O_verts)
-        dpg.add_text(self.O_verts.name, parent=pos)
+        self._create_input_attr(self.I_name)
 
-        n = self._create_output_attr(self.O_normals)
-        dpg.add_text(self.O_normals.name, parent=n)
-
-        m = self._create_output_attr(self.O_mat)
-        dpg.add_text(self.O_mat.name, parent=m)
-
-        u = self._create_output_attr(self.O_uvs)
-        dpg.add_text(self.O_uvs.name, parent=u)
+        self._create_output_attr(self.O_verts)
+        self._create_output_attr(self.O_normals)
+        self._create_output_attr(self.O_mat)
+        self._create_output_attr(self.O_uvs)
 
 
     def _on_change_enable(self, sender, app_data, user_data):

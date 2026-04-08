@@ -23,16 +23,12 @@ class NODE_INTERFACE(BASE_NODE):
     def on_gui(self):
         Id = super().on_gui()
 
-        # Static controls
         statics = self._create_static_attr()
         dpg.add_button(label="VIEW IMAGE (PIL)", parent=statics, callback=self.on_view_image)
         dpg.add_checkbox(label='Flip',           parent=statics, callback=self._on_change_flip)
 
-        # Inputs / Outputs
-        i= self._create_input_attr(self.I_rgba)
-        dpg.add_text(self.I_rgba.name, parent=i)
-        o= self._create_output_attr(self.O_rgba)
-        dpg.add_text(self.O_rgba.name, parent=o)
+        self._create_input_attr(self.I_rgba)
+        self._create_output_attr(self.O_rgba)
 
     def _on_change_flip(self,S,A,U):
         self.flip = A
