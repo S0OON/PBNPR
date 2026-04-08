@@ -58,7 +58,7 @@ from gl_studio.ui.ui_bpy import unregister
 if __name__ == '__main__':
     register()
 ========================================
-E:\soon\projects\PBNPR\code\addons\gl_studio\examples\nodes\Node_cam_bpy.py
+E:\soon\projects\PBNPR\code\addons\gl_studio\examples\nodes\Node_bpy_cam.py
 ========================================
 import dearpygui.dearpygui as dpg
 from gl_studio.util import util_types as t
@@ -125,21 +125,309 @@ class NODE_INTERFACE(BASE_NODE):
                 print(f"Camera '{self.I_name.value}' not found!")
                 return
              
-            
-            self.O_mCam.value = np.array(cam.matrix_world.inverted(), dtype=np.float32)
+            view = np.array(cam.matrix_world.inverted().transposed(), dtype=np.float32).flatten()
+            self.O_mCam.value = view
              
             proj_matrix = cam.calc_matrix_camera(
                 bpy.context.evaluated_depsgraph_get(), 
                 x=int(self.I_x.value), 
                 y=int(self.I_y.value)
             )
-            self.O_proj.value = np.array(proj_matrix, dtype=np.float32)
+            self.O_proj.value = np.array(proj_matrix.transposed(), dtype=np.float32).flatten()
 
             print(f"Executed! : {self.I_name.value}, view matrix: {self.O_mCam.value}, proj matrix: {self.O_proj.value}") 
 
     def on_execute_crawler(self, input_data=None):
         if self.ENABLE:
             self.on_execute()
+========================================
+E:\soon\projects\PBNPR\code\addons\gl_studio\examples\nodes\Node_bpy_mgl_render.py
+========================================
+import dearpygui.dearpygui as dpg
+import moderngl
+import numpy as np
+from PIL import Image
+from gl_studio.examples.nodes.Node_zPattren import NODE_BASE_INTERFACE as BASE_NODE
+from gl_studio.util import util_types as t
+
+
+class NODE_INTERFACE(BASE_NODE):
+    LABEL = 'Isolated Triangle Test'
+
+    def __init__(self, parent):
+        super().__init__(parent)
+        
+        self.O_out = t.NodeSocket(dpg.generate_uuid(),t.NONE,'out->')
+        # Zero sockets. Completely standalone.
+        self._resgister_IO([], [self.O_out])
+
+    def on_gui(self):
+        super().on_gui()
+        
+        # The single button you asked for
+        statics = self._create_static_attr()
+        dpg.add_button(label="Draw & Show Triangle", callback=self.on_execute, parent=statics)
+
+        out = self._create_output_attr(self.O_out)
+
+    def on_execute(self):
+        print(f"[{self.LABEL}] Initializing standalone render...")
+        try:
+            # 1. Create an isolated headless context and Framebuffer
+            ctx = moderngl.create_context(standalone=True)
+            fbo = ctx.simple_framebuffer((512, 512))
+            fbo.use()
+
+            # 2. Write a quick embedded shader (Position + Color)
+            prog = ctx.program(
+                vertex_shader='''
+                    #version 330
+                    in vec2 in_vert;
+                    in vec3 in_color;
+                    out vec3 v_color;
+                    void main() {
+                        gl_Position = vec4(in_vert, 0.0, 1.0);
+                        v_color = in_color;
+                    }
+                ''',
+                fragment_shader='''
+                    #version 330
+                    in vec3 v_color;
+                    out vec4 f_color;
+                    void main() {
+                        f_color = vec4(v_color, 1.0);
+                    }
+                '''
+            )
+
+            # 3. Create Geometry Data: X, Y, R, G, B
+            vertices = np.array([
+                 0.0,  0.8,   1.0, 0.0, 0.0,  # Top vertex (Red)
+                -0.8, -0.8,   0.0, 1.0, 0.0,  # Bottom-left (Green)
+                 0.8, -0.8,   0.0, 0.0, 1.0,  # Bottom-right (Blue)
+            ], dtype='f4')
+
+            # 4. Upload to GPU
+            vbo = ctx.buffer(vertices.tobytes())
+            vao = ctx.vertex_array(prog, [(vbo, '2f 3f', 'in_vert', 'in_color')])
+
+            # 5. Render
+            ctx.clear(0.1, 0.1, 0.15, 1.0) # Dark gray-blue background
+            vao.render(moderngl.TRIANGLES)
+
+            # 6. Read back from GPU to CPU
+            raw_pixels = fbo.read(components=4)
+            image_array = np.frombuffer(raw_pixels, dtype=np.uint8).reshape((512, 512, 4))
+            
+            # OpenGL is upside down, flip it so PIL reads it right
+            image_array = np.flipud(image_array)
+
+            # 7. Show it!
+            img = Image.fromarray(image_array, 'RGBA')
+            img.show(title="Hello Triangle")
+            print(f"[{self.LABEL}] Success!")
+
+            # 8. Clean up VRAM
+            vao.release()
+            vbo.release()
+            prog.release()
+            fbo.release()
+            ctx.release()
+
+        except Exception as e:
+            print(f"[{self.LABEL}] Render crashed: {e}")
+
+    def on_execute_crawler(self, input_data=None):
+        self.on_execute()
+========================================
+E:\soon\projects\PBNPR\code\addons\gl_studio\examples\nodes\Node_bpy_ob_eval.py
+========================================
+import dearpygui.dearpygui as dpg
+from gl_studio.util import util_types as t
+from gl_studio.examples.nodes.Node_zPattren import NODE_BASE_INTERFACE as BASE_NODE
+import bpy
+import numpy as np
+
+class NODE_INTERFACE(BASE_NODE):
+    LABEL = 'Object Eval'
+
+    def __init__(self, parent):
+        super().__init__(parent)
+
+        self.ENABLE = True
+
+        # --- Sockets Setup ---
+        self.I_name    = t.NodeSocket(dpg.generate_uuid(), t.STR, '<- Obj Name', value="Cube")
+        
+        self.O_verts   = t.NodeSocket(dpg.generate_uuid(), t.F16, 'pos ->')
+        self.O_normals = t.NodeSocket(dpg.generate_uuid(), t.F16, 'normals ->')
+        self.O_mat     = t.NodeSocket(dpg.generate_uuid(), t.F16, 'matrix ->')
+        self.O_uvs     = t.NodeSocket(dpg.generate_uuid(), t.F16, 'active uv ->')
+
+        # Register to the BASE_NODE router
+        self._resgister_IO(
+            [self.I_name],
+            [self.O_verts, self.O_normals, self.O_mat, self.O_uvs]
+        )
+
+    def on_gui(self):
+        # Draw the main node window
+        Id = super().on_gui()
+
+        # Add the Execute Button to the static header
+        statics = self._create_static_attr()
+        dpg.add_button(  label="Execute", callback=self.EXEC_CB,           parent=statics)
+        dpg.add_checkbox(label="Enable",  callback=self._on_change_enable, parent=statics, default_value=self.ENABLE)
+
+        # Draw Inputs
+        name = self._create_input_attr(self.I_name)
+        dpg.add_input_text(parent=name, callback=self._on_name_change, default_value=self.I_name.value, width=120)
+
+        # Draw Outputs
+        pos = self._create_output_attr(self.O_verts)
+        dpg.add_text(self.O_verts.name, parent=pos)
+
+        n = self._create_output_attr(self.O_normals)
+        dpg.add_text(self.O_normals.name, parent=n)
+
+        m = self._create_output_attr(self.O_mat)
+        dpg.add_text(self.O_mat.name, parent=m)
+
+        u = self._create_output_attr(self.O_uvs)
+        dpg.add_text(self.O_uvs.name, parent=u)
+
+
+    def _on_change_enable(self, sender, app_data, user_data):
+        self.ENABLE = app_data
+
+    def _on_name_change(self, sender, app_data, user_data):
+        self.I_name.value = app_data
+
+    def on_execute(self):
+        obj_name = self.I_name.value
+        
+        if not obj_name or obj_name not in bpy.data.objects:
+            print(f"[{self.LABEL}] Error: Object '{obj_name}' not found.")
+            return
+            
+        obj = bpy.data.objects[obj_name]
+        if obj.type != 'MESH':
+            print(f"[{self.LABEL}] Error: Object '{obj_name}' is not a MESH.")
+            return
+        
+        # --- The NumPy Blender Extraction Engine ---
+        depsgraph = bpy.context.evaluated_depsgraph_get()
+        eval_obj  = obj.evaluated_get(depsgraph)
+        mesh      = eval_obj.to_mesh()
+        mesh.calc_loop_triangles()
+        
+        tris_count = len(mesh.loop_triangles)
+        
+        # 1. Triangulation Indices (Corners of every triangle)
+        loops_indices = np.empty((tris_count * 3), dtype=np.int32)
+        mesh.loop_triangles.foreach_get("loops", loops_indices)
+
+        vertex_indices = np.empty((tris_count * 3), dtype=np.int32)
+        mesh.loop_triangles.foreach_get("vertices", vertex_indices)
+
+        # 2. Positions (Unrolled to triangles)
+        all_pos = np.empty((len(mesh.vertices), 3), dtype=np.float32)
+        mesh.vertices.foreach_get("co", all_pos.reshape(-1))
+        final_pos = all_pos[vertex_indices]
+
+        # 3. Normals (From loops to preserve sharp/custom edges)
+        all_normals = np.empty((len(mesh.loops), 3), dtype=np.float32)
+        mesh.loops.foreach_get("normal", all_normals.reshape(-1))
+        final_normals = all_normals[loops_indices]
+
+        # 4. UV Map (Active layer)
+        if mesh.uv_layers.active:
+            all_uvs = np.empty((len(mesh.loops), 2), dtype=np.float32)
+            mesh.uv_layers.active.data.foreach_get("uv", all_uvs.reshape(-1))
+            final_uvs = all_uvs[loops_indices]
+        else:
+            final_uvs = np.array([], dtype=np.float32)
+
+        eval_obj.to_mesh_clear()
+
+        # --- 5. Push data to the Output Sockets ---
+        self.O_verts.value   = final_pos
+        self.O_normals.value = final_normals
+        self.O_uvs.value     = final_uvs
+        self.O_mat.value     = np.array(obj.matrix_world.transposed(), dtype=np.float32).flatten()
+
+        print(f"[{self.LABEL}] Extracted {len(final_pos)} vertices from '{obj_name}'")
+
+    def on_execute_crawler(self, input_data=None):
+        if self.ENABLE:
+            self.on_execute()
+========================================
+E:\soon\projects\PBNPR\code\addons\gl_studio\examples\nodes\Node_bpy_PIL_RGBAviewer.py
+========================================
+import dearpygui.dearpygui as dpg
+from gl_studio.util import util_types as t
+from gl_studio.examples.nodes.Node_zPattren import NODE_BASE_INTERFACE as BASE_NODE
+import numpy as np
+from PIL import Image
+
+class NODE_INTERFACE(BASE_NODE):
+    LABEL = 'RGBA Viewer'
+
+    def __init__(self, parent):
+        super().__init__(parent)
+        
+        # --- Sockets Setup ---
+        self.I_rgba = t.NodeSocket(dpg.generate_uuid(), t.RGBA, '<- Pixels (RGBA)')
+        self.O_rgba = t.NodeSocket(dpg.generate_uuid(), t.RGBA, 'Pixels (RGBA) ->')
+
+        self._resgister_IO(
+            [self.I_rgba],
+            [self.O_rgba]
+        )
+
+    def on_gui(self):
+        Id = super().on_gui()
+
+        # Static controls
+        statics = self._create_static_attr()
+        dpg.add_button(label="VIEW IMAGE (PIL)", callback=self.on_view_image, parent=statics)
+
+        # Inputs / Outputs
+        i= self._create_input_attr(self.I_rgba)
+        dpg.add_text(self.I_rgba.name, parent=i)
+        o= self._create_output_attr(self.O_rgba)
+        dpg.add_text(self.O_rgba.name, parent=o)
+
+    def on_execute(self):
+        if self.I_rgba.value is not None:
+            self.O_rgba.value = self.I_rgba.value
+            print(f"[{self.LABEL}] Pixels passed through.")
+        else:
+            print(f"[{self.LABEL}] Warning: No pixel data received.")
+        
+        self.on_view_image()
+
+    def on_view_image(self):
+        # 1. Grab the pixels from the socket
+        pixels = self.I_rgba.value
+        
+        # 2. Validate
+        if pixels is None or not isinstance(pixels, np.ndarray):
+            print(f"[{self.LABEL}] Error: No valid Numpy image array to view.")
+            return
+            
+        try:
+            # 3. Flip upside-down (OpenGL vs Screen coordinate mismatch fix)
+            flipped_pixels = np.flipud(pixels)
+            
+            # 4. Convert to PIL Image and Pop the Window!
+            img = Image.fromarray(flipped_pixels, 'RGBA')
+            img.show(title="NodeRivers Render Output")
+            print(f"[{self.LABEL}] Image opened in default viewer!")
+            
+        except Exception as e:
+            print(f"[{self.LABEL}] Error displaying image: {e}")
+
 ========================================
 E:\soon\projects\PBNPR\code\addons\gl_studio\examples\nodes\Node_float.py
 ========================================
@@ -180,6 +468,111 @@ class NODE_INTERFACE(BASE_NODE):
     def on_execute_crawler(self, input_data=None):
         self.on_execute()
 ========================================
+E:\soon\projects\PBNPR\code\addons\gl_studio\examples\nodes\Node_mgl.py
+========================================
+import dearpygui.dearpygui as dpg
+from gl_studio.util import util_types as t
+from gl_studio.examples.nodes.Node_zPattren import NODE_BASE_INTERFACE as BASE_NODE
+import numpy as np
+
+
+class NODE_INTERFAXCE(BASE_NODE):
+    LABEL = 'Shader - colored obj simple'
+
+    def __init__(self, parent):
+        super().__init__(parent)
+
+        # --- Sockets Setup ---
+        self.I_w = t.NodeSocket(dpg.generate_uuid(),t.F, '<- W')
+        self.I_h = t.NodeSocket(dpg.generate_uuid(),t.F, '<- H')
+        self.I_matrix  = t.NodeSocket(dpg.generate_uuid(), t.F16, '<- Model Matrix')
+        self.I_normals = t.NodeSocket(dpg.generate_uuid(), t.F16, '<- Normals')
+        self.I_pos     = t.NodeSocket(dpg.generate_uuid(), t.F16, '<- Position')
+        self.I_view    = t.NodeSocket(dpg.generate_uuid(), t.F16, '<- View Matrix')
+        self.I_proj    = t.NodeSocket(dpg.generate_uuid(), t.F16, '<- Proj Matrix')
+        
+        self.O_pixels  = t.NodeSocket(dpg.generate_uuid(), t.ANY, 'Pixels ->')
+
+        # Register routing
+        self._resgister_IO(
+            [self.I_w,self.I_h,self.I_matrix, self.I_normals, self.I_pos, self.I_view, self.I_proj],
+            [self.O_pixels]
+        )
+
+    def on_gui(self):
+        Id = super().on_gui()
+
+        # Static Controls
+        statics = self._create_static_attr()
+        dpg.add_button(label="Execute Render", callback=self.EXEC_CB, parent=statics)
+        dpg.add_input_int(label="Width", default_value=self.width, callback=self._on_width_change, parent=statics, width=100)
+        dpg.add_input_int(label="Height", default_value=self.height, callback=self._on_height_change, parent=statics, width=100)
+
+        # Inputs
+        self._create_input_attr(self.I_w      )
+        self._create_input_attr(self.I_h      )
+        self._create_input_attr(self.I_matrix )
+        self._create_input_attr(self.I_normals )
+        self._create_input_attr(self.I_pos    )
+        self._create_input_attr(self.I_view)
+        self._create_input_attr(self.I_proj)
+
+        # Outputs
+        self._create_output_attr(self.O_pixels)
+
+    def _on_width_change(self, s, a, u):  self.width = max(1, a)
+    def _on_height_change(self, s, a, u): self.height = max(1, a)
+
+    def on_execute(self):
+        # 1. Pull data from sockets
+        pos = self.I_pos.value
+        normals = self.I_normals.value
+        matrix = self.I_matrix.value
+        view = self.I_view.value
+        proj = self.I_proj.value
+
+        # Quick validation
+        if pos is None or not isinstance(pos, np.ndarray):
+            print(f"[{self.LABEL}] Skipping execution: No position data.")
+            return
+
+        print(f"[{self.LABEL}] Executing custom MGL node...")
+
+        try:
+            # ==========================================
+            # YOUR CUSTOM MODERN GL LOGIC GOES HERE
+            # ==========================================
+            
+            # REMINDER: Intel Driver Crash Prevention!
+            # 1. Bind your FBO *before* compiling shaders or writing uniforms
+            # if self.fbo: self.fbo.release()
+            # self.fbo = self.ctx.simple_framebuffer((self.width, self.height))
+            # self.fbo.use()
+            
+            # 2. Compile Shader (prog = ctx.program(...))
+            
+            # 3. Write Uniforms using flattened contiguous bytes:
+            # safe_M = matrix.flatten().astype('f4').tobytes()
+            # prog['M'].write(safe_M)
+            
+            # 4. Create VBOs & VAO
+            # 5. Render (vao.render(moderngl.TRIANGLES))
+            
+            # ==========================================
+
+            # Mock output for now so downstream nodes don't crash
+            # Create a blank temporary image array
+            dummy_pixels = np.zeros((self.height, self.width, 4), dtype=np.uint8)
+            dummy_pixels[:, :, 3] = 255 # Full alpha
+            
+            self.O_pixels.value = dummy_pixels
+
+        except Exception as e:
+            print(f"[{self.LABEL}] Render crashed: {e}")
+
+    def on_execute_crawler(self, input_data=None):
+        self.on_execute()
+========================================
 E:\soon\projects\PBNPR\code\addons\gl_studio\examples\nodes\Node_pulse.py
 ========================================
 import dearpygui.dearpygui as dpg
@@ -194,16 +587,17 @@ class NODE_INTERFACE(BASE_NODE):
         super().__init__(parent)
 
         self.ENABLE = False
+        self.Pulse  = False # one time pulse
 
-        self.O_output = t.NodeSocket(   dpg.generate_uuid(),t.NONE)
-        self.I_intervals = t.NodeSocket(dpg.generate_uuid(),t.F,  '<- Intervals (seconds)')
-        self.I_stream = t.NodeSocket(   dpg.generate_uuid(),t.ANY,'<- Triggers Connections')
+        self.O_output = t.NodeSocket(   dpg.generate_uuid(), t.NONE)
+        self.I_intervals = t.NodeSocket(dpg.generate_uuid(), t.F,  '<- Intervals (seconds)')
+        self.I_stream = t.NodeSocket(   dpg.generate_uuid(), t.ANY,'<- Triggers Connections')
 
         self.I_intervals.value = 5.0
         self._last_pulse_time = time.time()
 
         self._resgister_IO(
-            [self.I_stream,self.I_intervals],
+            [self.I_stream, self.I_intervals],
             [self.O_output]
         )
 
@@ -211,37 +605,43 @@ class NODE_INTERFACE(BASE_NODE):
         Id = super().on_gui()
 
         statics = self._create_static_attr()
+        dpg.add_button(label='execute connections', callback=self._on_change_pulse, parent=statics)
         dpg.add_checkbox(label="Enable",  callback=self._on_change_enable, parent=statics)
 
         intervals = self._create_input_attr(self.I_intervals)
-        dpg.add_drag_float(parent=intervals, callback=self._on_change_intervals, default_value=self.I_intervals.value,width=100)
+        dpg.add_drag_float(parent=intervals, callback=self._on_change_intervals, default_value=self.I_intervals.value, width=100)
         dpg.add_text(self.I_intervals.name, parent=intervals)
 
         stream = self._create_input_attr(self.I_stream, dpg.mvNode_PinShape_TriangleFilled)
         dpg.add_text(self.I_stream.name, parent=stream)
 
-    def _on_change_enable(self, s,a,u):
-        self.ENABLE = a
-
-    def _on_change_intervals(self, s,a,u):
+    def _on_change_enable(self, s, a, u):
         self.ENABLE = a
         if self.ENABLE:
-            self._last_pulse_time = time.time() 
+            self._last_pulse_time = time.time() # Reset the timer when enabling so it doesn't instantly fire
 
+    def _on_change_pulse(self, s, a, u):
+        # Buttons don't pass a boolean state, so explicitly set True
+        self.Pulse = True 
+
+    def _on_change_intervals(self, s, a, u):
+        self.I_intervals.value = a 
 
     def on_execute_crawler(self, input_data=None):
         print(f"Executed! : {self.LABEL}")
+        self.Pulse = False
 
     def on_should_crawl(self):
-        if not self.ENABLE:
-            return False
-            
-        current_time = time.time()
-        
-        if current_time - self._last_pulse_time >= self.I_intervals.value:
-            self._last_pulse_time = current_time
+        if self.Pulse:
             return True
+
+        if self.ENABLE:
+            current_time = time.time()
+            if current_time - self._last_pulse_time >= self.I_intervals.value:
+                self._last_pulse_time = current_time
+                return True
             
+        # Explicitly return False if no conditions are met
         return False
 ========================================
 E:\soon\projects\PBNPR\code\addons\gl_studio\examples\nodes\Node_str.py
@@ -408,45 +808,11 @@ from dataclasses import dataclass
 class GLctx:
     ctx=None
     LABEL = 'GLctx'
-    @classmethod
-    def INIT(self):
-        # --- Context Initialization with GLFW Hidden Window ---
-        try:
-            # 1. Primary: Try to hook into Blender's existing UI window
-            self.ctx = moderngl.create_context()
-            print(f"[{self.LABEL}] Hooked into Blender's existing OpenGL Context.")
-            
-        except Exception:
-            print(f"[{self.LABEL}] No active context. Attempting GLFW hidden window...")
-            try:
-                # 2. Fallback: The Hidden Window Hack
-                if not glfw.init():
-                    raise Exception("Failed to initialize GLFW.")
-                
-                # Tell GLFW not to actually show the window on the monitor
-                glfw.window_hint(glfw.VISIBLE, glfw.FALSE)
-                
-                # Create a tiny 100x100 dummy window in the background
-                self.glfw_window = glfw.create_window(100, 100, "Dummy", None, None)
-                if not self.glfw_window:
-                    glfw.terminate()
-                    raise Exception("Failed to create hidden GLFW window.")
-                
-                # Make this hidden window the "current" OpenGL target
-                glfw.make_context_current(self.glfw_window)
-                
-                # Now ModernGL will happily hook into the WGL context GLFW just built!
-                self.ctx = moderngl.create_context()
-                print(f"[{self.LABEL}] Hooked into Hidden GLFW Window via WGL.")
-                
-            except Exception as e:
-                print(f"[{self.LABEL}] GLFW Fallback failed: {e}. Forcing EGL...")
-                # 3. Last Resort: Force EGL offscreen rendering
-                self.ctx = moderngl.create_context(standalone=True, backend='egl')
+    
     @classmethod
     def get(self):
         if not self.ctx:
-            self.INIT()
+            self.ctx = moderngl.create_context(standalone=True)
         return self.ctx
     
 
@@ -562,7 +928,70 @@ class NODE_EDITOR_INTERFACE:
     module_registry = {}
     nodes = {}        
     active_links = {}  # { Input_socket_id : Output_socket_id }
+   
+    def delete_selected_nodes(self):
+        """Delete all currently selected nodes in the editor."""
+        # get
+        selected = dpg.get_selected_nodes(self.editor_tag)
+        # delete
+        for node_id in list(selected):
+            self._delete_node(node_id)
+        # clear
+        dpg.clear_selected_nodes(self.editor_tag)
     
+    def _delete_node(self, node_id):
+        """
+        Safely delete a node and all its connected links.
+        Must delete links BEFORE deleting the node to avoid errors.
+        """
+# 1. Find all links connected to this node
+        links_to_delete = []
+        for input_id, output_id in list(self.active_links.items()):
+            parent_i = dpg.get_item_parent(input_id)
+            parent_o = dpg.get_item_parent(output_id)
+            
+            if parent_i == node_id or parent_o == node_id:
+                links_to_delete.append((input_id, output_id))
+        
+# 2. Delete all connected links first (CRITICAL: before deleting node)
+        for input_id, output_id in links_to_delete:
+            if input_id in self.active_links:
+                del self.active_links[input_id]
+            
+            # Find and delete the actual DPG link item
+            self._delete_link_by_attributes(input_id, output_id)
+        
+        # 3. Now safe to delete the node
+        if dpg.does_item_exist(node_id):
+            dpg.delete_item(node_id)
+        
+        # 4. Remove from our nodes dict
+        if node_id in self.nodes:
+            del self.nodes[node_id]
+
+    def _delete_link_by_attributes(self, input_id, output_id):
+        """Find and delete a DPG link item by its connected attribute IDs."""
+        if not dpg.does_item_exist(self.editor_tag):
+            return
+        
+        children = dpg.get_item_children(self.editor_tag)
+        if not children:
+            return
+        
+        # Links are in slot 1 of the node editor children
+        link_items = children[1] if len(children) > 1 else []
+        
+        for link_id in link_items:
+            try:
+                link_info = dpg.get_item_user_data(link_id)
+                if link_info:
+                    out_id, in_id = link_info
+                    if out_id == output_id and in_id == input_id:
+                        dpg.delete_item(link_id)
+                        return
+            except Exception:
+                continue
+
 cfg = NODE_EDITOR_INTERFACE()
 
 class node_helper:
@@ -604,9 +1033,6 @@ class PAG:
                 self.Clear()
                 self.order(n)
                 self.execs_order()
-
-                #n.EXEC_ON_CRAWLER_CB()
-
                 self._reset_nodes()
                
                 #TODO self.animate_active_graph()
@@ -747,8 +1173,13 @@ def delink_callback(sender, app_data):
     #UI
     dpg.delete_item(link_id)
 
+
 def register():
     cfg.INIT()
+    
+    with dpg.handler_registry():
+        dpg.add_key_down_handler(key=dpg.mvKey_Delete, callback=lambda s,a,u: cfg.delete_selected_nodes())
+
     with dpg.menu_bar(parent=cfg.win_tag):
             with dpg.menu(label="Nodes stream"):
                 dpg.add_button(label="Update node types from directories",
@@ -966,7 +1397,6 @@ import dearpygui.dearpygui as dpg
 from importlib import reload
 from gl_studio.gl.ModernOpenGL import GLctx as GL
 
-GL.INIT()
 main.register()
 print(bpy.data.objects['Cube'])
 while dpg.is_dearpygui_running():

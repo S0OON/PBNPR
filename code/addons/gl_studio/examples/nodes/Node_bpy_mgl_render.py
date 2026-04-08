@@ -4,36 +4,7 @@ import numpy as np
 from PIL import Image
 from gl_studio.examples.nodes.Node_zPattren import NODE_BASE_INTERFACE as BASE_NODE
 from gl_studio.util import util_types as t
-def reset_gl_state(ctx: moderngl.Context):
-    """
-    Scrub the ModernGL state machine clean so it doesn't poison Blender's viewport.
-    """
-    if not ctx:
-        return
 
-    try:
-        # 1. Unbind your custom Framebuffer. 
-        # This points the GPU back to the default screen/window buffer.
-        ctx.screen.use()
-
-        # 2. Disable all intrusive flags
-        ctx.disable(moderngl.DEPTH_TEST)
-        ctx.disable(moderngl.CULL_FACE)
-        ctx.disable(moderngl.BLEND)
-        ctx.disable(moderngl.PROGRAM_POINT_SIZE)
-
-        # 3. Reset blending and depth equations to safe standard defaults
-        ctx.blend_func = moderngl.DEFAULT_BLENDING
-        ctx.blend_equation = moderngl.FUNC_ADD
-        ctx.depth_func = '<'  # Standard Less-Than depth test
-        ctx.cull_face = 'back'
-        ctx.wireframe = False
-
-        # 4. Clear any latent OpenGL errors in the buffer so Blender doesn't trip on them
-        _ = ctx.error 
-
-    except Exception as e:
-        print(f"[GL Reset Error] Could not clean state: {e}")
 
 class NODE_INTERFACE(BASE_NODE):
     LABEL = 'Isolated Triangle Test'

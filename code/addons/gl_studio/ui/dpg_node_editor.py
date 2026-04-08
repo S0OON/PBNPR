@@ -24,7 +24,70 @@ class NODE_EDITOR_INTERFACE:
     module_registry = {}
     nodes = {}        
     active_links = {}  # { Input_socket_id : Output_socket_id }
+   
+    def delete_selected_nodes(self):
+        """Delete all currently selected nodes in the editor."""
+        # get
+        selected = dpg.get_selected_nodes(self.editor_tag)
+        # delete
+        for node_id in list(selected):
+            self._delete_node(node_id)
+        # clear
+        dpg.clear_selected_nodes(self.editor_tag)
     
+    def _delete_node(self, node_id):
+        """
+        Safely delete a node and all its connected links.
+        Must delete links BEFORE deleting the node to avoid errors.
+        """
+# 1. Find all links connected to this node
+        links_to_delete = []
+        for input_id, output_id in list(self.active_links.items()):
+            parent_i = dpg.get_item_parent(input_id)
+            parent_o = dpg.get_item_parent(output_id)
+            
+            if parent_i == node_id or parent_o == node_id:
+                links_to_delete.append((input_id, output_id))
+        
+# 2. Delete all connected links first (CRITICAL: before deleting node)
+        for input_id, output_id in links_to_delete:
+            if input_id in self.active_links:
+                del self.active_links[input_id]
+            
+            # Find and delete the actual DPG link item
+            self._delete_link_by_attributes(input_id, output_id)
+        
+        # 3. Now safe to delete the node
+        if dpg.does_item_exist(node_id):
+            dpg.delete_item(node_id)
+        
+        # 4. Remove from our nodes dict
+        if node_id in self.nodes:
+            del self.nodes[node_id]
+
+    def _delete_link_by_attributes(self, input_id, output_id):
+        """Find and delete a DPG link item by its connected attribute IDs."""
+        if not dpg.does_item_exist(self.editor_tag):
+            return
+        
+        children = dpg.get_item_children(self.editor_tag)
+        if not children:
+            return
+        
+        # Links are in slot 1 of the node editor children
+        link_items = children[1] if len(children) > 1 else []
+        
+        for link_id in link_items:
+            try:
+                link_info = dpg.get_item_user_data(link_id)
+                if link_info:
+                    out_id, in_id = link_info
+                    if out_id == output_id and in_id == input_id:
+                        dpg.delete_item(link_id)
+                        return
+            except Exception:
+                continue
+
 cfg = NODE_EDITOR_INTERFACE()
 
 class node_helper:
@@ -208,6 +271,10 @@ def delink_callback(sender, app_data):
 
 def register():
     cfg.INIT()
+    
+    with dpg.handler_registry():
+        dpg.add_key_down_handler(key=dpg.mvKey_Delete, callback=lambda s,a,u: cfg.delete_selected_nodes())
+
     with dpg.menu_bar(parent=cfg.win_tag):
             with dpg.menu(label="Nodes stream"):
                 dpg.add_button(label="Update node types from directories",

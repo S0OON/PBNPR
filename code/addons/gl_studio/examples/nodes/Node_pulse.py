@@ -12,9 +12,9 @@ class NODE_INTERFACE(BASE_NODE):
         self.ENABLE = False
         self.Pulse  = False # one time pulse
 
-        self.O_output = t.NodeSocket(   dpg.generate_uuid(),t.NONE)
-        self.I_intervals = t.NodeSocket(dpg.generate_uuid(),t.F,  '<- Intervals (seconds)')
-        self.I_stream = t.NodeSocket(   dpg.generate_uuid(),t.ANY,'<- Triggers Connections')
+        self.O_output = t.NodeSocket(   dpg.generate_uuid(), t.NONE)
+        self.I_intervals = t.NodeSocket(dpg.generate_uuid(), t.F,  '<- Intervals (seconds)')
+        self.I_stream = t.NodeSocket(   dpg.generate_uuid(), t.ANY,'<- Triggers Connections')
 
         self.I_intervals.value = 5.0
         self._last_pulse_time = time.time()

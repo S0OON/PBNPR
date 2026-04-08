@@ -11,6 +11,7 @@ class NODE_INTERFACE(BASE_NODE):
         super().__init__(parent)
         
         # --- Sockets Setup ---
+        self.flip   = False
         self.I_rgba = t.NodeSocket(dpg.generate_uuid(), t.RGBA, '<- Pixels (RGBA)')
         self.O_rgba = t.NodeSocket(dpg.generate_uuid(), t.RGBA, 'Pixels (RGBA) ->')
 
@@ -24,13 +25,17 @@ class NODE_INTERFACE(BASE_NODE):
 
         # Static controls
         statics = self._create_static_attr()
-        dpg.add_button(label="VIEW IMAGE (PIL)", callback=self.on_view_image, parent=statics)
+        dpg.add_button(label="VIEW IMAGE (PIL)", parent=statics, callback=self.on_view_image)
+        dpg.add_checkbox(label='Flip',           parent=statics, callback=self._on_change_flip)
 
         # Inputs / Outputs
         i= self._create_input_attr(self.I_rgba)
         dpg.add_text(self.I_rgba.name, parent=i)
         o= self._create_output_attr(self.O_rgba)
         dpg.add_text(self.O_rgba.name, parent=o)
+
+    def _on_change_flip(self,S,A,U):
+        self.flip = A
 
     def on_execute(self):
         if self.I_rgba.value is not None:
@@ -51,11 +56,11 @@ class NODE_INTERFACE(BASE_NODE):
             return
             
         try:
-            # 3. Flip upside-down (OpenGL vs Screen coordinate mismatch fix)
-            flipped_pixels = np.flipud(pixels)
-            
+            if self.flip:
+                pixels = np.flipud(pixels)
+
             # 4. Convert to PIL Image and Pop the Window!
-            img = Image.fromarray(flipped_pixels, 'RGBA')
+            img = Image.fromarray(pixels, 'RGBA')
             img.show(title="NodeRivers Render Output")
             print(f"[{self.LABEL}] Image opened in default viewer!")
             

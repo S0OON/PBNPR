@@ -9,7 +9,7 @@ class NodeSocket:
     value: Any = None
     connected_to: int | str | None = None
 
-BOL = 'bool'
+BOOL = 'bool'
 INT = 'int'
 F = 'float'
 F2= '2float'
