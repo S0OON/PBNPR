@@ -4,6 +4,7 @@ from gl_studio.examples.nodes.Node_zPattren import NODE_BASE_INTERFACE as BASE_N
 
 
 class NODE_INTERFACE(BASE_NODE):
+    CATEGORY = 'CONSTANT'
     LABEL = 'Float'
 
     def __init__(self, parent):

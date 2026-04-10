@@ -39,8 +39,9 @@ class NODE_INTERFACE(BASE_NODE):
             print(f"[{self.LABEL}] Pixels passed through.")
         else:
             print(f"[{self.LABEL}] Warning: No pixel data received.")
-        
-        self.on_view_image()
+    
+    def on_execute_crawler(self, input_data=None):
+        self.on_execute() # syncs sockets
 
     def on_view_image(self):
         # 1. Grab the pixels from the socket

@@ -4,6 +4,7 @@ from gl_studio.examples.nodes.Node_zPattren import NODE_BASE_INTERFACE as BASE_N
 import time
 
 class NODE_INTERFACE(BASE_NODE):
+    CATEGORY = None
     LABEL = 'Pulse'
 
     def __init__(self, parent):
@@ -12,7 +13,6 @@ class NODE_INTERFACE(BASE_NODE):
         self.ENABLE = False
         self.Pulse  = False # one time pulse
 
-        self.O_output    = t.NodeSocket(dpg.generate_uuid(), t.NONE)
         self.I_intervals = t.NodeSocket(dpg.generate_uuid(), t.F,  '<- Intervals (seconds)', 5.0)
         self.I_stream    = t.NodeSocket(dpg.generate_uuid(), t.ANY,'<- Triggers Connections')
 
@@ -21,7 +21,7 @@ class NODE_INTERFACE(BASE_NODE):
         self._resgister_IO(
             [self.I_stream, 
              self.I_intervals],
-            [self.O_output]
+            []
         )
 
     def on_gui(self):

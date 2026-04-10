@@ -90,20 +90,15 @@ class NODE_INTERFACE(BASE_NODE):
 
         statics = self._create_static_attr()
         dpg.add_button(label="Execute",  callback=self.EXEC_CB, parent=statics)
+        dpg.add_input_text(parent=statics, callback=self._on_name_change,width=100,label='Name', default_value=self.I_name.value)
+        dpg.add_input_float(parent=statics, callback=self._on_change_x,default_value=self.I_x.value,width=100,label='x')
+        dpg.add_input_float(parent=statics, callback=self._on_change_y,default_value=self.I_y.value,width=100,label='y')
 
-        name = self._create_input_attr(self.I_name)
-        dpg.add_input_text(parent=name, callback=self._on_name_change,width=100,label=self.I_name.name, default_value=self.I_name.value)
-
-        x = self._create_input_attr(self.I_x)
-        dpg.add_input_float(parent=x, callback=self._on_change_x,default_value=self.I_x.value,width=100,label=self.I_x.name)
-
-        y = self._create_input_attr(self.I_y)
-        dpg.add_input_float(parent=y, callback=self._on_change_y,default_value=self.I_y.value,width=100,label=self.I_y.name)
-
-        view = self._create_output_attr(self.O_mCam)
-        dpg.add_text(self.O_mCam.name, parent=view)
-        proj = self._create_output_attr(self.O_proj)
-        dpg.add_text(self.O_proj.name, parent=proj)
+        self._create_input_attr(self.I_name)
+        self._create_input_attr(self.I_x)
+        self._create_input_attr(self.I_y)
+        self._create_output_attr(self.O_mCam)
+        self._create_output_attr(self.O_proj)
     
 
     def _on_name_change(self, s,a,u):
@@ -141,101 +136,189 @@ class NODE_INTERFACE(BASE_NODE):
         if self.ENABLE:
             self.on_execute()
 ========================================
-E:\soon\projects\PBNPR\code\addons\gl_studio\examples\nodes\Node_bpy_mgl_render.py
+E:\soon\projects\PBNPR\code\addons\gl_studio\examples\nodes\Node_bpy_mgl_mesh.py
 ========================================
 import dearpygui.dearpygui as dpg
+from gl_studio.util import util_types as t
+from gl_studio.examples.nodes.Node_zPattren import NODE_BASE_INTERFACE as BASE_NODE
 import moderngl
 import numpy as np
-from PIL import Image
-from gl_studio.examples.nodes.Node_zPattren import NODE_BASE_INTERFACE as BASE_NODE
-from gl_studio.util import util_types as t
+
+try:
+    import bpy
+except ImportError:
+    bpy = None
 
 
 class NODE_INTERFACE(BASE_NODE):
-    LABEL = 'Isolated Triangle Test'
+    LABEL = 'MGL Textured Mesh'
 
     def __init__(self, parent):
         super().__init__(parent)
-        
-        self.O_out = t.NodeSocket(dpg.generate_uuid(),t.NONE,'out->')
-        # Zero sockets. Completely standalone.
-        self._resgister_IO([], [self.O_out])
+
+        # Basic configurations
+        self.I_w = t.NodeSocket(dpg.generate_uuid(), t.F, '<- W', value=1024)
+        self.I_h = t.NodeSocket(dpg.generate_uuid(), t.F, '<- H', value=1024)
+        self.I_tex_name = t.NodeSocket(dpg.generate_uuid(), t.STR, '<- Texture Name', value='Texture')
+
+        # Connect these to Node_bpy_ob_eval & Node_bpy_cam
+        self.I_pos = t.NodeSocket(dpg.generate_uuid(), t.F16, '<- Position', np.identity(4, np.float32))
+        self.I_uv = t.NodeSocket(dpg.generate_uuid(), t.F16, '<- UV', np.identity(4, np.float32))
+        self.I_matrix = t.NodeSocket(dpg.generate_uuid(), t.F16, '<- Model Matrix', np.identity(4, np.float32))
+        self.I_view = t.NodeSocket(dpg.generate_uuid(), t.F16, '<- View Matrix', np.identity(4, np.float32))
+        self.I_proj = t.NodeSocket(dpg.generate_uuid(), t.F16, '<- Proj Matrix', np.identity(4, np.float32))
+
+        # Output the rendered pixels to a viewer
+        self.O_pixels = t.NodeSocket(dpg.generate_uuid(), t.RGBA, 'Pixels ->')
+
+        self._resgister_IO(
+            [self.I_w, self.I_h, self.I_tex_name, self.I_pos, self.I_uv, self.I_matrix, self.I_view, self.I_proj],
+            [self.O_pixels]
+        )
 
     def on_gui(self):
-        super().on_gui()
-        
-        # The single button you asked for
-        statics = self._create_static_attr()
-        dpg.add_button(label="Draw & Show Triangle", callback=self.on_execute, parent=statics)
+        Id = super().on_gui()
 
-        out = self._create_output_attr(self.O_out)
+        statics = self._create_static_attr()
+        dpg.add_button(label="Execute Render", callback=self.EXEC_CB, parent=statics)
+        dpg.add_input_int(label="Width", default_value=int(self.I_w.value), callback=self._on_w_change, parent=statics, width=120)
+        dpg.add_input_int(label="Height", default_value=int(self.I_h.value), callback=self._on_h_change, parent=statics, width=120)
+        dpg.add_input_text(label="Blender Image", default_value=self.I_tex_name.value, callback=self._on_tex_change, parent=statics, width=120)
+
+        # Sockets
+        self._create_input_attr(self.I_w)
+        self._create_input_attr(self.I_h)
+        self._create_input_attr(self.I_tex_name)
+        self._create_input_attr(self.I_pos)
+        self._create_input_attr(self.I_uv)
+        self._create_input_attr(self.I_matrix)
+        self._create_input_attr(self.I_view)
+        self._create_input_attr(self.I_proj)
+
+        self._create_output_attr(self.O_pixels)
+
+    def _on_w_change(self, s, a, u): self.I_w.value = max(1, a)
+    def _on_h_change(self, s, a, u): self.I_h.value = max(1, a)
+    def _on_tex_change(self, s, a, u): self.I_tex_name.value = a
 
     def on_execute(self):
-        print(f"[{self.LABEL}] Initializing standalone render...")
+        print(f"[{self.LABEL}] Preparing standalone texture render...")
+        Pos = self.I_pos.value
+        UV = self.I_uv.value
+        M = self.I_matrix.value
+        V = self.I_view.value
+        P = self.I_proj.value
+        W = int(self.I_w.value)
+        H = int(self.I_h.value)
+        TexName = self.I_tex_name.value
+
+        self.O_pixels.value = self.render_with_texture(Pos, UV, M, V, P, TexName, W, H)
+
+    def render_with_texture(self, pos, uv, matrix, view, proj, tex_name, width, height):
+        if pos is None or len(pos) == 0:
+            return np.zeros((height, width, 4), dtype=np.uint8)
+
+        ctx, fbo, prog, vbo_pos, vbo_uv, vao, tex = None, None, None, None, None, None, None
+
         try:
-            # 1. Create an isolated headless context and Framebuffer
+            # 1. Create Context
             ctx = moderngl.create_context(standalone=True)
-            fbo = ctx.simple_framebuffer((512, 512))
+            fbo = ctx.simple_framebuffer((width, height))
             fbo.use()
+            ctx.enable(moderngl.DEPTH_TEST | moderngl.CULL_FACE)
 
-            # 2. Write a quick embedded shader (Position + Color)
-            prog = ctx.program(
-                vertex_shader='''
-                    #version 330
-                    in vec2 in_vert;
-                    in vec3 in_color;
-                    out vec3 v_color;
-                    void main() {
-                        gl_Position = vec4(in_vert, 0.0, 1.0);
-                        v_color = in_color;
-                    }
-                ''',
-                fragment_shader='''
-                    #version 330
-                    in vec3 v_color;
-                    out vec4 f_color;
-                    void main() {
-                        f_color = vec4(v_color, 1.0);
-                    }
-                '''
-            )
+            # 2. Setup MVP + UV shaders
+            vert_src = '''
+                #version 330
+                uniform mat4 M;
+                uniform mat4 V;
+                uniform mat4 P;
+                
+                in vec3 in_position;
+                in vec2 in_uv;
+                out vec2 v_uv;
+                
+                void main() {
+                    gl_Position = P * V * M * vec4(in_position, 1.0);
+                    v_uv = in_uv;
+                }
+            '''
+            
+            frag_src = '''
+                #version 330
+                uniform sampler2D tex;
+                in vec2 v_uv;
+                out vec4 f_color;
+                
+                void main() {
+                    f_color = texture(tex, v_uv);
+                }
+            '''
+            
+            prog = ctx.program(vertex_shader=vert_src, fragment_shader=frag_src)
+            
+            # Feed matrices
+            prog['M'].write(matrix.astype('f4').tobytes())
+            prog['V'].write(view.astype('f4').tobytes())
+            prog['P'].write(proj.astype('f4').tobytes())
 
-            # 3. Create Geometry Data: X, Y, R, G, B
-            vertices = np.array([
-                 0.0,  0.8,   1.0, 0.0, 0.0,  # Top vertex (Red)
-                -0.8, -0.8,   0.0, 1.0, 0.0,  # Bottom-left (Green)
-                 0.8, -0.8,   0.0, 0.0, 1.0,  # Bottom-right (Blue)
-            ], dtype='f4')
+            # 3. Pull Texture from Blender and convert to Float Array
+            if bpy:
+                b_img = bpy.data.images.get(tex_name)
+                if b_img:
+                    tw, th = b_img.size
+                    # bpy.data.images.pixels returns a 1D float array (RGBA)
+                    pixels_f32 = np.array(b_img.pixels, dtype=np.float32)
+                    tex = ctx.texture((tw, th), 4, pixels_f32.tobytes(), dtype='f4')
+                    tex.use(0)
+                    prog['tex'].value = 0
+                else:
+                    print(f"[{self.LABEL}] Warning: Blender Image '{tex_name}' not found!")
 
-            # 4. Upload to GPU
-            vbo = ctx.buffer(vertices.tobytes())
-            vao = ctx.vertex_array(prog, [(vbo, '2f 3f', 'in_vert', 'in_color')])
+            # 4. Bind VBOs and VAOs
+            vbo_pos = ctx.buffer(pos.astype('f4').tobytes())
+            vbo_uv = ctx.buffer(uv.astype('f4').tobytes())
+            
+            vao = ctx.vertex_array(prog, [
+                (vbo_pos, '3f', 'in_position'),
+                (vbo_uv, '2f', 'in_uv')
+            ])
 
             # 5. Render
-            ctx.clear(0.1, 0.1, 0.15, 1.0) # Dark gray-blue background
+            ctx.clear(0.05, 0.05, 0.05, 1.0)
             vao.render(moderngl.TRIANGLES)
 
-            # 6. Read back from GPU to CPU
-            raw_pixels = fbo.read(components=4)
-            image_array = np.frombuffer(raw_pixels, dtype=np.uint8).reshape((512, 512, 4))
+            # 6. Return pixels
+            raw_data = fbo.read(components=4)
+            image_array = np.frombuffer(raw_data, dtype=np.uint8).reshape((height, width, 4))
             
-            # OpenGL is upside down, flip it so PIL reads it right
-            image_array = np.flipud(image_array)
-
-            # 7. Show it!
-            img = Image.fromarray(image_array, 'RGBA')
-            img.show(title="Hello Triangle")
-            print(f"[{self.LABEL}] Success!")
-
-            # 8. Clean up VRAM
-            vao.release()
-            vbo.release()
-            prog.release()
-            fbo.release()
-            ctx.release()
+            return np.flipud(image_array)
 
         except Exception as e:
-            print(f"[{self.LABEL}] Render crashed: {e}")
+            print(f"[{self.LABEL}] Engine Fault: {e}")
+            return np.zeros((height, width, 4), dtype=np.uint8)
+
+        finally:
+            if ctx:
+                try:
+                    ctx.screen.use()
+                    ctx.disable(moderngl.DEPTH_TEST)
+                    ctx.disable(moderngl.CULL_FACE)
+                    ctx.disable(moderngl.BLEND)
+                    ctx.blend_func = moderngl.DEFAULT_BLENDING
+                    ctx.depth_func = '<'
+                    _ = ctx.error 
+                except:
+                    pass
+                
+                # Cleanup VRAM
+                if tex: tex.release()
+                if vao: vao.release()
+                if vbo_pos: vbo_pos.release()
+                if vbo_uv: vbo_uv.release()
+                if prog: prog.release()
+                if fbo: fbo.release()
+                ctx.release()
 
     def on_execute_crawler(self, input_data=None):
         self.on_execute()
@@ -245,124 +328,103 @@ E:\soon\projects\PBNPR\code\addons\gl_studio\examples\nodes\Node_bpy_ob_eval.py
 import dearpygui.dearpygui as dpg
 from gl_studio.util import util_types as t
 from gl_studio.examples.nodes.Node_zPattren import NODE_BASE_INTERFACE as BASE_NODE
-import bpy
 import numpy as np
 
+try:
+    import bpy
+except ImportError:
+    bpy = None
+
 class NODE_INTERFACE(BASE_NODE):
-    LABEL = 'Object Eval'
+    LABEL = 'Blender Object Data'
 
     def __init__(self, parent):
         super().__init__(parent)
 
-        self.ENABLE = True
+        self.I_obj_name = t.NodeSocket(dpg.generate_uuid(), t.STR, '<- object name','Cube')
+        self.I_uv_name  = t.NodeSocket(dpg.generate_uuid(), t.STR, '<- uv name','UVMap')
 
-        # --- Sockets Setup ---
-        self.I_name    = t.NodeSocket(dpg.generate_uuid(), t.STR, '<- Obj Name', value="Cube")
-        
-        self.O_verts   = t.NodeSocket(dpg.generate_uuid(), t.F16, 'pos ->')
-        self.O_normals = t.NodeSocket(dpg.generate_uuid(), t.F16, 'normals ->')
-        self.O_mat     = t.NodeSocket(dpg.generate_uuid(), t.F16, 'matrix ->')
-        self.O_uvs     = t.NodeSocket(dpg.generate_uuid(), t.F16, 'active uv ->')
+        self.O_pos     = t.NodeSocket(dpg.generate_uuid(), t.F16, 'Position ->')
+        self.O_normals = t.NodeSocket(dpg.generate_uuid(), t.F16, 'Normals ->')
+        self.O_matrix  = t.NodeSocket(dpg.generate_uuid(), t.F16, 'Matrix ->')
+        self.O_uv      = t.NodeSocket(dpg.generate_uuid(), t.F16, 'UV ->')
 
-        # Register to the BASE_NODE router
         self._resgister_IO(
-            [self.I_name],
-            [self.O_verts, self.O_normals, self.O_mat, self.O_uvs]
+            [self.I_obj_name,
+             self.I_uv_name],
+            [self.O_pos, 
+             self.O_normals, 
+             self.O_matrix, 
+             self.O_uv]
         )
 
     def on_gui(self):
-        # Draw the main node window
         Id = super().on_gui()
 
-        # Add the Execute Button to the static header
         statics = self._create_static_attr()
-        dpg.add_button(  label="Execute", callback=self.EXEC_CB,           parent=statics)
-        dpg.add_checkbox(label="Enable",  callback=self._on_change_enable, parent=statics, default_value=self.ENABLE)
+        dpg.add_input_text(label="Object Name", default_value=self.I_obj_name.value, callback=self._on_obj_change, parent=statics, width=150)
+        dpg.add_input_text(label="UV Map Name", default_value=self.I_uv_name.value,  callback=self._on_uv_change, parent=statics, width=150)
+        
+        self._create_input_attr(self.I_obj_name)
+        self._create_input_attr(self.I_uv_name)
+        self._create_output_attr(self.O_pos)
+        self._create_output_attr(self.O_normals)
+        self._create_output_attr(self.O_matrix)
+        self._create_output_attr(self.O_uv)
 
-        # Draw Inputs
-        name = self._create_input_attr(self.I_name)
-        dpg.add_input_text(parent=name, callback=self._on_name_change, default_value=self.I_name.value, width=120)
-
-        # Draw Outputs
-        pos = self._create_output_attr(self.O_verts)
-        dpg.add_text(self.O_verts.name, parent=pos)
-
-        n = self._create_output_attr(self.O_normals)
-        dpg.add_text(self.O_normals.name, parent=n)
-
-        m = self._create_output_attr(self.O_mat)
-        dpg.add_text(self.O_mat.name, parent=m)
-
-        u = self._create_output_attr(self.O_uvs)
-        dpg.add_text(self.O_uvs.name, parent=u)
-
-
-    def _on_change_enable(self, sender, app_data, user_data):
-        self.ENABLE = app_data
-
-    def _on_name_change(self, sender, app_data, user_data):
-        self.I_name.value = app_data
+    def _on_obj_change(self, s, a, u): self.I_obj_name.value = a
+    def _on_uv_change(self,  s, a, u): self.I_uv_name.value= a
 
     def on_execute(self):
-        obj_name = self.I_name.value
-        
-        if not obj_name or obj_name not in bpy.data.objects:
-            print(f"[{self.LABEL}] Error: Object '{obj_name}' not found.")
+        if not bpy: return
+        obj_name = self.I_obj_name.value
+        uv_name  = self.I_uv_name.value
+
+        obj = bpy.data.objects.get(obj_name)
+        if not obj or obj.type != 'MESH':
+            print(f"[{self.LABEL}] Invalid Mesh: {obj_name}")
             return
-            
-        obj = bpy.data.objects[obj_name]
-        if obj.type != 'MESH':
-            print(f"[{self.LABEL}] Error: Object '{obj_name}' is not a MESH.")
-            return
-        
-        # --- The NumPy Blender Extraction Engine ---
+
         depsgraph = bpy.context.evaluated_depsgraph_get()
-        eval_obj  = obj.evaluated_get(depsgraph)
-        mesh      = eval_obj.to_mesh()
+        eval_obj = obj.evaluated_get(depsgraph)
+        mesh = eval_obj.to_mesh()
         mesh.calc_loop_triangles()
+
+        num_tris = len(mesh.loop_triangles)
+        if num_tris == 0:
+            eval_obj.to_mesh_clear()
+            return
+
+        vert_idx = np.zeros(num_tris * 3, dtype=np.int32)
+        mesh.loop_triangles.foreach_get("vertices", vert_idx)
         
-        tris_count = len(mesh.loop_triangles)
-        
-        # 1. Triangulation Indices (Corners of every triangle)
-        loops_indices = np.empty((tris_count * 3), dtype=np.int32)
-        mesh.loop_triangles.foreach_get("loops", loops_indices)
+        loop_idx = np.zeros(num_tris * 3, dtype=np.int32)
+        mesh.loop_triangles.foreach_get("loops", loop_idx)
 
-        vertex_indices = np.empty((tris_count * 3), dtype=np.int32)
-        mesh.loop_triangles.foreach_get("vertices", vertex_indices)
+        verts = np.zeros(len(mesh.vertices) * 3, dtype=np.float32)
+        mesh.vertices.foreach_get("co", verts)
+        self.O_pos.value = verts.reshape(-1, 3)[vert_idx]
 
-        # 2. Positions (Unrolled to triangles)
-        all_pos = np.empty((len(mesh.vertices), 3), dtype=np.float32)
-        mesh.vertices.foreach_get("co", all_pos.reshape(-1))
-        final_pos = all_pos[vertex_indices]
+        norms = np.zeros(len(mesh.vertices) * 3, dtype=np.float32)
+        mesh.vertices.foreach_get("normal", norms)
+        self.O_normals.value = norms.reshape(-1, 3)[vert_idx]
 
-        # 3. Normals (From loops to preserve sharp/custom edges)
-        all_normals = np.empty((len(mesh.loops), 3), dtype=np.float32)
-        mesh.loops.foreach_get("normal", all_normals.reshape(-1))
-        final_normals = all_normals[loops_indices]
-
-        # 4. UV Map (Active layer)
-        if mesh.uv_layers.active:
-            all_uvs = np.empty((len(mesh.loops), 2), dtype=np.float32)
-            mesh.uv_layers.active.data.foreach_get("uv", all_uvs.reshape(-1))
-            final_uvs = all_uvs[loops_indices]
+        if uv_name in mesh.uv_layers:
+            uvs = np.zeros(len(mesh.loops) * 2, dtype=np.float32)
+            mesh.uv_layers[uv_name].data.foreach_get("uv", uvs)
+            self.O_uv.value = uvs.reshape(-1, 2)[loop_idx]
         else:
-            final_uvs = np.array([], dtype=np.float32)
+            self.O_uv.value = np.zeros((num_tris * 3, 2), dtype=np.float32)
+
+        # Transpose applied instantly to fix Blender (Row) -> OpenGL (Col) mapping
+        self.O_matrix.value = np.array(eval_obj.matrix_world, dtype=np.float32).T
 
         eval_obj.to_mesh_clear()
 
-        # --- 5. Push data to the Output Sockets ---
-        self.O_verts.value   = final_pos
-        self.O_normals.value = final_normals
-        self.O_uvs.value     = final_uvs
-        self.O_mat.value     = np.array(obj.matrix_world.transposed(), dtype=np.float32).flatten()
-
-        print(f"[{self.LABEL}] Extracted {len(final_pos)} vertices from '{obj_name}'")
-
     def on_execute_crawler(self, input_data=None):
-        if self.ENABLE:
-            self.on_execute()
+        self.on_execute()
 ========================================
-E:\soon\projects\PBNPR\code\addons\gl_studio\examples\nodes\Node_bpy_PIL_RGBAviewer.py
+E:\soon\projects\PBNPR\code\addons\gl_studio\examples\nodes\Node_bpy_pil_RGBAviewer.py
 ========================================
 import dearpygui.dearpygui as dpg
 from gl_studio.util import util_types as t
@@ -377,6 +439,7 @@ class NODE_INTERFACE(BASE_NODE):
         super().__init__(parent)
         
         # --- Sockets Setup ---
+        self.flip   = False
         self.I_rgba = t.NodeSocket(dpg.generate_uuid(), t.RGBA, '<- Pixels (RGBA)')
         self.O_rgba = t.NodeSocket(dpg.generate_uuid(), t.RGBA, 'Pixels (RGBA) ->')
 
@@ -388,15 +451,15 @@ class NODE_INTERFACE(BASE_NODE):
     def on_gui(self):
         Id = super().on_gui()
 
-        # Static controls
         statics = self._create_static_attr()
-        dpg.add_button(label="VIEW IMAGE (PIL)", callback=self.on_view_image, parent=statics)
+        dpg.add_button(label="VIEW IMAGE (PIL)", parent=statics, callback=self.on_view_image)
+        dpg.add_checkbox(label='Flip',           parent=statics, callback=self._on_change_flip)
 
-        # Inputs / Outputs
-        i= self._create_input_attr(self.I_rgba)
-        dpg.add_text(self.I_rgba.name, parent=i)
-        o= self._create_output_attr(self.O_rgba)
-        dpg.add_text(self.O_rgba.name, parent=o)
+        self._create_input_attr(self.I_rgba)
+        self._create_output_attr(self.O_rgba)
+
+    def _on_change_flip(self,S,A,U):
+        self.flip = A
 
     def on_execute(self):
         if self.I_rgba.value is not None:
@@ -417,11 +480,11 @@ class NODE_INTERFACE(BASE_NODE):
             return
             
         try:
-            # 3. Flip upside-down (OpenGL vs Screen coordinate mismatch fix)
-            flipped_pixels = np.flipud(pixels)
-            
+            if self.flip:
+                pixels = np.flipud(pixels)
+
             # 4. Convert to PIL Image and Pop the Window!
-            img = Image.fromarray(flipped_pixels, 'RGBA')
+            img = Image.fromarray(pixels, 'RGBA')
             img.show(title="NodeRivers Render Output")
             print(f"[{self.LABEL}] Image opened in default viewer!")
             
@@ -454,121 +517,15 @@ class NODE_INTERFACE(BASE_NODE):
 
         statics = self._create_static_attr()
         dpg.add_button(label="Execute",  callback=self.EXEC_CB, parent=statics)
+        dpg.add_input_float(parent=statics, callback=self._on_change_float, default_value=self.O_float.value,width=100)
 
-        Float = self._create_output_attr(self.O_float)
-        dpg.add_input_float(parent=Float, callback=self._on_change_float, default_value=self.O_float.value,width=100)
-        dpg.add_text(self.O_float.name, parent=Float)
+        self._create_output_attr(self.O_float)
 
     def _on_change_float(self, s,a,u):
         self.O_float.value = a
 
     def on_execute(self):
         print(f"Executed! : {self.O_float.value}")
-
-    def on_execute_crawler(self, input_data=None):
-        self.on_execute()
-========================================
-E:\soon\projects\PBNPR\code\addons\gl_studio\examples\nodes\Node_mgl.py
-========================================
-import dearpygui.dearpygui as dpg
-from gl_studio.util import util_types as t
-from gl_studio.examples.nodes.Node_zPattren import NODE_BASE_INTERFACE as BASE_NODE
-import numpy as np
-
-
-class NODE_INTERFAXCE(BASE_NODE):
-    LABEL = 'Shader - colored obj simple'
-
-    def __init__(self, parent):
-        super().__init__(parent)
-
-        # --- Sockets Setup ---
-        self.I_w = t.NodeSocket(dpg.generate_uuid(),t.F, '<- W')
-        self.I_h = t.NodeSocket(dpg.generate_uuid(),t.F, '<- H')
-        self.I_matrix  = t.NodeSocket(dpg.generate_uuid(), t.F16, '<- Model Matrix')
-        self.I_normals = t.NodeSocket(dpg.generate_uuid(), t.F16, '<- Normals')
-        self.I_pos     = t.NodeSocket(dpg.generate_uuid(), t.F16, '<- Position')
-        self.I_view    = t.NodeSocket(dpg.generate_uuid(), t.F16, '<- View Matrix')
-        self.I_proj    = t.NodeSocket(dpg.generate_uuid(), t.F16, '<- Proj Matrix')
-        
-        self.O_pixels  = t.NodeSocket(dpg.generate_uuid(), t.ANY, 'Pixels ->')
-
-        # Register routing
-        self._resgister_IO(
-            [self.I_w,self.I_h,self.I_matrix, self.I_normals, self.I_pos, self.I_view, self.I_proj],
-            [self.O_pixels]
-        )
-
-    def on_gui(self):
-        Id = super().on_gui()
-
-        # Static Controls
-        statics = self._create_static_attr()
-        dpg.add_button(label="Execute Render", callback=self.EXEC_CB, parent=statics)
-        dpg.add_input_int(label="Width", default_value=self.width, callback=self._on_width_change, parent=statics, width=100)
-        dpg.add_input_int(label="Height", default_value=self.height, callback=self._on_height_change, parent=statics, width=100)
-
-        # Inputs
-        self._create_input_attr(self.I_w      )
-        self._create_input_attr(self.I_h      )
-        self._create_input_attr(self.I_matrix )
-        self._create_input_attr(self.I_normals )
-        self._create_input_attr(self.I_pos    )
-        self._create_input_attr(self.I_view)
-        self._create_input_attr(self.I_proj)
-
-        # Outputs
-        self._create_output_attr(self.O_pixels)
-
-    def _on_width_change(self, s, a, u):  self.width = max(1, a)
-    def _on_height_change(self, s, a, u): self.height = max(1, a)
-
-    def on_execute(self):
-        # 1. Pull data from sockets
-        pos = self.I_pos.value
-        normals = self.I_normals.value
-        matrix = self.I_matrix.value
-        view = self.I_view.value
-        proj = self.I_proj.value
-
-        # Quick validation
-        if pos is None or not isinstance(pos, np.ndarray):
-            print(f"[{self.LABEL}] Skipping execution: No position data.")
-            return
-
-        print(f"[{self.LABEL}] Executing custom MGL node...")
-
-        try:
-            # ==========================================
-            # YOUR CUSTOM MODERN GL LOGIC GOES HERE
-            # ==========================================
-            
-            # REMINDER: Intel Driver Crash Prevention!
-            # 1. Bind your FBO *before* compiling shaders or writing uniforms
-            # if self.fbo: self.fbo.release()
-            # self.fbo = self.ctx.simple_framebuffer((self.width, self.height))
-            # self.fbo.use()
-            
-            # 2. Compile Shader (prog = ctx.program(...))
-            
-            # 3. Write Uniforms using flattened contiguous bytes:
-            # safe_M = matrix.flatten().astype('f4').tobytes()
-            # prog['M'].write(safe_M)
-            
-            # 4. Create VBOs & VAO
-            # 5. Render (vao.render(moderngl.TRIANGLES))
-            
-            # ==========================================
-
-            # Mock output for now so downstream nodes don't crash
-            # Create a blank temporary image array
-            dummy_pixels = np.zeros((self.height, self.width, 4), dtype=np.uint8)
-            dummy_pixels[:, :, 3] = 255 # Full alpha
-            
-            self.O_pixels.value = dummy_pixels
-
-        except Exception as e:
-            print(f"[{self.LABEL}] Render crashed: {e}")
 
     def on_execute_crawler(self, input_data=None):
         self.on_execute()
@@ -589,16 +546,15 @@ class NODE_INTERFACE(BASE_NODE):
         self.ENABLE = False
         self.Pulse  = False # one time pulse
 
-        self.O_output = t.NodeSocket(   dpg.generate_uuid(), t.NONE)
-        self.I_intervals = t.NodeSocket(dpg.generate_uuid(), t.F,  '<- Intervals (seconds)')
-        self.I_stream = t.NodeSocket(   dpg.generate_uuid(), t.ANY,'<- Triggers Connections')
+        self.I_intervals = t.NodeSocket(dpg.generate_uuid(), t.F,  '<- Intervals (seconds)', 5.0)
+        self.I_stream    = t.NodeSocket(dpg.generate_uuid(), t.ANY,'<- Triggers Connections')
 
-        self.I_intervals.value = 5.0
         self._last_pulse_time = time.time()
 
         self._resgister_IO(
-            [self.I_stream, self.I_intervals],
-            [self.O_output]
+            [self.I_stream, 
+             self.I_intervals],
+            []
         )
 
     def on_gui(self):
@@ -606,14 +562,11 @@ class NODE_INTERFACE(BASE_NODE):
 
         statics = self._create_static_attr()
         dpg.add_button(label='execute connections', callback=self._on_change_pulse, parent=statics)
-        dpg.add_checkbox(label="Enable",  callback=self._on_change_enable, parent=statics)
+        dpg.add_checkbox(label='Enable',   callback=self._on_change_enable, parent=statics)
+        dpg.add_drag_float(label='Seconds',parent=statics, callback=self._on_change_intervals, default_value=self.I_intervals.value, width=100)
 
-        intervals = self._create_input_attr(self.I_intervals)
-        dpg.add_drag_float(parent=intervals, callback=self._on_change_intervals, default_value=self.I_intervals.value, width=100)
-        dpg.add_text(self.I_intervals.name, parent=intervals)
-
-        stream = self._create_input_attr(self.I_stream, dpg.mvNode_PinShape_TriangleFilled)
-        dpg.add_text(self.I_stream.name, parent=stream)
+        self._create_input_attr(self.I_intervals)
+        self._create_input_attr(self.I_stream, dpg.mvNode_PinShape_TriangleFilled)
 
     def _on_change_enable(self, s, a, u):
         self.ENABLE = a
@@ -669,9 +622,9 @@ class NODE_INTERFACE(BASE_NODE):
 
         statics = self._create_static_attr()
         dpg.add_button(label="Execute",  callback=self.EXEC_CB, parent=statics)
+        dpg.add_input_text(parent=statics, callback=self._on_change_str, default_value=self.O_str.value,width=100)
 
-        Str = self._create_output_attr(self.O_str)
-        dpg.add_input_text(parent=Str, callback=self._on_change_str, default_value=self.O_str.value,width=100,label=self.O_str.name)
+        self._create_output_attr(self.O_str)
 
     def _on_change_str(self, s,a,u):
         self.O_str.value = a
@@ -702,41 +655,48 @@ class NODE_BASE_INTERFACE:
 
             on_execute() -> Utlity method for u <3
 
-            on_execute_crawler(input_data) -> called by PAG system when the node is connected to a crawler branch node
+            on_execute_crawler() -> called by PAG system when the node is connected to a root node (output node)
 
             on_execute_after_frame() -> called by PAG system when the node is active and after frame rendering.
 
-        CACHE = False, this is turned on by the PAG class so it wont execute twice in the same frame if its connected to multiple nodes, but you can also use it to make your node execute only once and cache the result for the next executions in the same frame. You can reset it by setting it to False again.
+        CACHE = False, 
+        
+        this is turned on by the PAG class so it wont execute twice in the same frame if its connected to multiple nodes, 
+        You can reset it by setting it to False again if more than one execution is needed.
 
-            
+
         x------------------------------------x
 
-        Base Class Provides:
+        # Base Class Provides:
         
         x------------------------------------x
 
-        PARENT = parent (paramter passed at init)
+        - PARENT = parent (paramter passed at init)
 
-        ID = dpg.generate_uuid()
+        - ID = dpg.generate_uuid()
     
-        EXEC_GUI_CB        = self.on_gui
+        - EXEC_GUI_CB        = self.on_gui
 
-        EXEC_ON_CRAWLER_CB = self.on_execute_crawler
+        - EXEC_ON_CRAWLER_CB = self.on_execute_crawler
 
-        EXEC_CB            = self.on_execute
+        - EXEC_CB            = self.on_execute
 
-        EXEC_ON_LOOP_CB    = self.on_execute_after_frame
+        - EXEC_ON_LOOP_CB    = self.on_execute_after_frame
     
         
-        inputs = {} 
+        - inputs = {} 
     
-        outputs = {}
+        - outputs = {}
     
+        x------------------------------------x
+
         # PAG CALLBACK:
-
-        -SHOULD_CRAWL_CB    = self.on_should_crawl 
         
-        Tells PAG this is a root node in a node tree
+        x------------------------------------x
+
+        - SHOULD_CRAWL_CB    = self.on_should_crawl 
+        
+        Tells PAG this is a root node aka output node in a node tree, meaning it will execute all connected nodes
 
         """
         self.PARENT = parent
@@ -768,17 +728,56 @@ class NODE_BASE_INTERFACE:
                 self.outputs[sock.ID] = sock
 
     def _create_static_attr(self, label=None):
-        return dpg.add_node_attribute(attribute_type=dpg.mvNode_Attr_Static, parent=self.ID, tag=dpg.generate_uuid(),label=label)
+        return dpg.add_node_attribute(parent=self.ID, tag=dpg.generate_uuid(),attribute_type=dpg.mvNode_Attr_Static, label=label)
 
-    def _create_input_attr(self, socket:t.NodeSocket,pin_shape=dpg.mvNode_PinShape_CircleFilled):
-        return dpg.add_node_attribute(attribute_type=dpg.mvNode_Attr_Input,
-                                      parent=self.ID, tag=socket.ID, 
-                                      shape=pin_shape)
+    def _create_input_attr(self, socket: t.NodeSocket, pin_shape=dpg.mvNode_PinShape_CircleFilled, use_name=True, color=None):
+        Id = dpg.add_node_attribute(attribute_type=dpg.mvNode_Attr_Input,
+                                    parent=self.ID, tag=socket.ID, 
+                                    shape=pin_shape)
 
-    def _create_output_attr(self, socket:t.NodeSocket,pin_shape=dpg.mvNode_PinShape_CircleFilled):
-        return dpg.add_node_attribute(attribute_type=dpg.mvNode_Attr_Output, 
-                                      parent=self.ID, tag=socket.ID,
-                                      shape=pin_shape)
+        if use_name:
+            dpg.add_text(socket.name, parent=Id)
+            
+        # Check dictionary, but catch mismatches with a debug print
+        pin_color = color if color else t.SOCKET_COLORS.get(socket.data_type)
+        if not pin_color:
+            print(f"[{self.LABEL}] Theme Warning: Unmatched socket type '{socket.data_type}'. Defaulting to Grey.")
+            pin_color = (160, 160, 160)
+            
+        self._apply_pin_color(Id, pin_color)
+
+        return Id
+
+    def _create_output_attr(self, socket: t.NodeSocket, pin_shape=dpg.mvNode_PinShape_CircleFilled, use_name=True, color=None):
+        Id = dpg.add_node_attribute(attribute_type=dpg.mvNode_Attr_Output, 
+                                    parent=self.ID, tag=socket.ID,
+                                    shape=pin_shape)
+        
+        if use_name:
+            dpg.add_text(socket.name, parent=Id)
+            
+        # Check dictionary, but catch mismatches with a debug print
+        pin_color = color if color else t.SOCKET_COLORS.get(socket.data_type)
+        if not pin_color:
+            print(f"[{self.LABEL}] Theme Warning: Unmatched socket type '{socket.data_type}'. Defaulting to Grey.")
+            pin_color = (160, 160, 160)
+
+        self._apply_pin_color(Id, pin_color)
+        return Id
+
+
+    def _apply_pin_color(self, attr_id, color_tuple):
+        with dpg.theme() as T:
+            # 0 = dpg.mvAll. Bypasses DPG's strict component bug.
+            with dpg.theme_component(0): 
+                # Safely unpack just the RGB and enforce 255 alpha
+                r, g, b = color_tuple[:3]
+                dpg.add_theme_color(dpg.mvNodeCol_Pin, (r, g, b, 255), category=dpg.mvThemeCat_Nodes)
+                
+                # Bonus: Add a hover state
+                #dpg.add_theme_color(dpg.mvNodeCol_PinHovered, (min(r+50, 255), min(g+50, 255), min(b+50, 255), 255), category=dpg.mvThemeCat_Nodes)
+                
+        dpg.bind_item_theme(attr_id, T)
 
 
     def on_gui(self):
@@ -786,8 +785,7 @@ class NODE_BASE_INTERFACE:
         creates a node and return ID (Same as self.ID)
         """
         return dpg.add_node(label=self.LABEL, parent=self.PARENT, tag=self.ID)
-
-# Executions behavior
+# Execution behaviors
     def on_should_crawl(self):"""Return True if this node is a root for PAG crawler execution"""
     def on_execute(self):"""Called when user clicks execute button"""
     def on_execute_crawler(self, input_data=None): """Called by PAG system when the node is connected to a crawler branch node"""
@@ -795,6 +793,14 @@ class NODE_BASE_INTERFACE:
 
 ========================================
 E:\soon\projects\PBNPR\code\addons\gl_studio\examples\nodes\__init__.py
+========================================
+
+========================================
+E:\soon\projects\PBNPR\code\addons\gl_studio\examples\opengl\MVP_f.glsl
+========================================
+
+========================================
+E:\soon\projects\PBNPR\code\addons\gl_studio\examples\opengl\MVP_v.glsl
 ========================================
 
 ========================================
@@ -1009,8 +1015,7 @@ nh = node_helper()
 #===============
 Node = Node_template.NODE_BASE_INTERFACE
 Pin  = t.NodeSocket
-class ThemeManager:
-    pass
+
 #==============
 class PAG:
     def __init__(self):
@@ -1173,7 +1178,6 @@ def delink_callback(sender, app_data):
     #UI
     dpg.delete_item(link_id)
 
-
 def register():
     cfg.INIT()
     
@@ -1197,6 +1201,7 @@ def register():
                          minimap=cfg.editor_map,
                          minimap_location=cfg.editor_map_loc): pass
     
+    #=============
     base_path  = os.path.dirname(__file__)
     nodes_path = os.path.abspath(os.path.join(base_path, "..", "examples", "nodes"))
     cfg.dirs["DEFAULT"] = nodes_path
@@ -1318,32 +1323,63 @@ def unregister():
 ========================================
 E:\soon\projects\PBNPR\code\addons\gl_studio\util\util_types.py
 ========================================
-from dataclasses import dataclass
-from typing import Any
+# all mallocs are on heap so who cares for infinite classes >:]
+class SocketDataType:
+    """A unified class to hold a socket's type ID and its visual color."""
+    def __init__(self, id_string: str, color: tuple):
+        self.id = id_string
+        self.color = color
 
-@dataclass(slots=True)
+    def __str__(self): return self.id
+    def __repr__(self): return self.id
+    def __eq__(self, other):
+        if isinstance(other, str): return self.id == other
+        if isinstance(other, SocketDataType): return self.id == other.id
+        return False
+    def __hash__(self): return hash(self.id)
+
+# =====================================================================
+# SOCKET CLASS
+# =====================================================================
 class NodeSocket:
-    ID: int | str
-    data_type: str
-    name: str = None
-    value: Any = None
-    connected_to: int | str | None = None
+    def __init__(self, id_tag, data_type, name, value=None):
+        self.ID = id_tag
+        self.name = name
+        self.value = value
+        # If passed a SocketDatatype object, extract its string ID automatically
+        self.data_type = data_type.id if isinstance(data_type, SocketDataType) else data_type
 
-BOL = 'bool'
-INT = 'int'
-F = 'float'
-F2= '2float'
-F4= '4float'
-F16= '16float'
-RGBA = 'rgba'
-STR = 'string'
-ANY = 'any'
-NONE = 'none'
-# --- blender specific ---
-bl_verts = 'vertices'
-bl_Co = 'co'
-bl_normal = 'normal'
-bl_loop_triangles = 'loop_triangles'
+# =====================================================================
+# DATA TYPES 
+# Colors mapped to Blender's node editor standards (RGB format)
+# =====================================================================
+
+# Primitives
+F       = SocketDataType("FLOAT",   (160, 160, 160)) # Grey
+INT     = SocketDataType("INT",     ( 44, 176, 115)) # Green
+BOOL    = SocketDataType("BOOL",    (204, 166, 217)) # Soft Pink
+STR     = SocketDataType("STR",     (230, 150,  50)) # Soft Orange
+
+# Math & Data
+VEC     = SocketDataType("VECTOR",  ( 99,  99, 200)) # Deep Blue/Purple
+F16     = SocketDataType("MATRIX",  (200,  80,  80)) # Red
+RGBA    = SocketDataType("COLOR",   (204, 204,  51)) # Yellow
+
+# Objects & Geometry
+OB      = SocketDataType("OBJECT",  (230, 150, 100)) # Object Orange
+GEO     = SocketDataType("GEOMETRY",(  0, 210, 160)) # Geometry Cyan/Teal
+
+# System / Logic
+ANY     = SocketDataType("ANY",     (220, 220, 220)) # White (Accepts anything)
+NONE    = SocketDataType("NONE",    ( 80,  80,  80)) # Dark Grey (Execution/Pulse)
+
+# =====================================================================
+# AUTOMATIC DICTIONARY 
+# =====================================================================
+
+_all_types = [F, INT, BOOL, STR, VEC, F16, RGBA, OB, GEO, ANY, NONE]
+SOCKET_COLORS = {t.id: t.color for t in _all_types}
+
 ========================================
 E:\soon\projects\PBNPR\code\util\blender_headless.py
 ========================================

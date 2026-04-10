@@ -105,8 +105,7 @@ nh = node_helper()
 #===============
 Node = Node_template.NODE_BASE_INTERFACE
 Pin  = t.NodeSocket
-class ThemeManager:
-    pass
+
 #==============
 class PAG:
     def __init__(self):
@@ -292,6 +291,7 @@ def register():
                          minimap=cfg.editor_map,
                          minimap_location=cfg.editor_map_loc): pass
     
+    #=============
     base_path  = os.path.dirname(__file__)
     nodes_path = os.path.abspath(os.path.join(base_path, "..", "examples", "nodes"))
     cfg.dirs["DEFAULT"] = nodes_path
