@@ -5,7 +5,8 @@ import numpy as np
 from PIL import Image
 
 class NODE_INTERFACE(BASE_NODE):
-    LABEL = 'RGBA Viewer'
+    CATEGORY = 'Debug'
+    LABEL = 'RGBA'
 
     def __init__(self, parent):
         super().__init__(parent)

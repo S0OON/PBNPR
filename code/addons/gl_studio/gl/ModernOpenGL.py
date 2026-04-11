@@ -1,10 +1,7 @@
 import moderngl
-import glfw
-from dataclasses import dataclass
-
 
 class GLctx:
-    ctx=None
+    ctx = None
     LABEL = 'GLctx'
     
     @classmethod

@@ -1,6 +1,7 @@
 # Node_template_advanced.py
 import dearpygui.dearpygui as dpg
 from gl_studio.util import util_types as t
+from gl_studio.gl.ModernOpenGL import GLctx as GL
 
 
 class NODE_BASE_INTERFACE:
@@ -87,6 +88,9 @@ class NODE_BASE_INTERFACE:
         # PLUGIN inputs/outputs system
         self.inputs = {} 
         self.outputs = {}
+
+
+        self.GL = GL.get()  # Access the shared ModernGL context
 
     def _resgister_IO(self, 
                       input_sockets:list[t.NodeSocket]=None, 

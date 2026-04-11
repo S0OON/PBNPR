@@ -10,6 +10,8 @@ def register():
         dpg_node_editor.dpg_internals.VIEWPORT()
         dpg_node_editor.register()
         dpg_node_editor.dpg_internals.cfg.been_registererd = True
+        from gl_studio.gl.ModernOpenGL import GLctx as GL
+        ctx = GL.get()
 
 def unregister():
     if dpg_internals.cfg.been_registererd:

@@ -108,6 +108,7 @@ Pin  = t.NodeSocket
 
 #==============
 class PAG:
+    """Pullbased Access Graph (PAG)"""
     def __init__(self):
         self.queue = []
         self.visited = set()
@@ -207,6 +208,8 @@ def Node_initlizer(node_interface):
 def on_node_types_reload():
     #UI - FORMAT 'ADD NODE'
     dpg.delete_item(cfg.editor_menuTypes,children_only=True)
+    category_menus = {}
+
     for j in cfg.dirs.values():
         if not os.path.isdir(j):
             continue
@@ -228,12 +231,21 @@ def on_node_types_reload():
                     try:
                         cfg.module_registry[module_name] = module
                         # UI <- INTERFACE            
-                        node_interface = getattr(module,'NODE_INTERFACE')
-                        if not node_interface: return
+                        node_interface = getattr(module,'NODE_INTERFACE', None)
+                        if not node_interface:
+                            continue
+
+                        category = getattr(node_interface, 'CATEGORY', None)
+                        if category:
+                            if category not in category_menus:
+                                category_menus[category] = dpg.add_menu(label=category, parent=cfg.editor_menuTypes)
+                            parent_menu = category_menus[category]
+                        else:
+                            parent_menu = cfg.editor_menuTypes
 
                         dpg.add_menu_item(label=node_interface.LABEL,
                                           callback=Node_initlizer(node_interface),
-                                          parent=cfg.editor_menuTypes) # Adds 'add ABC' item to 'add node' menu
+                                          parent=parent_menu) # Adds 'add ABC' item to 'add node' menu
                     except Exception as e: 
                         print(f"FAILED TO IMPORT {module_name}, EXCEPTION: {e}")
 

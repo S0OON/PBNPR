@@ -5,6 +5,7 @@ import bpy
 import numpy as np
 
 class NODE_INTERFACE(BASE_NODE):
+    CATEGORY = 'Evaluate'
     LABEL = 'Camera data'
 
     def __init__(self, parent):

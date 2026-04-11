@@ -67,6 +67,7 @@ import bpy
 import numpy as np
 
 class NODE_INTERFACE(BASE_NODE):
+    CATEGORY = 'Evaluate'
     LABEL = 'Camera data'
 
     def __init__(self, parent):
@@ -136,193 +137,6 @@ class NODE_INTERFACE(BASE_NODE):
         if self.ENABLE:
             self.on_execute()
 ========================================
-E:\soon\projects\PBNPR\code\addons\gl_studio\examples\nodes\Node_bpy_mgl_mesh.py
-========================================
-import dearpygui.dearpygui as dpg
-from gl_studio.util import util_types as t
-from gl_studio.examples.nodes.Node_zPattren import NODE_BASE_INTERFACE as BASE_NODE
-import moderngl
-import numpy as np
-
-try:
-    import bpy
-except ImportError:
-    bpy = None
-
-
-class NODE_INTERFACE(BASE_NODE):
-    LABEL = 'MGL Textured Mesh'
-
-    def __init__(self, parent):
-        super().__init__(parent)
-
-        # Basic configurations
-        self.I_w = t.NodeSocket(dpg.generate_uuid(), t.F, '<- W', value=1024)
-        self.I_h = t.NodeSocket(dpg.generate_uuid(), t.F, '<- H', value=1024)
-        self.I_tex_name = t.NodeSocket(dpg.generate_uuid(), t.STR, '<- Texture Name', value='Texture')
-
-        # Connect these to Node_bpy_ob_eval & Node_bpy_cam
-        self.I_pos = t.NodeSocket(dpg.generate_uuid(), t.F16, '<- Position', np.identity(4, np.float32))
-        self.I_uv = t.NodeSocket(dpg.generate_uuid(), t.F16, '<- UV', np.identity(4, np.float32))
-        self.I_matrix = t.NodeSocket(dpg.generate_uuid(), t.F16, '<- Model Matrix', np.identity(4, np.float32))
-        self.I_view = t.NodeSocket(dpg.generate_uuid(), t.F16, '<- View Matrix', np.identity(4, np.float32))
-        self.I_proj = t.NodeSocket(dpg.generate_uuid(), t.F16, '<- Proj Matrix', np.identity(4, np.float32))
-
-        # Output the rendered pixels to a viewer
-        self.O_pixels = t.NodeSocket(dpg.generate_uuid(), t.RGBA, 'Pixels ->')
-
-        self._resgister_IO(
-            [self.I_w, self.I_h, self.I_tex_name, self.I_pos, self.I_uv, self.I_matrix, self.I_view, self.I_proj],
-            [self.O_pixels]
-        )
-
-    def on_gui(self):
-        Id = super().on_gui()
-
-        statics = self._create_static_attr()
-        dpg.add_button(label="Execute Render", callback=self.EXEC_CB, parent=statics)
-        dpg.add_input_int(label="Width", default_value=int(self.I_w.value), callback=self._on_w_change, parent=statics, width=120)
-        dpg.add_input_int(label="Height", default_value=int(self.I_h.value), callback=self._on_h_change, parent=statics, width=120)
-        dpg.add_input_text(label="Blender Image", default_value=self.I_tex_name.value, callback=self._on_tex_change, parent=statics, width=120)
-
-        # Sockets
-        self._create_input_attr(self.I_w)
-        self._create_input_attr(self.I_h)
-        self._create_input_attr(self.I_tex_name)
-        self._create_input_attr(self.I_pos)
-        self._create_input_attr(self.I_uv)
-        self._create_input_attr(self.I_matrix)
-        self._create_input_attr(self.I_view)
-        self._create_input_attr(self.I_proj)
-
-        self._create_output_attr(self.O_pixels)
-
-    def _on_w_change(self, s, a, u): self.I_w.value = max(1, a)
-    def _on_h_change(self, s, a, u): self.I_h.value = max(1, a)
-    def _on_tex_change(self, s, a, u): self.I_tex_name.value = a
-
-    def on_execute(self):
-        print(f"[{self.LABEL}] Preparing standalone texture render...")
-        Pos = self.I_pos.value
-        UV = self.I_uv.value
-        M = self.I_matrix.value
-        V = self.I_view.value
-        P = self.I_proj.value
-        W = int(self.I_w.value)
-        H = int(self.I_h.value)
-        TexName = self.I_tex_name.value
-
-        self.O_pixels.value = self.render_with_texture(Pos, UV, M, V, P, TexName, W, H)
-
-    def render_with_texture(self, pos, uv, matrix, view, proj, tex_name, width, height):
-        if pos is None or len(pos) == 0:
-            return np.zeros((height, width, 4), dtype=np.uint8)
-
-        ctx, fbo, prog, vbo_pos, vbo_uv, vao, tex = None, None, None, None, None, None, None
-
-        try:
-            # 1. Create Context
-            ctx = moderngl.create_context(standalone=True)
-            fbo = ctx.simple_framebuffer((width, height))
-            fbo.use()
-            ctx.enable(moderngl.DEPTH_TEST | moderngl.CULL_FACE)
-
-            # 2. Setup MVP + UV shaders
-            vert_src = '''
-                #version 330
-                uniform mat4 M;
-                uniform mat4 V;
-                uniform mat4 P;
-                
-                in vec3 in_position;
-                in vec2 in_uv;
-                out vec2 v_uv;
-                
-                void main() {
-                    gl_Position = P * V * M * vec4(in_position, 1.0);
-                    v_uv = in_uv;
-                }
-            '''
-            
-            frag_src = '''
-                #version 330
-                uniform sampler2D tex;
-                in vec2 v_uv;
-                out vec4 f_color;
-                
-                void main() {
-                    f_color = texture(tex, v_uv);
-                }
-            '''
-            
-            prog = ctx.program(vertex_shader=vert_src, fragment_shader=frag_src)
-            
-            # Feed matrices
-            prog['M'].write(matrix.astype('f4').tobytes())
-            prog['V'].write(view.astype('f4').tobytes())
-            prog['P'].write(proj.astype('f4').tobytes())
-
-            # 3. Pull Texture from Blender and convert to Float Array
-            if bpy:
-                b_img = bpy.data.images.get(tex_name)
-                if b_img:
-                    tw, th = b_img.size
-                    # bpy.data.images.pixels returns a 1D float array (RGBA)
-                    pixels_f32 = np.array(b_img.pixels, dtype=np.float32)
-                    tex = ctx.texture((tw, th), 4, pixels_f32.tobytes(), dtype='f4')
-                    tex.use(0)
-                    prog['tex'].value = 0
-                else:
-                    print(f"[{self.LABEL}] Warning: Blender Image '{tex_name}' not found!")
-
-            # 4. Bind VBOs and VAOs
-            vbo_pos = ctx.buffer(pos.astype('f4').tobytes())
-            vbo_uv = ctx.buffer(uv.astype('f4').tobytes())
-            
-            vao = ctx.vertex_array(prog, [
-                (vbo_pos, '3f', 'in_position'),
-                (vbo_uv, '2f', 'in_uv')
-            ])
-
-            # 5. Render
-            ctx.clear(0.05, 0.05, 0.05, 1.0)
-            vao.render(moderngl.TRIANGLES)
-
-            # 6. Return pixels
-            raw_data = fbo.read(components=4)
-            image_array = np.frombuffer(raw_data, dtype=np.uint8).reshape((height, width, 4))
-            
-            return np.flipud(image_array)
-
-        except Exception as e:
-            print(f"[{self.LABEL}] Engine Fault: {e}")
-            return np.zeros((height, width, 4), dtype=np.uint8)
-
-        finally:
-            if ctx:
-                try:
-                    ctx.screen.use()
-                    ctx.disable(moderngl.DEPTH_TEST)
-                    ctx.disable(moderngl.CULL_FACE)
-                    ctx.disable(moderngl.BLEND)
-                    ctx.blend_func = moderngl.DEFAULT_BLENDING
-                    ctx.depth_func = '<'
-                    _ = ctx.error 
-                except:
-                    pass
-                
-                # Cleanup VRAM
-                if tex: tex.release()
-                if vao: vao.release()
-                if vbo_pos: vbo_pos.release()
-                if vbo_uv: vbo_uv.release()
-                if prog: prog.release()
-                if fbo: fbo.release()
-                ctx.release()
-
-    def on_execute_crawler(self, input_data=None):
-        self.on_execute()
-========================================
 E:\soon\projects\PBNPR\code\addons\gl_studio\examples\nodes\Node_bpy_ob_eval.py
 ========================================
 import dearpygui.dearpygui as dpg
@@ -336,6 +150,7 @@ except ImportError:
     bpy = None
 
 class NODE_INTERFACE(BASE_NODE):
+    CATEGORY = 'Evaluate'
     LABEL = 'Blender Object Data'
 
     def __init__(self, parent):
@@ -424,7 +239,7 @@ class NODE_INTERFACE(BASE_NODE):
     def on_execute_crawler(self, input_data=None):
         self.on_execute()
 ========================================
-E:\soon\projects\PBNPR\code\addons\gl_studio\examples\nodes\Node_bpy_pil_RGBAviewer.py
+E:\soon\projects\PBNPR\code\addons\gl_studio\examples\nodes\Node_bpy_pil_viewer.py
 ========================================
 import dearpygui.dearpygui as dpg
 from gl_studio.util import util_types as t
@@ -433,7 +248,8 @@ import numpy as np
 from PIL import Image
 
 class NODE_INTERFACE(BASE_NODE):
-    LABEL = 'RGBA Viewer'
+    CATEGORY = 'Debug'
+    LABEL = 'RGBA'
 
     def __init__(self, parent):
         super().__init__(parent)
@@ -467,8 +283,9 @@ class NODE_INTERFACE(BASE_NODE):
             print(f"[{self.LABEL}] Pixels passed through.")
         else:
             print(f"[{self.LABEL}] Warning: No pixel data received.")
-        
-        self.on_view_image()
+    
+    def on_execute_crawler(self, input_data=None):
+        self.on_execute() # syncs sockets
 
     def on_view_image(self):
         # 1. Grab the pixels from the socket
@@ -492,6 +309,50 @@ class NODE_INTERFACE(BASE_NODE):
             print(f"[{self.LABEL}] Error displaying image: {e}")
 
 ========================================
+E:\soon\projects\PBNPR\code\addons\gl_studio\examples\nodes\Node_bpy_to_mgl_texture.py
+========================================
+import dearpygui.dearpygui as dpg
+from gl_studio.util import util_types as t
+from gl_studio.examples.nodes.Node_zPattren import NODE_BASE_INTERFACE as BASE_NODE
+import numpy as np
+import bpy
+
+class NODE_INTERFACE(BASE_NODE):
+    CATEGORY = 'Evaluate'
+    LABEL = 'MGL Texture'
+    
+    def __init__(self, parent):
+        super().__init__(parent)
+
+        self.I_name = t.NodeSocket(dpg.generate_uuid(), t.STR, '<- Blender Image Name')
+        self.O_tex =  t.NodeSocket(dpg.generate_uuid(), t.OB, 'Texture RGBA ->')
+        
+        self._tex = None
+        self._last_hash = None  # For change detection
+        
+    def on_execute(self):
+        if not bpy: 
+            return
+        
+        b_img = bpy.data.images.get(self.I_name.value)
+        if not b_img: 
+            print(f"Texture '{self.I_name.value}' not found")
+            return
+            
+        # Detect changes (Blender images update pixels in-place)
+        current_hash = hash(b_img.pixels[:100])  # Sample check
+        if current_hash == self._last_hash and self._tex:
+            return  # No change, reuse
+            
+        ctx = GLctx.get()
+        if self._tex: 
+            self._tex.release()
+        
+        pixels = np.array(b_img.pixels, dtype=np.float32)
+        self._tex = ctx.texture((b_img.size[0], b_img.size[1]), 4, pixels.tobytes(), dtype='f4')
+        self._last_hash = current_hash
+        self.O_tex.value = self._tex
+========================================
 E:\soon\projects\PBNPR\code\addons\gl_studio\examples\nodes\Node_float.py
 ========================================
 import dearpygui.dearpygui as dpg
@@ -500,6 +361,7 @@ from gl_studio.examples.nodes.Node_zPattren import NODE_BASE_INTERFACE as BASE_N
 
 
 class NODE_INTERFACE(BASE_NODE):
+    CATEGORY = 'CONSTANT'
     LABEL = 'Float'
 
     def __init__(self, parent):
@@ -530,6 +392,544 @@ class NODE_INTERFACE(BASE_NODE):
     def on_execute_crawler(self, input_data=None):
         self.on_execute()
 ========================================
+E:\soon\projects\PBNPR\code\addons\gl_studio\examples\nodes\Node_mgl_buffer.py
+========================================
+# E:\soon\projects\PBNPR\code\addons\gl_studio\examples\nodes\Node_mgl_mesh_simple.py
+import dearpygui.dearpygui as dpg
+from gl_studio.util import util_types as t
+from gl_studio.examples.nodes.Node_zPattren import NODE_BASE_INTERFACE as BASE_NODE
+from gl_studio.gl.ModernOpenGL import GLctx as GL
+import moderngl
+import numpy as np
+import bpy
+
+class NODE_INTERFACE(BASE_NODE):
+    CATEGORY = 'MGL'
+    LABEL = 'MGL Mesh (Simple)'
+    
+    def __init__(self, parent):
+        super().__init__(parent)
+        
+        # Inputs - all strings pointing to bpy data
+        self.I_obj_name = t.NodeSocket(dpg.generate_uuid(), t.STR, '<- Object Name', 'Cube')
+        self.I_uv_name = t.NodeSocket(dpg.generate_uuid(), t.STR, '<- UV Map Name', 'UVMap')
+        self.I_tex_name = t.NodeSocket(dpg.generate_uuid(), t.STR, '<- Texture Name', '')
+        self.I_w = t.NodeSocket(dpg.generate_uuid(), t.F, '<- Width', 1024)
+        self.I_h = t.NodeSocket(dpg.generate_uuid(), t.F, '<- Height', 1024)
+        
+        # Camera matrices (from your camera node)
+        self.I_view = t.NodeSocket(dpg.generate_uuid(), t.F16, '<- View Matrix')
+        self.I_proj = t.NodeSocket(dpg.generate_uuid(), t.F16, '<- Proj Matrix')
+        
+        # Outputs - RGBA + data layers
+        self.O_rgba = t.NodeSocket(dpg.generate_uuid(), t.RGBA, 'RGBA ->')
+        self.O_normal = t.NodeSocket(dpg.generate_uuid(), t.RGBA, 'Normals ->')
+        self.O_depth = t.NodeSocket(dpg.generate_uuid(), t.RGBA, 'Depth ->')
+        self.O_position = t.NodeSocket(dpg.generate_uuid(), t.RGBA, 'Position ->')
+        
+        self._resgister_IO(
+            [self.I_obj_name, self.I_uv_name, self.I_tex_name, 
+             self.I_w, self.I_h, self.I_view, self.I_proj],
+            [self.O_rgba, self.O_normal, self.O_depth, self.O_position]
+        )
+        
+        # MGL resources (lazy init)
+        self._ctx = None
+        self._vbo_pos = None
+        self._vbo_uv = None
+        self._vbo_normal = None
+        self._vao = None
+        self._prog = None
+        self._fbo_rgba = None
+        self._fbo_normal = None
+        self._fbo_depth = None
+        self._fbo_position = None
+        self._texture = None
+        
+        # Cache keys to detect changes
+        self._last_mesh_hash = None
+        self._last_tex_hash = None
+        self._last_w = None
+        self._last_h = None
+
+    def on_gui(self):
+        Id = super().on_gui()
+        
+        statics = self._create_static_attr()
+        dpg.add_button(label="Execute", callback=self.EXEC_CB, parent=statics)
+        
+        # String inputs
+        dpg.add_input_text(label="Object", default_value=self.I_obj_name.value, 
+                          callback=self._on_obj_change, parent=statics, width=150)
+        dpg.add_input_text(label="UV Map", default_value=self.I_uv_name.value,
+                          callback=self._on_uv_change, parent=statics, width=150)
+        dpg.add_input_text(label="Texture", default_value=self.I_tex_name.value,
+                          callback=self._on_tex_change, parent=statics, width=150)
+        
+        # Resolution
+        dpg.add_drag_float(label="Width", default_value=self.I_w.value, 
+                          callback=self._on_w_change, parent=statics, width=100)
+        dpg.add_drag_float(label="Height", default_value=self.I_h.value,
+                          callback=self._on_h_change, parent=statics, width=100)
+        
+        # Sockets
+        self._create_input_attr(self.I_obj_name)
+        self._create_input_attr(self.I_uv_name)
+        self._create_input_attr(self.I_tex_name)
+        self._create_input_attr(self.I_w)
+        self._create_input_attr(self.I_h)
+        self._create_input_attr(self.I_view)
+        self._create_input_attr(self.I_proj)
+        
+        self._create_output_attr(self.O_rgba)
+        self._create_output_attr(self.O_normal)
+        self._create_output_attr(self.O_depth)
+        self._create_output_attr(self.O_position)
+
+    def _on_obj_change(self, s, a, u): self.I_obj_name.value = a
+    def _on_uv_change(self, s, a, u): self.I_uv_name.value = a
+    def _on_tex_change(self, s, a, u): self.I_tex_name.value = a
+    def _on_w_change(self, s, a, u): self.I_w.value = a
+    def _on_h_change(self, s, a, u): self.I_h.value = a
+
+    def on_execute(self):
+        """Main render execution"""
+        if not bpy:
+            print("[MGL Mesh] No bpy available")
+            return
+            
+        ctx = GL.get()
+        self._ctx = ctx
+        
+        # Get inputs
+        obj_name = self.I_obj_name.value
+        uv_name = self.I_uv_name.value
+        tex_name = self.I_tex_name.value
+        w, h = int(self.I_w.value), int(self.I_h.value)
+        
+        # Validate camera matrices
+        view_mat = self.I_view.value
+        proj_mat = self.I_proj.value
+        if view_mat is None or proj_mat is None:
+            print("[MGL Mesh] Missing view/proj matrices")
+            return
+        
+        # Get Blender object and mesh
+        obj = bpy.data.objects.get(obj_name)
+        if not obj or obj.type != 'MESH':
+            print(f"[MGL Mesh] Object '{obj_name}' not found or not mesh")
+            return
+        
+        # Evaluate mesh (modifiers applied)
+        depsgraph = bpy.context.evaluated_depsgraph_get()
+        eval_obj = obj.evaluated_get(depsgraph)
+        mesh = eval_obj.to_mesh()
+        mesh.calc_loop_triangles()
+        
+        if len(mesh.loop_triangles) == 0:
+            print("[MGL Mesh] Mesh has no triangles")
+            eval_obj.to_mesh_clear()
+            return
+        
+        # Build geometry buffers (only if mesh changed)
+        mesh_hash = f"{obj_name}_{len(mesh.vertices)}_{len(mesh.loop_triangles)}"
+        if mesh_hash != self._last_mesh_hash:
+            self._build_geometry(mesh, uv_name)
+            self._last_mesh_hash = mesh_hash
+        
+        # Build/load texture (only if changed)
+        tex_hash = f"{tex_name}_{w}_{h}"
+        if tex_hash != self._last_tex_hash:
+            self._build_texture(tex_name)
+            self._last_tex_hash = tex_hash
+        
+        # Resize FBOs if resolution changed
+        if w != self._last_w or h != self._last_h:
+            self._build_fbos(w, h)
+            self._last_w = w
+            self._last_h = h
+        
+        # Ensure shader is ready
+        if self._prog is None:
+            self._build_shader()
+        
+        # Render all layers
+        self._render_layers(view_mat, proj_mat, obj.matrix_world, w, h)
+        
+        # Cleanup Blender mesh
+        eval_obj.to_mesh_clear()
+        
+        print(f"[MGL Mesh] Rendered {obj_name} at {w}x{h}")
+
+    def _build_geometry(self, mesh, uv_name):
+        """Build position/UV/normal VBOs from Blender mesh"""
+        ctx = self._ctx
+        
+        # Get triangle indices
+        num_tris = len(mesh.loop_triangles)
+        vert_idx = np.zeros(num_tris * 3, dtype=np.int32)
+        mesh.loop_triangles.foreach_get("vertices", vert_idx)
+        
+        loop_idx = np.zeros(num_tris * 3, dtype=np.int32)
+        mesh.loop_triangles.foreach_get("loops", loop_idx)
+        
+        # Positions (flattened per-vertex, indexed by triangles)
+        verts = np.zeros(len(mesh.vertices) * 3, dtype=np.float32)
+        mesh.vertices.foreach_get("co", verts)
+        pos_data = verts.reshape(-1, 3)[vert_idx].flatten()
+        
+        # Normals
+        normals = np.zeros(len(mesh.vertices) * 3, dtype=np.float32)
+        mesh.vertices.foreach_get("normal", normals)
+        normal_data = normals.reshape(-1, 3)[vert_idx].flatten()
+        
+        # UVs
+        if uv_name in mesh.uv_layers:
+            uvs = np.zeros(len(mesh.loops) * 2, dtype=np.float32)
+            mesh.uv_layers[uv_name].data.foreach_get("uv", uvs)
+            uv_data = uvs.reshape(-1, 2)[loop_idx].flatten()
+        else:
+            uv_data = np.zeros(num_tris * 3 * 2, dtype=np.float32)
+        
+        # Release old buffers
+        if self._vbo_pos: self._vbo_pos.release()
+        if self._vbo_uv: self._vbo_uv.release()
+        if self._vbo_normal: self._vbo_normal.release()
+        
+        # Create new buffers
+        self._vbo_pos = ctx.buffer(pos_data.astype('f4').tobytes())
+        self._vbo_normal = ctx.buffer(normal_data.astype('f4').tobytes())
+        self._vbo_uv = ctx.buffer(uv_data.astype('f4').tobytes())
+        
+        print(f"[MGL Mesh] Built geometry: {len(pos_data)//3} vertices")
+
+    def _build_texture(self, tex_name):
+        """Load Blender image as MGL texture"""
+        ctx = self._ctx
+        
+        if self._texture:
+            self._texture.release()
+            self._texture = None
+        
+        if not tex_name:
+            # Create white fallback texture
+            white = np.array([255, 255, 255, 255], dtype=np.uint8)
+            self._texture = ctx.texture((1, 1), 4, white.tobytes())
+            return
+        
+        b_img = bpy.data.images.get(tex_name)
+        if not b_img:
+            print(f"[MGL Mesh] Texture '{tex_name}' not found, using white")
+            white = np.array([255, 255, 255, 255], dtype=np.uint8)
+            self._texture = ctx.texture((1, 1), 4, white.tobytes())
+            return
+        
+        # Convert Blender float pixels to bytes
+        pixels = np.array(b_img.pixels, dtype=np.float32)
+        # Blender stores RGBA floats 0-1, convert to uint8
+        pixels_uint8 = (pixels * 255).astype(np.uint8)
+        
+        self._texture = ctx.texture(
+            (b_img.size[0], b_img.size[1]), 
+            4, 
+            pixels_uint8.tobytes()
+        )
+        print(f"[MGL Mesh] Loaded texture: {tex_name} {b_img.size[0]}x{b_img.size[1]}")
+
+    def _build_fbos(self, w, h):
+        """Create framebuffers for each output layer"""
+        ctx = self._ctx
+        
+        # Release old
+        for fbo in [self._fbo_rgba, self._fbo_normal, self._fbo_depth, self._fbo_position]:
+            if fbo: fbo.release()
+        
+        # RGBA color buffer
+        tex_rgba = ctx.texture((w, h), 4)
+        self._fbo_rgba = ctx.framebuffer(color_attachments=[tex_rgba])
+        
+        # Normal buffer (RGB = normal, A = unused)
+        tex_normal = ctx.texture((w, h), 4, dtype='f4')  # Float for precision
+        self._fbo_normal = ctx.framebuffer(color_attachments=[tex_normal])
+        
+        # Depth buffer (R = depth, encoded)
+        tex_depth = ctx.texture((w, h), 4, dtype='f4')
+        self._fbo_depth = ctx.framebuffer(color_attachments=[tex_depth])
+        
+        # Position buffer (RGB = world position, A = unused)
+        tex_position = ctx.texture((w, h), 4, dtype='f4')
+        self._fbo_position = ctx.framebuffer(color_attachments=[tex_position])
+        
+        print(f"[MGL Mesh] Built FBOs: {w}x{h}")
+
+    def _build_shader(self):
+        """Compile shader program with MRT support or multiple shaders"""
+        ctx = self._ctx
+        
+        # Vertex shader - shared
+        vertex_src = '''
+            #version 330
+            uniform mat4 M, V, P;
+            in vec3 in_position;
+            in vec3 in_normal;
+            in vec2 in_uv;
+            out vec3 v_world_pos;
+            out vec3 v_normal;
+            out vec2 v_uv;
+            out float v_depth;
+            
+            void main() {
+                vec4 world_pos = M * vec4(in_position, 1.0);
+                vec4 view_pos = V * world_pos;
+                vec4 clip_pos = P * view_pos;
+                
+                gl_Position = clip_pos;
+                v_world_pos = world_pos.xyz;
+                v_normal = mat3(transpose(inverse(M))) * in_normal;
+                v_uv = in_uv;
+                v_depth = -view_pos.z;  // Linear depth in view space
+            }
+        '''
+        
+        # Fragment shader for RGBA
+        frag_rgba = '''
+            #version 330
+            uniform sampler2D u_texture;
+            in vec3 v_world_pos;
+            in vec3 v_normal;
+            in vec2 v_uv;
+            in float v_depth;
+            out vec4 f_color;
+            
+            void main() {
+                vec4 tex_color = texture(u_texture, v_uv);
+                // Simple lighting
+                vec3 light_dir = normalize(vec3(1, 1, 1));
+                float diff = max(dot(normalize(v_normal), light_dir), 0.0);
+                vec3 ambient = tex_color.rgb * 0.3;
+                vec3 lit = tex_color.rgb * diff;
+                f_color = vec4(ambient + lit, tex_color.a);
+            }
+        '''
+        
+        # Fragment shader for normals
+        frag_normal = '''
+            #version 330
+            in vec3 v_world_pos;
+            in vec3 v_normal;
+            in vec2 v_uv;
+            in float v_depth;
+            out vec4 f_color;
+            
+            void main() {
+                vec3 n = normalize(v_normal);
+                // Pack -1,1 to 0,1 for storage
+                f_color = vec4(n * 0.5 + 0.5, 1.0);
+            }
+        '''
+        
+        # Fragment shader for depth
+        frag_depth = '''
+            #version 330
+            uniform float u_far;
+            in vec3 v_world_pos;
+            in vec3 v_normal;
+            in vec2 v_uv;
+            in float v_depth;
+            out vec4 f_color;
+            
+            void main() {
+                float d = clamp(v_depth / u_far, 0.0, 1.0);
+                f_color = vec4(d, d, d, 1.0);
+            }
+        '''
+        
+        # Fragment shader for position
+        frag_position = '''
+            #version 330
+            in vec3 v_world_pos;
+            in vec3 v_normal;
+            in vec2 v_uv;
+            in float v_depth;
+            out vec4 f_color;
+            
+            void main() {
+                f_color = vec4(v_world_pos, 1.0);
+            }
+        '''
+        
+        # Compile programs
+        self._prog_rgba = ctx.program(vertex_shader=vertex_src, fragment_shader=frag_rgba)
+        self._prog_normal = ctx.program(vertex_shader=vertex_src, fragment_shader=frag_normal)
+        self._prog_depth = ctx.program(vertex_shader=vertex_src, fragment_shader=frag_depth)
+        self._prog_position = ctx.program(vertex_shader=vertex_src, fragment_shader=frag_position)
+        
+        print("[MGL Mesh] Compiled shaders")
+
+    def _render_layers(self, view_mat, proj_mat, model_mat, w, h):
+        """Render to all output layers"""
+        ctx = self._ctx
+        
+        # Rebuild VAO with current program (they share same attribs)
+        if self._vao: self._vao.release()
+        
+        # Common uniforms
+        V = np.array(view_mat, dtype=np.float32).reshape(4, 4)
+        P = np.array(proj_mat, dtype=np.float32).reshape(4, 4)
+        M = np.array(model_mat, dtype=np.float32).T  # Blender row->OpenGL col
+        
+        # Helper to render layer
+        def render_layer(fbo, prog, far_plane=100.0):
+            fbo.use()
+            ctx.enable(moderngl.DEPTH_TEST | moderngl.CULL_FACE)
+            ctx.clear(0.0, 0.0, 0.0, 0.0)
+            
+            # Build VAO for this program
+            vao = ctx.vertex_array(
+                prog,
+                [(self._vbo_pos, '3f', 'in_position'),
+                 (self._vbo_normal, '3f', 'in_normal'),
+                 (self._vbo_uv, '2f', 'in_uv')]
+            )
+            
+            # Set uniforms
+            prog['M'].write(M.astype('f4').tobytes())
+            prog['V'].write(V.astype('f4').tobytes())
+            prog['P'].write(P.astype('f4').tobytes())
+            
+            if 'u_texture' in prog:
+                self._texture.use(0)
+                prog['u_texture'].value = 0
+            
+            if 'u_far' in prog:
+                prog['u_far'].value = far_plane
+            
+            vao.render(moderngl.TRIANGLES)
+            vao.release()
+            
+            # Readback
+            raw = fbo.read(components=4)
+            img = np.frombuffer(raw, dtype=np.uint8 if prog == self._prog_rgba else np.float32)
+            
+            # Determine dtype for reshape
+            if prog == self._prog_rgba:
+                return img.reshape((h, w, 4))
+            else:
+                # Float textures return float32
+                return img.reshape((h, w, 4))
+        
+        # Render each layer
+        self.O_rgba.value = np.flipud(render_layer(self._fbo_rgba, self._prog_rgba))
+        self.O_normal.value = np.flipud(render_layer(self._fbo_normal, self._prog_normal))
+        self.O_depth.value = np.flipud(render_layer(self._fbo_depth, self._prog_depth))
+        self.O_position.value = np.flipud(render_layer(self._fbo_position, self._prog_position))
+
+    def on_execute_crawler(self, input_data=None):
+        self.on_execute()
+========================================
+E:\soon\projects\PBNPR\code\addons\gl_studio\examples\nodes\Node_mgl_mesh.py
+========================================
+import dearpygui.dearpygui as dpg
+from gl_studio.util import util_types as t
+from gl_studio.examples.nodes.Node_zPattren import NODE_BASE_INTERFACE as BASE_NODE
+import moderngl
+import numpy as np
+
+class NODE_INTERFACE(BASE_NODE):
+    CATEGORY = 'MGL'
+    LABEL = 'MGL Mesh'
+    
+    def __init__(self, parent):
+        super().__init__(parent)
+        # Geometry
+        self.I_pos_buf = t.NodeSocket(dpg.generate_uuid(), t.OB, '<- Position Buffer')
+        self.I_uv_buf = t.NodeSocket(dpg.generate_uuid(), t.OB, '<- UV Buffer')
+        # Transform
+        self.I_m = t.NodeSocket(dpg.generate_uuid(), t.F16, '<- Model Matrix')
+        self.I_v = t.NodeSocket(dpg.generate_uuid(), t.F16, '<- View Matrix')
+        self.I_p = t.NodeSocket(dpg.generate_uuid(), t.F16, '<- Proj Matrix')
+        # Material
+        self.I_tex = t.NodeSocket(dpg.generate_uuid(), t.OB, '<- Texture')
+        # Output
+        self.I_w = t.NodeSocket(dpg.generate_uuid(), t.F, '<- Width', 1024)
+        self.I_h = t.NodeSocket(dpg.generate_uuid(), t.F, '<- Height', 1024)
+        self.O_pixels = t.NodeSocket(dpg.generate_uuid(), t.RGBA, 'Pixels ->')
+        
+        self._fbo = None
+        self._vao = None
+        self._prog = None
+        
+    def on_execute(self):
+        # Lazy init shader (once)
+        if self._prog is None:
+            self._init_shader()
+            
+        ctx = GLctx.get()
+        w, h = int(self.I_w.value), int(self.I_h.value)
+        
+        # Lazy init FBO (on size change)
+        if self._fbo is None or self._fbo.size != (w, h):
+            if self._fbo: self._fbo.release()
+            self._fbo = ctx.simple_framebuffer((w, h))
+            
+        # Get resources
+        pos_buf = self.I_pos_buf.value  # MGL Buffer object
+        uv_buf = self.I_uv_buf.value
+        tex = self.I_tex.value
+        
+        if None in (pos_buf, uv_buf, tex):
+            print("Missing inputs")
+            return
+            
+        # Build VAO (can cache if buffer IDs don't change)
+        if self._vao: self._vao.release()
+        self._vao = ctx.vertex_array(
+            self._prog,
+            [(pos_buf, '3f', 'in_position'),
+             (uv_buf, '2f', 'in_uv')]
+        )
+        
+        # Render
+        self._fbo.use()
+        ctx.enable(moderngl.DEPTH_TEST | moderngl.CULL_FACE)
+        
+        # Upload uniforms
+        self._prog['M'].write(self.I_m.value.astype('f4').tobytes())
+        self._prog['V'].write(self.I_v.value.astype('f4').tobytes())
+        self._prog['P'].write(self.I_p.value.astype('f4').tobytes())
+        
+        tex.use(0)
+        self._prog['tex'].value = 0
+        
+        ctx.clear(0.05, 0.05, 0.05, 1.0)
+        self._vao.render(moderngl.TRIANGLES)
+        
+        # Readback
+        raw = self._fbo.read(components=4)
+        img = np.frombuffer(raw, dtype=np.uint8).reshape((h, w, 4))
+        self.O_pixels.value = np.flipud(img)
+        
+    def _init_shader(self):
+        ctx = GLctx.get()
+        self._prog = ctx.program(
+            vertex_shader='''#version 330
+                uniform mat4 M, V, P;
+                in vec3 in_position;
+                in vec2 in_uv;
+                out vec2 v_uv;
+                void main() {
+                    gl_Position = P * V * M * vec4(in_position, 1.0);
+                    v_uv = in_uv;
+                }''',
+            fragment_shader='''#version 330
+                uniform sampler2D tex;
+                in vec2 v_uv;
+                out vec4 f_color;
+                void main() {
+                    f_color = texture(tex, v_uv);
+                }'''
+        )
+========================================
 E:\soon\projects\PBNPR\code\addons\gl_studio\examples\nodes\Node_pulse.py
 ========================================
 import dearpygui.dearpygui as dpg
@@ -538,6 +938,7 @@ from gl_studio.examples.nodes.Node_zPattren import NODE_BASE_INTERFACE as BASE_N
 import time
 
 class NODE_INTERFACE(BASE_NODE):
+    CATEGORY = None
     LABEL = 'Pulse'
 
     def __init__(self, parent):
@@ -605,6 +1006,7 @@ from gl_studio.examples.nodes.Node_zPattren import NODE_BASE_INTERFACE as BASE_N
 
 
 class NODE_INTERFACE(BASE_NODE):
+    CATEGORY = 'CONSTANT'
     LABEL = 'String'
 
     def __init__(self, parent):
@@ -640,9 +1042,11 @@ E:\soon\projects\PBNPR\code\addons\gl_studio\examples\nodes\Node_zPattren.py
 # Node_template_advanced.py
 import dearpygui.dearpygui as dpg
 from gl_studio.util import util_types as t
+from gl_studio.gl.ModernOpenGL import GLctx as GL
 
 
 class NODE_BASE_INTERFACE:
+    CATEGORY = 'NONE'
     LABEL = "BASE EMPTY NODE"
     
     def __init__(self, parent):
@@ -651,7 +1055,7 @@ class NODE_BASE_INTERFACE:
 
         - on_gui -> for drawing the node ui
 
-        - Behavior methods: EACH makes nothing unless overriden
+        - Behavior methods: EACH does nothing unless overriden
 
             on_execute() -> Utlity method for u <3
 
@@ -682,17 +1086,27 @@ class NODE_BASE_INTERFACE:
         - EXEC_CB            = self.on_execute
 
         - EXEC_ON_LOOP_CB    = self.on_execute_after_frame
-    
         
-        - inputs = {} 
-    
-        - outputs = {}
+
     
         x------------------------------------x
 
-        # PAG CALLBACK:
+        # PAG SYSTEM:
         
         x------------------------------------x
+
+        - self.inputs = {} 
+    
+        - self.outputs = {}
+
+            These are used so the PAG knows the scokets and overrite their values from connceted nodes.
+
+            Both are handeled with this helper:
+
+            - _register_IO(
+                            [Node_socket...], #inputs
+                            [Node_socket...]  #outputs
+                            )
 
         - SHOULD_CRAWL_CB    = self.on_should_crawl 
         
@@ -715,6 +1129,9 @@ class NODE_BASE_INTERFACE:
         # PLUGIN inputs/outputs system
         self.inputs = {} 
         self.outputs = {}
+
+
+        self.GL = GL.get()  # Access the shared ModernGL context
 
     def _resgister_IO(self, 
                       input_sockets:list[t.NodeSocket]=None, 
@@ -807,12 +1224,9 @@ E:\soon\projects\PBNPR\code\addons\gl_studio\examples\opengl\MVP_v.glsl
 E:\soon\projects\PBNPR\code\addons\gl_studio\gl\ModernOpenGL.py
 ========================================
 import moderngl
-import glfw
-from dataclasses import dataclass
-
 
 class GLctx:
-    ctx=None
+    ctx = None
     LABEL = 'GLctx'
     
     @classmethod
@@ -1018,6 +1432,7 @@ Pin  = t.NodeSocket
 
 #==============
 class PAG:
+    """Pullbased Access Graph (PAG)"""
     def __init__(self):
         self.queue = []
         self.visited = set()
@@ -1117,6 +1532,8 @@ def Node_initlizer(node_interface):
 def on_node_types_reload():
     #UI - FORMAT 'ADD NODE'
     dpg.delete_item(cfg.editor_menuTypes,children_only=True)
+    category_menus = {}
+
     for j in cfg.dirs.values():
         if not os.path.isdir(j):
             continue
@@ -1138,12 +1555,21 @@ def on_node_types_reload():
                     try:
                         cfg.module_registry[module_name] = module
                         # UI <- INTERFACE            
-                        node_interface = getattr(module,'NODE_INTERFACE')
-                        if not node_interface: return
+                        node_interface = getattr(module,'NODE_INTERFACE', None)
+                        if not node_interface:
+                            continue
+
+                        category = getattr(node_interface, 'CATEGORY', None)
+                        if category:
+                            if category not in category_menus:
+                                category_menus[category] = dpg.add_menu(label=category, parent=cfg.editor_menuTypes)
+                            parent_menu = category_menus[category]
+                        else:
+                            parent_menu = cfg.editor_menuTypes
 
                         dpg.add_menu_item(label=node_interface.LABEL,
                                           callback=Node_initlizer(node_interface),
-                                          parent=cfg.editor_menuTypes) # Adds 'add ABC' item to 'add node' menu
+                                          parent=parent_menu) # Adds 'add ABC' item to 'add node' menu
                     except Exception as e: 
                         print(f"FAILED TO IMPORT {module_name}, EXCEPTION: {e}")
 
