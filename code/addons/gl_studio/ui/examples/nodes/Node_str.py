@@ -1,13 +1,15 @@
-from PySide6 import QtWidgets
 from gl_studio.ui.examples.nodes import Node_zPattren as BASE
 from gl_studio.util import util_types as t
+from PySide6 import QtWidgets
+
 
 class NODE_STRING(BASE.NODE_INTERFACE):
-    NODE_NAME = 'String'
+    NODE_NAME = "String"
+    CATEGORY = "Str"
 
     def __init__(self):
         super(NODE_STRING, self).__init__()
-        self.O_text = self.add_output(type=t.STR,default_value='helloWorld')
+        self.O_text = self.add_output(type=t.STR, default_value="helloWorld")
 
     def build_ui(self):
         widget = QtWidgets.QWidget()

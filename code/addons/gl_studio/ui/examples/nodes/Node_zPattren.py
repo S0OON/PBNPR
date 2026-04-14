@@ -1,13 +1,12 @@
+from typing import Any
+
 from gl_studio.util import util_types as t
 from NodeGraphQt import BaseNode, NodeBaseWidget, Port
 from PySide6 import QtWidgets
 
-# UUID4 generates a random 128-bit number
-# # Result looks like: 'f47ac10b-58cc-4372-a567-0e02b2c3d479'
-
 
 class PortType(Port):
-    value = None
+    value = Any
     Type = t.NONE
 
 
@@ -33,7 +32,8 @@ class UniversalWrapper(NodeBaseWidget):
 
 
 class NODE_INTERFACE(BaseNode):
-    NODE_NAME = ""
+    NODE_NAME = "Node"
+    CATEGORY = ""
 
     # INTERNALS
     def __init__(self):
@@ -49,6 +49,7 @@ class NODE_INTERFACE(BaseNode):
     # GUI WRAPPERS
     def build_ui(self) -> QtWidgets.QWidget:
         """Build a QtWidget and return it."""
+        return QtWidgets.QWidget()
 
     def integrate_widget(self, qt_widget, label=""):
         self.node_widget = UniversalWrapper(qt_widget, label=label, parent=self.view)
@@ -97,5 +98,5 @@ class NODE_INTERFACE(BaseNode):
     def on_should_crawl(self):
         """Return True if this node is an output of a node connection branches"""
 
-    def on_execute_crawler(self):
+    def on_execute_crawler(self) -> None:
         """What will happen if executed by connected nodes (by Crawler)"""

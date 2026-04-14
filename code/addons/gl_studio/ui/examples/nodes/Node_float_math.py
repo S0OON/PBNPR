@@ -25,12 +25,13 @@ ops = {"Add": add, "Subtract": subtract, "Multiply": multiply, "Divide": divide}
 
 
 class NODE_FLOAT_MATH(BASE.NODE_INTERFACE):
-    NODE_NAME = "Float Math"
+    NODE_NAME = "Math Float"
+    CATEGORY = "Float"
 
     def __init__(self):
         super(NODE_FLOAT_MATH, self).__init__()
-        self.I_A = self.add_input("A", type=t.F)
-        self.I_B = self.add_input("B", type=t.F)
+        self.I_A = self.add_input("A", type=t.F, default_value=0.0)
+        self.I_B = self.add_input("B", type=t.F, default_value=0.0)
         self.O_out = self.add_output("out_data", type=t.F)
 
     def build_ui(self):
@@ -48,3 +49,8 @@ class NODE_FLOAT_MATH(BASE.NODE_INTERFACE):
         self.O_out.value = ops[self.combo_types.currentText()](
             self.I_A.value, self.I_B.value
         )
+        self.reset()
+
+    def reset(self):
+        self.I_A.value = 0.0
+        self.I_B.value = 0.0

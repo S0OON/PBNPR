@@ -8,7 +8,8 @@ from gl_studio.ui.examples.nodes.Node_zPattren import PortType as PORT
 from gl_studio.ui.pyside6.internals import cfg as CFG
 from gl_studio.util import util_types as t
 from NodeGraphQt import BaseNode, NodeGraph
-from PySide6 import QtWidgets
+from PySide6.QtGui import QKeySequence, QShortcut
+from PySide6.QtWidgets import QMenu, QMenuBar, QVBoxLayout, QWidget
 
 
 class INTERFACE:
@@ -18,10 +19,11 @@ class INTERFACE:
     directories = []
 
     def __init__(self):
+        self.lay: QVBoxLayout = None
         self.graph: NodeGraph = None
-
-        self.menu_bar: QtWidgets.QMenuBar = None
-        self.menu_add_node: QtWidgets.QMenu = None
+        self.menu_bar: QMenuBar = None
+        self.menu_IO: QMenu = None
+        self.menu_add_node: QMenu = None
 
 
 cfg = INTERFACE()
@@ -108,15 +110,6 @@ pag = PAG()
 
 
 # ============================
-def import_module():
-    """this function intend to just fetich a directory to python file"""
-    print("Importing...")
-
-
-def export_module():
-    print("exporting...")
-
-
 def load_nodes_from_directory(directory_path):
     """Scans directory and returns a list of valid BaseNode subclasses."""
     discovered_nodes = []
@@ -143,8 +136,24 @@ def load_nodes_from_directory(directory_path):
     return discovered_nodes
 
 
-def add_node(node_class):
-    cfg.graph.add_node(node=node_class)
+def safe_create_node(n_type):
+    # Clear current selection to prevent other nodes from moving with the new one
+    cfg.graph.clear_selection()
+
+    # Calculate position
+    cursor_pos = cfg.graph.viewer().cursor().pos()
+    scene_pos = cfg.graph.viewer().mapToScene(cursor_pos)
+
+    # Create the node
+    cfg.graph.create_node(n_type.type_, pos=[scene_pos.x(), scene_pos.y()])
+
+
+def delete_selected_nodes():
+    # Get nodes currently selected in the graph
+    selected_nodes = cfg.graph.selected_nodes()
+    if selected_nodes:
+        # delete_nodes is the standard safe way to remove nodes in NodeGraphQt
+        cfg.graph.delete_nodes(selected_nodes)
 
 
 # ===================================
@@ -164,31 +173,32 @@ def process_frame():
 
 
 def register():
-    cfg.graph = NodeGraph()
-    graph = cfg.graph
-
-    widget = QtWidgets.QWidget()
+    widget = QWidget()
     CFG.tabs.addTab(widget, "Node editor")
 
-    layout = QtWidgets.QVBoxLayout()
-    widget.setLayout(layout)
+    cfg.lay = QVBoxLayout()
+    widget.setLayout(cfg.lay)
 
-    cfg.menu_bar = QtWidgets.QMenuBar()
-    layout.addWidget(cfg.menu_bar)
-    layout.addWidget(cfg.graph.widget)
+    cfg.menu_bar = QMenuBar()
+    cfg.lay.addWidget(cfg.menu_bar)
 
-    cfg.menu_add_node = QtWidgets.QMenu()
-    cfg.menu_add_node.setTitle("Add Node")
+    cfg.graph = NodeGraph()
+    cfg.lay.addWidget(cfg.graph.widget)
+
+    cfg.menu_add_node = QMenu(title="Add Node")
     cfg.menu_bar.addMenu(cfg.menu_add_node)
 
-    cfg.menu_IO = QtWidgets.QMenu()
-    cfg.menu_IO.setTitle("Import / export")
+    cfg.menu_IO = QMenu(title="Import / export")
     cfg.menu_bar.addMenu(cfg.menu_IO)
 
-    (cfg.menu_IO.addAction("Import")).triggered.connect(import_module)
-    (cfg.menu_IO.addAction("Export")).triggered.connect(export_module)
+    shortcut_del = QShortcut(QKeySequence("Delete"), cfg.graph.widget)
+    shortcut_del.activated.connect(delete_selected_nodes)
+
+    shortcut_x = QShortcut(QKeySequence("X"), cfg.graph.widget)
+    shortcut_x.activated.connect(delete_selected_nodes)
 
     # --- DYNAMIC NODE REGISTRATION ---
+
     # 1. Resolve the absolute path to your 'nodes' directory
     current_dir = os.path.dirname(os.path.abspath(__file__))
 
@@ -197,23 +207,34 @@ def register():
         os.path.join(current_dir, "..", "examples", "nodes")
     )
 
+    # ... inside register() in editor_nodeGraph.py ...
+
     # 2. Discover classes
     node_classes = load_nodes_from_directory(nodes_directory)
 
-    # 3. Register to graph and add to QMenu
+    # Dictionary to keep track of created submenus
+    sub_menus = {}
+
+    # 3. Register to graph and add to QMenu with submenus
     for node_class in node_classes:
-        # Registers to NodeGraphQt (makes it available in the right-click Tab Search)
-        graph.register_node(node_class)
+        # Registers to NodeGraphQt (for Tab search)
+        cfg.graph.register_node(node_class)
 
-        # Create a QAction in the top menu bar
-        # Fallback to class name if NODE_NAME isn't explicitly set
+        # Get the category; default to 'Misc' if not defined
+        category_name = getattr(node_class, "CATEGORY", "Misc")
+
+        # Create the submenu if it doesn't exist yet
+        if category_name not in sub_menus:
+            new_sub_menu = cfg.menu_add_node.addMenu(category_name)
+            sub_menus[category_name] = new_sub_menu
+
+        target_menu = sub_menus[category_name]
+
+        # Create the action in the specific category submenu
         display_name = getattr(node_class, "NODE_NAME", node_class.__name__)
-        action = cfg.menu_add_node.addAction(display_name)
+        action = target_menu.addAction(display_name)
 
-        # Connect the action to instantiate the node.
-        # Note: 'n_type=node_class.type_' is captured in the lambda to avoid Python's late-binding loop issue.
-
-        action.connect(lambda a: add_node(node_class))
+        action.triggered.connect(lambda _, n=node_class: safe_create_node(n))
 
 
 def unregister():

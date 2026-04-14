@@ -161,18 +161,206 @@ def unregister():
     main.unregister()
 
 ========================================
-E:\soon\projects\PBNPR\code\addons\gl_studio\ui\examples\nodes\Node_float.py
+E:\soon\projects\PBNPR\code\addons\gl_studio\ui\examples\nodes\Node_bpy_camData.py
 ========================================
-from PySide6 import QtWidgets
+import bpy
 from gl_studio.ui.examples.nodes import Node_zPattren as BASE
 from gl_studio.util import util_types as t
+from PySide6.QtWidgets import QLabel, QVBoxLayout, QWidget
+import numpy as np
+
+class NODE_CAMERA_EVAL(BASE.NODE_INTERFACE):
+    NODE_NAME = "Camera Eval"
+    CATEGORY = "Blender"
+
+    def __init__(self):
+        super(NODE_CAMERA_EVAL, self).__init__()
+
+        # Inputs with manual UI enabled
+        self.I_name = self.add_input("cam_name", type=t.STR, default_value="active")
+
+        self.I_width = self.add_input("Width", type=t.F, default_value=64.0)
+        self.I_height = self.add_input("height", type=t.F, default_value=64.0)
+
+        self.O_view = self.add_output("view_matrix", type=t.F16)
+        self.O_proj = self.add_output("proj_matrix", type=t.F16)
+
+    def build_ui(self):
+        widget = QWidget()
+        lay = QVBoxLayout()
+        widget.setLayout(lay)
+
+        self.status_label = QLabel("Camera: ---")
+        lay.addWidget(self.status_label)
+
+        return widget
+
+    def on_execute_crawler(self):
+        if not self.I_name.value or self.I_name.value.lower() == 'active':
+                        cam = bpy.context.scene.camera
+                    else:
+                        cam = bpy.data.objects.get(self.I_name.value)
+
+                    if not cam:
+                        print(f"Camera '{self.I_name.value}' not found!")
+                        return
+
+                    view = np.array(cam.matrix_world.inverted().transposed(), dtype=np.float32).flatten()
+                    self.O_mCam.value = view
+
+                    proj_matrix = cam.calc_matrix_camera(
+                        bpy.context.evaluated_depsgraph_get(),
+                        x=int(self.I_x.value),
+                        y=int(self.I_y.value)
+                    )
+                    self.O_proj.value = np.array(proj_matrix.transposed(), dtype=np.float32).flatten()
+
+========================================
+E:\soon\projects\PBNPR\code\addons\gl_studio\ui\examples\nodes\Node_bpy_object_eval.py
+========================================
+import bpy
+from gl_studio.ui.examples.nodes import Node_zPattren as BASE
+from gl_studio.util import util_types as t
+from PySide6.QtWidgets import QLabel, QVBoxLayout, QWidget
+
+
+class NODE_OBJECT_EVAL(BASE.NODE_INTERFACE):
+    NODE_NAME = "Object Eval"
+    CATEGORY = "Blender"
+
+    def __init__(self):
+        super(NODE_OBJECT_EVAL, self).__init__()
+
+        # Inputs
+        self.I_name = self.add_input("obj_name", type=t.STR)
+
+        # Outputs
+        self.O_pos = self.add_output("world_pos", type=t.F3)
+        self.O_normals = self.add_output("normals", type=t.F3)  # List of Vec3 (F3)
+        self.O_matrix = self.add_output("world_matrix", type=t.F16)  # 4x4 Matrix
+        self.O_uvs = self.add_output("uv_maps", type=t.DICT)  # Dict of UV layers
+
+    def build_ui(self):
+        widget = QWidget()
+        lay = QVBoxLayout()
+        widget.setLayout(lay)
+
+        self.status_label = QLabel("No Object Linked")
+        self.status_label.setStyleSheet("color: #888;")
+        lay.addWidget(self.status_label)
+
+        return widget
+
+    def on_execute_crawler(self):
+        obj_name = self.I_name.value
+
+        # 1. Check if object exists in Blender
+        if not obj_name or obj_name not in bpy.data.objects:
+            self.status_label.setText(f"Missing: {obj_name}")
+            self.status_label.setStyleSheet("color: #ff5555;")  # Red text
+            return
+
+        obj = bpy.data.objects[obj_name]
+        self.status_label.setText(f"Connected: {obj.name}")
+        self.status_label.setStyleSheet("color: #55ff55;")  # Green text
+
+        # 2. Extract World Data
+        # World Position (Translation component of the matrix)
+        self.O_pos.value = [obj.location.x, obj.location.y, obj.location.z]
+
+        # World Matrix (Flattened list for easier passing)
+        self.O_matrix.value = [list(row) for row in obj.matrix_world]
+
+        # 3. Extract Mesh Data (Requires Mesh type)
+        if obj.type == "MESH":
+            mesh = obj.data
+
+            # Extract Normals (World Space)
+            # Note: For efficiency, we just grab vertex normals
+            self.O_normals.value = [
+                [v.normal.x, v.normal.y, v.normal.z] for v in mesh.vertices
+            ]
+
+            # Extract UVs as a Dictionary
+            uv_dict = {}
+            if mesh.uv_layers:
+                for layer in mesh.uv_layers:
+                    # Collect UV coordinates for each loop
+                    uv_dict[layer.name] = [
+                        [data.uv.x, data.uv.y] for data in layer.data
+                    ]
+
+            self.O_uvs.value = uv_dict
+        else:
+            self.O_normals.value = []
+            self.O_uvs.value = {}
+
+========================================
+E:\soon\projects\PBNPR\code\addons\gl_studio\ui\examples\nodes\Node_Dict_index.py
+========================================
+from gl_studio.ui.examples.nodes import Node_zPattren as BASE
+from gl_studio.util import util_types as t
+from PySide6.QtWidgets import QComboBox, QVBoxLayout, QWidget
+
+
+class NODE_DICT_GETTER(BASE.NODE_INTERFACE):
+    NODE_NAME = "Dict index"
+    CATEGORY = "Containers"
+
+    def __init__(self):
+        super(NODE_DICT_GETTER, self).__init__()
+        self.I_dict = self.add_input("dictionary", type=t.ANY)
+        self.O_val = self.add_output("value", type=t.ANY)
+
+        self._last_keys = []  # Internal storage to track the last seen dict keys
+
+    def build_ui(self):
+        widget = QWidget()
+        lay = QVBoxLayout()
+        widget.setLayout(lay)
+
+        self.combo_keys = QComboBox()
+        lay.addWidget(self.combo_keys)
+
+        return widget
+
+    def on_execute_crawler(self):
+        input_dict = self.I_dict.value
+
+        if not isinstance(input_dict, dict):
+            self.O_val.value = None
+            return
+
+        current_keys = list(input_dict.keys())
+        if current_keys != self._last_keys:
+            self.combo_keys.clear()
+            self.combo_keys.addItems([str(k) for k in current_keys])
+            self._last_keys = current_keys
+
+        selected_key = self.combo_keys.currentText()
+        if selected_key in input_dict:
+            self.O_val.value = input_dict[selected_key]
+        else:
+            for k, v in input_dict.items():
+                if str(k) == selected_key:
+                    self.O_val.value = v
+                    break
+
+========================================
+E:\soon\projects\PBNPR\code\addons\gl_studio\ui\examples\nodes\Node_float.py
+========================================
+from gl_studio.ui.examples.nodes import Node_zPattren as BASE
+from gl_studio.util import util_types as t
+from PySide6 import QtWidgets
+
 
 class NODE_FOLAT(BASE.NODE_INTERFACE):
-    NODE_NAME = 'Float'
+    NODE_NAME = "float"
+    CATEGORY = "Float"
 
     def __init__(self):
         super(NODE_FOLAT, self).__init__()
-        self.O_float = self.add_output(type=t.F,default_value=0.0)
+        self.O_float = self.add_output(type=t.F, default_value=0.0)
 
     def build_ui(self):
         widget = QtWidgets.QWidget()
@@ -185,7 +373,7 @@ class NODE_FOLAT(BASE.NODE_INTERFACE):
 
         return widget
 
-    def on_change_float(self,data):
+    def on_change_float(self, data):
         self.O_float.value = data
 
 ========================================
@@ -218,12 +406,13 @@ ops = {"Add": add, "Subtract": subtract, "Multiply": multiply, "Divide": divide}
 
 
 class NODE_FLOAT_MATH(BASE.NODE_INTERFACE):
-    NODE_NAME = "Float Math"
+    NODE_NAME = "Math Float"
+    CATEGORY = "Float"
 
     def __init__(self):
         super(NODE_FLOAT_MATH, self).__init__()
-        self.I_A = self.add_input("A", type=t.F)
-        self.I_B = self.add_input("B", type=t.F)
+        self.I_A = self.add_input("A", type=t.F, default_value=0.0)
+        self.I_B = self.add_input("B", type=t.F, default_value=0.0)
         self.O_out = self.add_output("out_data", type=t.F)
 
     def build_ui(self):
@@ -241,25 +430,33 @@ class NODE_FLOAT_MATH(BASE.NODE_INTERFACE):
         self.O_out.value = ops[self.combo_types.currentText()](
             self.I_A.value, self.I_B.value
         )
+        self.reset()
+
+    def reset(self):
+        self.I_A.value = 0.0
+        self.I_B.value = 0.0
 
 ========================================
 E:\soon\projects\PBNPR\code\addons\gl_studio\ui\examples\nodes\Node_printer.py
 ========================================
-from PySide6.QtWidgets import QVBoxLayout,QPushButton,QWidget,QCheckBox
 from gl_studio.ui.examples.nodes import Node_zPattren as BASE
 from gl_studio.util import util_types as t
+from PySide6.QtWidgets import QCheckBox, QPushButton, QVBoxLayout, QWidget
+
 
 class NODE_PRINTER(BASE.NODE_INTERFACE):
-    NODE_NAME = 'Printer'
+    NODE_NAME = "Printer"
+    CATEGORY = "Output"
+
     def __init__(self):
         super().__init__()
         self.I_input = self.add_input(type=t.ANY)
         self._Enabled = False
-        self._force_crawl = False # Flag for the button click
+        self._force_crawl = False  # Flag for the button click
 
     def build_ui(self):
         widget = QWidget()
-        widget.setMinimumSize(100,100)
+        widget.setMinimumSize(100, 100)
         Lay = QVBoxLayout()
         widget.setLayout(Lay)
 
@@ -269,40 +466,43 @@ class NODE_PRINTER(BASE.NODE_INTERFACE):
         Lay.addWidget(self.enabled)
 
         self.btn = QPushButton()
-        self.btn.setText('Execute Connections.')
+        self.btn.setText("Execute Connections.")
         self.btn.clicked.connect(self.on_btn_click)
         Lay.addWidget(self.btn)
 
         return widget
 
-    def on_Enable(self): self._Enabled = self.enabled.isChecked()
+    def on_Enable(self):
+        self._Enabled = self.enabled.isChecked()
 
-    def on_btn_click(self): self._force_crawl = True
-    
-   
+    def on_btn_click(self):
+        self._force_crawl = True
+
     def on_should_crawl(self):
         # Check if button was clicked OR if checkbox is on
         if self._force_crawl:
-            self._force_crawl = False # Reset so it doesn't loop
+            self._force_crawl = False  # Reset so it doesn't loop
             return True
         return self._Enabled
-    
+
     def on_execute_crawler(self):
-        print('Printer: ',self.I_input.value)
+        print("Printer: ", self.I_input.value)
 
 ========================================
 E:\soon\projects\PBNPR\code\addons\gl_studio\ui\examples\nodes\Node_str.py
 ========================================
-from PySide6 import QtWidgets
 from gl_studio.ui.examples.nodes import Node_zPattren as BASE
 from gl_studio.util import util_types as t
+from PySide6 import QtWidgets
+
 
 class NODE_STRING(BASE.NODE_INTERFACE):
-    NODE_NAME = 'String'
+    NODE_NAME = "String"
+    CATEGORY = "Str"
 
     def __init__(self):
         super(NODE_STRING, self).__init__()
-        self.O_text = self.add_output(type=t.STR,default_value='helloWorld')
+        self.O_text = self.add_output(type=t.STR, default_value="helloWorld")
 
     def build_ui(self):
         widget = QtWidgets.QWidget()
@@ -321,16 +521,15 @@ class NODE_STRING(BASE.NODE_INTERFACE):
 ========================================
 E:\soon\projects\PBNPR\code\addons\gl_studio\ui\examples\nodes\Node_zPattren.py
 ========================================
+from typing import Any
+
 from gl_studio.util import util_types as t
 from NodeGraphQt import BaseNode, NodeBaseWidget, Port
 from PySide6 import QtWidgets
 
-# UUID4 generates a random 128-bit number
-# # Result looks like: 'f47ac10b-58cc-4372-a567-0e02b2c3d479'
-
 
 class PortType(Port):
-    value = None
+    value = Any
     Type = t.NONE
 
 
@@ -356,7 +555,8 @@ class UniversalWrapper(NodeBaseWidget):
 
 
 class NODE_INTERFACE(BaseNode):
-    NODE_NAME = ""
+    NODE_NAME = "Node"
+    CATEGORY = ""
 
     # INTERNALS
     def __init__(self):
@@ -372,6 +572,7 @@ class NODE_INTERFACE(BaseNode):
     # GUI WRAPPERS
     def build_ui(self) -> QtWidgets.QWidget:
         """Build a QtWidget and return it."""
+        return QtWidgets.QWidget()
 
     def integrate_widget(self, qt_widget, label=""):
         self.node_widget = UniversalWrapper(qt_widget, label=label, parent=self.view)
@@ -420,7 +621,7 @@ class NODE_INTERFACE(BaseNode):
     def on_should_crawl(self):
         """Return True if this node is an output of a node connection branches"""
 
-    def on_execute_crawler(self):
+    def on_execute_crawler(self) -> None:
         """What will happen if executed by connected nodes (by Crawler)"""
 
 ========================================
@@ -442,30 +643,33 @@ def process_frame():pass
 ========================================
 E:\soon\projects\PBNPR\code\addons\gl_studio\ui\pyside6\editor_nodeGraph.py
 ========================================
-from NodeGraphQt import NodeGraph, BaseNode
-from PySide6 import QtWidgets
-import sys
-from gl_studio.ui.pyside6.internals import cfg as CFG
-import os
 import importlib.util
 import inspect
-from NodeGraphQt import BaseNode
-from gl_studio.ui.examples.nodes.Node_zPattren import NODE_INTERFACE as NODE
-from gl_studio.ui.examples.nodes.Node_zPattren import PortType as PORT
-from gl_studio.util import util_types as t
+import os
 from typing import cast
 
+from gl_studio.ui.examples.nodes.Node_zPattren import NODE_INTERFACE as NODE
+from gl_studio.ui.examples.nodes.Node_zPattren import PortType as PORT
+from gl_studio.ui.pyside6.internals import cfg as CFG
+from gl_studio.util import util_types as t
+from NodeGraphQt import BaseNode, NodeGraph
+from PySide6.QtGui import QKeySequence, QShortcut
+from PySide6.QtWidgets import QMenu, QMenuBar, QVBoxLayout, QWidget
+
+
 class INTERFACE:
-    nodes = {}        
+    nodes = {}
     active_links = {}  # { Input_socket_id : Output_socket_id }
-    global_node_address = 'node.pyside6'
+    global_node_address = "node.pyside6"
     directories = []
 
     def __init__(self):
-        self.graph : NodeGraph = None
-        
-        self.menu_bar : QtWidgets.QMenuBar = None
-        self.menu_add_node : QtWidgets.QMenu = None
+        self.lay: QVBoxLayout = None
+        self.graph: NodeGraph = None
+        self.menu_bar: QMenuBar = None
+        self.menu_IO: QMenu = None
+        self.menu_add_node: QMenu = None
+
 
 cfg = INTERFACE()
 
@@ -479,7 +683,7 @@ class PAG:
     def run(self):
         self.graph = cfg.graph
         if self.graph is None:
-            print('PAG.run skipped: no graph available yet.')
+            print("PAG.run skipped: no graph available yet.")
             return
 
         self.visited.clear()
@@ -488,21 +692,21 @@ class PAG:
         # 2. Find "Terminal" nodes (Nodes that SHOULD_CRAWL)
         for node in self.graph.all_nodes():
             node = cast(NODE, node)
-            if hasattr(node, 'CB_IS_CRAWLER') and node.CB_IS_CRAWLER():
+            if hasattr(node, "CB_IS_CRAWLER") and node.CB_IS_CRAWLER():
                 self.order(node)
 
         self.execs_order()
         self.reset()
 
-    def order(self, node:NODE):
+    def order(self, node: NODE):
         """Builds the Topological Sort (Execution Order)"""
         if not node or node.id in self.visited:
             return
-        
+
         self.visited.add(node.id)
 
         # Look at all input ports
-        for name, input_port in node.inputs().items(): 
+        for name, input_port in node.inputs().items():
             # Get what is connected to this input
             connected_ports = input_port.connected_ports()
             if connected_ports:
@@ -514,16 +718,16 @@ class PAG:
         self.exec_order.append(node)
 
     def execs_order(self):
-        for node in self.exec_order: 
-            node=cast(NODE,node)
+        for node in self.exec_order:
+            node = cast(NODE, node)
             # 1. Pull data from upstream
             self._propagate_inputs(node)
-            
+
             # 2. Execute the node's logic
-            if hasattr(node,'CACHED'):
+            if hasattr(node, "CACHED"):
                 if not node.CACHED:
-                    if hasattr(node, 'CB_ON_CRAWLER'):
-                        node.CACHED=True
+                    if hasattr(node, "CB_ON_CRAWLER"):
+                        node.CACHED = True
                         node.CB_ON_CRAWLER()
 
     def _propagate_inputs(self, node):
@@ -532,38 +736,25 @@ class PAG:
             connected_ports = input_port.connected_ports()
             if not connected_ports:
                 continue
-            
+
             output_port = connected_ports[0]
-            
-            input_port = cast(PORT,input_port )
-            output_port= cast(PORT,output_port)
+
+            input_port = cast(PORT, input_port)
+            output_port = cast(PORT, output_port)
 
             # Pull the 'value' property from the output socket to the input socket
             if (output_port.Type == input_port.Type) or input_port.Type == t.ANY:
                 input_port.value = output_port.value
-            
+
     def reset(self):
         for node in self.exec_order:
             node.CACHED = False
 
+
 pag = PAG()
-#============================
-def import_module():
-    """this function intend to just fetich a directory to python file"""
-    print('Importing...')
 
-def export_module():
-    print('exporting...')
-     
-import os
-import importlib.util
-import inspect
-from PySide6 import QtWidgets
-from NodeGraphQt import NodeGraph, BaseNode
-from gl_studio.ui.pyside6.internals import cfg as CFG
 
-# ... (Keep your INTERFACE class and PAG class up here) ...
-
+# ============================
 def load_nodes_from_directory(directory_path):
     """Scans directory and returns a list of valid BaseNode subclasses."""
     discovered_nodes = []
@@ -587,13 +778,36 @@ def load_nodes_from_directory(directory_path):
                                 discovered_nodes.append(obj)
                     except Exception as e:
                         print(f"Failed to load {file_path}: {e}")
-    return discovered_nodes  
-#===================================
+    return discovered_nodes
+
+
+def safe_create_node(n_type):
+    # Clear current selection to prevent other nodes from moving with the new one
+    cfg.graph.clear_selection()
+
+    # Calculate position
+    cursor_pos = cfg.graph.viewer().cursor().pos()
+    scene_pos = cfg.graph.viewer().mapToScene(cursor_pos)
+
+    # Create the node
+    cfg.graph.create_node(n_type.type_, pos=[scene_pos.x(), scene_pos.y()])
+
+
+def delete_selected_nodes():
+    # Get nodes currently selected in the graph
+    selected_nodes = cfg.graph.selected_nodes()
+    if selected_nodes:
+        # delete_nodes is the standard safe way to remove nodes in NodeGraphQt
+        cfg.graph.delete_nodes(selected_nodes)
+
+
+# ===================================
 def check_state():
     if cfg.graph:
         return True
     else:
         return False
+
 
 def process_frame():
     try:
@@ -604,108 +818,128 @@ def process_frame():
 
 
 def register():
+    widget = QWidget()
+    CFG.tabs.addTab(widget, "Node editor")
+
+    cfg.lay = QVBoxLayout()
+    widget.setLayout(cfg.lay)
+
+    cfg.menu_bar = QMenuBar()
+    cfg.lay.addWidget(cfg.menu_bar)
+
     cfg.graph = NodeGraph()
-    graph = cfg.graph
+    cfg.lay.addWidget(cfg.graph.widget)
 
-    widget = QtWidgets.QWidget()
-    CFG.tabs.addTab(widget, 'Node editor')
-
-    layout = QtWidgets.QVBoxLayout()
-    widget.setLayout(layout)
-
-    cfg.menu_bar = QtWidgets.QMenuBar()
-    layout.addWidget(cfg.menu_bar)
-    layout.addWidget(cfg.graph.widget)
-
-    cfg.menu_add_node = QtWidgets.QMenu()
-    cfg.menu_add_node.setTitle('Add Node')
+    cfg.menu_add_node = QMenu(title="Add Node")
     cfg.menu_bar.addMenu(cfg.menu_add_node)
 
-    cfg.menu_IO = QtWidgets.QMenu()
-    cfg.menu_IO.setTitle('Import / export')
+    cfg.menu_IO = QMenu(title="Import / export")
     cfg.menu_bar.addMenu(cfg.menu_IO)
 
-    (cfg.menu_IO.addAction('Import')).triggered.connect(import_module)
-    (cfg.menu_IO.addAction('Export')).triggered.connect(export_module)
+    shortcut_del = QShortcut(QKeySequence("Delete"), cfg.graph.widget)
+    shortcut_del.activated.connect(delete_selected_nodes)
+
+    shortcut_x = QShortcut(QKeySequence("X"), cfg.graph.widget)
+    shortcut_x.activated.connect(delete_selected_nodes)
 
     # --- DYNAMIC NODE REGISTRATION ---
+
     # 1. Resolve the absolute path to your 'nodes' directory
     current_dir = os.path.dirname(os.path.abspath(__file__))
-    
+
     # Adjust this relative path to point exactly to your 'nodes' folder
-    nodes_directory = os.path.normpath(os.path.join(current_dir, "..", "examples", "nodes")) 
-    
+    nodes_directory = os.path.normpath(
+        os.path.join(current_dir, "..", "examples", "nodes")
+    )
+
+    # ... inside register() in editor_nodeGraph.py ...
+
     # 2. Discover classes
     node_classes = load_nodes_from_directory(nodes_directory)
 
-    i=0
-    # 3. Register to graph and add to QMenu
-    for node_class in node_classes:
-        # Registers to NodeGraphQt (makes it available in the right-click Tab Search)
-        graph.register_node(node_class)
+    # Dictionary to keep track of created submenus
+    sub_menus = {}
 
-        # Create a QAction in the top menu bar
-        # Fallback to class name if NODE_NAME isn't explicitly set
-        display_name = getattr(node_class, f"NODE_NAME", node_class.__name__)
-        action = cfg.menu_add_node.addAction(display_name)
-        
-        # Connect the action to instantiate the node. 
-        # Note: 'n_type=node_class.type_' is captured in the lambda to avoid Python's late-binding loop issue.
-        action.triggered.connect(
-            lambda checked=False, n_type=node_class.type_: graph.create_node(n_type, push_undo=True)
-        )
-        i+=1
+    # 3. Register to graph and add to QMenu with submenus
+    for node_class in node_classes:
+        # Registers to NodeGraphQt (for Tab search)
+        cfg.graph.register_node(node_class)
+
+        # Get the category; default to 'Misc' if not defined
+        category_name = getattr(node_class, "CATEGORY", "Misc")
+
+        # Create the submenu if it doesn't exist yet
+        if category_name not in sub_menus:
+            new_sub_menu = cfg.menu_add_node.addMenu(category_name)
+            sub_menus[category_name] = new_sub_menu
+
+        target_menu = sub_menus[category_name]
+
+        # Create the action in the specific category submenu
+        display_name = getattr(node_class, "NODE_NAME", node_class.__name__)
+        action = target_menu.addAction(display_name)
+
+        action.triggered.connect(lambda _, n=node_class: safe_create_node(n))
 
 
 def unregister():
     if cfg.graph:
         cfg.graph.widget.close()
         cfg.graph = None
+
 ========================================
 E:\soon\projects\PBNPR\code\addons\gl_studio\ui\pyside6\internals.py
 ========================================
-from PySide6 import QtWidgets
 import sys
+
+from PySide6.QtWidgets import QApplication, QMainWindow, QTabWidget
+
 
 class INTERFACE:
     def __init__(self):
         self.running = False
-        self.app : QtWidgets.QApplication = None
-        self.window : QtWidgets.QMainWindow = None
-        self.tabs : QtWidgets.QTabWidget = None
-        #self.check_state = None
-        #self.render_a_frame = None
-        #self.register = None
-        #self.unregister = None
+        self.app: QApplication = None
+        self.window: QMainWindow = None
+        self.tabs: QTabWidget = None
+        # self.check_state = None
+        # self.render_a_frame = None
+        # self.register = None
+        # self.unregister = None
+
 
 cfg = INTERFACE()
 
 
 def register():
-    cfg.app = QtWidgets.QApplication(sys.argv)
+    cfg.app = QApplication(sys.argv)
     if cfg.app:
-
         cfg.running = True
 
-        cfg.window = QtWidgets.QMainWindow()
+        cfg.window = QMainWindow()
         cfg.window.setWindowTitle("GL Studio Editor")
         cfg.window.resize(800, 600)
 
-        cfg.tabs = QtWidgets.QTabWidget()
+        cfg.tabs = QTabWidget()
         cfg.window.setCentralWidget(cfg.tabs)
-        
+
         cfg.window.show()
         return
-    print("Failed to create QApplication")
-    return
-    
-def unregister(): pass
+    else:
+        print("Failed to create QApplication")
+        return
+
+
+def unregister():
+    cfg.running = False
+
 
 def check_state():
     return cfg.running
 
+
 def process_frame():
     cfg.app.processEvents()
+
 ========================================
 E:\soon\projects\PBNPR\code\addons\gl_studio\ui\pyside6\main.py
 ========================================
@@ -737,17 +971,15 @@ def process_frame():
 ========================================
 E:\soon\projects\PBNPR\code\addons\gl_studio\util\util_types.py
 ========================================
-
-
-
-
-STR = 'string'
-INT = 'int'
-F = 'F1'
-F2='F2'
-F16='F16'
-ANY = 'ANY'
-NONE = 'NONE'
+STR = "string"
+INT = "int"
+F = "F1"
+F2 = "F2"
+F3 = "F3"
+F16 = "F16"
+ANY = "ANY"
+NONE = "NONE"
+DICT = "Dict"
 
 ========================================
 E:\soon\projects\PBNPR\code\addons\gl_studio\vendor\NodeGraphQt\LICENSE.md

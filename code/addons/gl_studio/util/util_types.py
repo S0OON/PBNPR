@@ -1,11 +1,9 @@
-
-
-
-
-STR = 'string'
-INT = 'int'
-F = 'F1'
-F2='F2'
-F16='F16'
-ANY = 'ANY'
-NONE = 'NONE'
+STR = "string"
+INT = "int"
+F = "F1"
+F2 = "F2"
+F3 = "F3"
+F16 = "F16"
+ANY = "ANY"
+NONE = "NONE"
+DICT = "Dict"

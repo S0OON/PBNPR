@@ -1,13 +1,15 @@
-from PySide6 import QtWidgets
 from gl_studio.ui.examples.nodes import Node_zPattren as BASE
 from gl_studio.util import util_types as t
+from PySide6 import QtWidgets
+
 
 class NODE_FOLAT(BASE.NODE_INTERFACE):
-    NODE_NAME = 'Float'
+    NODE_NAME = "float"
+    CATEGORY = "Float"
 
     def __init__(self):
         super(NODE_FOLAT, self).__init__()
-        self.O_float = self.add_output(type=t.F,default_value=0.0)
+        self.O_float = self.add_output(type=t.F, default_value=0.0)
 
     def build_ui(self):
         widget = QtWidgets.QWidget()
@@ -20,5 +22,5 @@ class NODE_FOLAT(BASE.NODE_INTERFACE):
 
         return widget
 
-    def on_change_float(self,data):
+    def on_change_float(self, data):
         self.O_float.value = data
