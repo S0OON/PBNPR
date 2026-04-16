@@ -7,3 +7,5 @@ F16 = "F16"
 ANY = "ANY"
 NONE = "NONE"
 DICT = "Dict"
+RES_W = 1024
+RES_H = 1024

@@ -3,13 +3,14 @@ import inspect
 import os
 from typing import cast
 
-from gl_studio.ui.examples.nodes.Node_zPattren import NODE_INTERFACE as NODE
-from gl_studio.ui.examples.nodes.Node_zPattren import PortType as PORT
+import NodeGraphQt
+from gl_studio.examples.nodes.Node_zPattren import NODE_INTERFACE as NODE
+from gl_studio.examples.nodes.Node_zPattren import PortType as PORT
 from gl_studio.ui.pyside6.internals import cfg as CFG
 from gl_studio.util import util_types as t
-from NodeGraphQt import BaseNode, NodeGraph
+from NodeGraphQt import BaseNode, NodeGraph, Port
 from PySide6.QtGui import QKeySequence, QShortcut
-from PySide6.QtWidgets import QMenu, QMenuBar, QVBoxLayout, QWidget
+from PySide6.QtWidgets import QFileDialog, QMenu, QMenuBar, QVBoxLayout, QWidget
 
 
 class INTERFACE:
@@ -22,8 +23,52 @@ class INTERFACE:
         self.lay: QVBoxLayout = None
         self.graph: NodeGraph = None
         self.menu_bar: QMenuBar = None
-        self.menu_IO: QMenu = None
+        self.menu_Graph: QMenu = None
         self.menu_add_node: QMenu = None
+
+    def save_graph(self):
+        """Opens a dialog to save the current node session to a JSON file."""
+        # The dialog returns a tuple: (file_path, selected_filter)
+        file_path, _ = QFileDialog.getSaveFileName(
+            None,  # Parent widget (can be your main window)
+            "Save Node Session",  # Dialog Title
+            "",  # Default directory (leave blank for current)
+            "JSON Files (*.json);;All Files (*)",  # File filters
+        )
+
+        try:
+            for node in self.graph.all_nodes():
+                if hasattr(node, "CB_ON_SAVE"):
+                    node.CB_ON_SAVE()
+        except Exception as e:
+            print("Load failure: ", e)
+
+        if file_path:
+            self.graph.save_session(file_path)
+            print(f"Graph saved successfully to: {file_path}")
+
+    def load_graph(self):
+        """Opens a dialog to load a node session from a JSON file."""
+        file_path, _ = QFileDialog.getOpenFileName(
+            None, "Load Node Session", "", "JSON Files (*.json);;All Files (*)"
+        )
+
+        if file_path:
+            self.graph.clear_session()
+
+            # Load session - this will trigger property restoration
+            self.graph.load_session(file_path)
+            print(f"Graph loaded successfully from: {file_path}")
+
+            # Now trigger load callbacks on all nodes
+            # Use a slight delay or process events to ensure properties are ready
+            for node in self.graph.all_nodes():
+                node = cast(NODE, node)
+                if hasattr(node, "CB_ON_LOAD"):
+                    try:
+                        node.CB_ON_LOAD()
+                    except Exception as e:
+                        print(f"Load callback error on {node.NODE_NAME}: {e}")
 
 
 cfg = INTERFACE()
@@ -156,7 +201,44 @@ def delete_selected_nodes():
         cfg.graph.delete_nodes(selected_nodes)
 
 
-# ===================================
+def safe_set_port_property(port_inst: Port, prop_prefix, value):
+    node = port_inst.node()
+    prop_name = f"{prop_prefix}_{port_inst.name()}"
+
+    # Create property if it doesn't exist (handles both normal use AND deserialization)
+    if not node.has_property(prop_name):
+        node.create_property(prop_name, value)
+    else:
+        node.set_property(prop_name, value)
+
+
+def safe_get_port_property(port_inst, prop_prefix):
+    node = port_inst.node()
+    prop_name = f"{prop_prefix}_{port_inst.name()}"
+
+    val = node.get_property(prop_name) if node.has_property(prop_name) else None
+
+    return val
+
+
+def class_alterations_preperations():
+    from NodeGraphQt import Port as P
+
+    # Injecting the properties into the Port class
+    P.value = property(
+        fset=lambda self, val: safe_set_port_property(self, "port_val", val),
+        fget=lambda self: safe_get_port_property(self, "port_val"),
+    )
+
+    P.Type = property(
+        fset=lambda self, val: safe_set_port_property(self, "port_type", val),
+        fget=lambda self: safe_get_port_property(self, "port_type"),
+    )
+
+
+# ========= APPLICATION LAYER LEVEL ===============
+
+
 def check_state():
     if cfg.graph:
         return True
@@ -173,6 +255,8 @@ def process_frame():
 
 
 def register():
+    class_alterations_preperations()
+    # UI
     widget = QWidget()
     CFG.tabs.addTab(widget, "Node editor")
 
@@ -188,8 +272,11 @@ def register():
     cfg.menu_add_node = QMenu(title="Add Node")
     cfg.menu_bar.addMenu(cfg.menu_add_node)
 
-    cfg.menu_IO = QMenu(title="Import / export")
-    cfg.menu_bar.addMenu(cfg.menu_IO)
+    cfg.menu_Graph = QMenu(title="Graph settings")
+    cfg.menu_bar.addMenu(cfg.menu_Graph)
+
+    (cfg.menu_Graph.addAction("Save")).triggered.connect(cfg.save_graph)
+    (cfg.menu_Graph.addAction("Load")).triggered.connect(cfg.load_graph)
 
     shortcut_del = QShortcut(QKeySequence("Delete"), cfg.graph.widget)
     shortcut_del.activated.connect(delete_selected_nodes)
@@ -204,7 +291,7 @@ def register():
 
     # Adjust this relative path to point exactly to your 'nodes' folder
     nodes_directory = os.path.normpath(
-        os.path.join(current_dir, "..", "examples", "nodes")
+        os.path.join(current_dir, "..", "..", "examples", "nodes")
     )
 
     # ... inside register() in editor_nodeGraph.py ...

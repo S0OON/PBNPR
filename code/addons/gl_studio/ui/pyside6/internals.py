@@ -31,10 +31,21 @@ def register():
         cfg.window.setCentralWidget(cfg.tabs)
 
         cfg.window.show()
-        return
     else:
         print("Failed to create QApplication")
         return
+
+    # In internals.py
+    cfg.app.setStyleSheet("""
+        QLabel {
+            color: #E0E0E0;
+        }
+        QLineEdit, QPlainTextEdit {
+            background-color: #252525;
+            color: #FFFFFF;
+            border: 1px solid #444;
+        }
+    """)
 
 
 def unregister():
