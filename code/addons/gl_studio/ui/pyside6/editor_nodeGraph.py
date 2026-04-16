@@ -70,6 +70,11 @@ class INTERFACE:
                     except Exception as e:
                         print(f"Load callback error on {node.NODE_NAME}: {e}")
 
+    def ref_pos(self):
+        for node in self.graph.all_nodes():
+            p = self.graph.widget.pos()
+            node.set_pos(p.x(), p.y())
+
 
 cfg = INTERFACE()
 
@@ -283,6 +288,9 @@ def register():
 
     shortcut_x = QShortcut(QKeySequence("X"), cfg.graph.widget)
     shortcut_x.activated.connect(delete_selected_nodes)
+
+    shortcut_l = QShortcut(QKeySequence("l"), cfg.graph.widget)
+    shortcut_l.activated.connect(cfg.ref_pos)
 
     # --- DYNAMIC NODE REGISTRATION ---
 

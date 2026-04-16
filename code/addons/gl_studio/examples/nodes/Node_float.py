@@ -1,6 +1,6 @@
 from gl_studio.examples.nodes import Node_zPattren as BASE
 from gl_studio.util import util_types as t
-from PySide6.QtWidgets import QDoubleSpinBox
+from PySide6.QtWidgets import QDoubleSpinBox, QVBoxLayout, QWidget
 
 
 class NODE_FOLAT(BASE.NODE_INTERFACE):

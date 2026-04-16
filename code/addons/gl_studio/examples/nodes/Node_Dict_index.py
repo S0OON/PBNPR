@@ -15,14 +15,8 @@ class NODE_DICT_GETTER(BASE.NODE_INTERFACE):
         self._last_keys = []  # Internal storage to track the last seen dict keys
 
     def build_ui(self):
-        widget = QWidget()
-        lay = QVBoxLayout()
-        widget.setLayout(lay)
-
         self.combo_keys = QComboBox()
-        lay.addWidget(self.combo_keys)
-
-        return widget
+        return self.combo_keys
 
     def on_execute_crawler(self):
         input_dict = self.I_dict.value

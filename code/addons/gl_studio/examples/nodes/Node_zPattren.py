@@ -2,7 +2,6 @@ from typing import Any
 
 from gl_studio.util import util_types as t
 from NodeGraphQt import BaseNode, NodeBaseWidget, Port
-from PySide6 import QtWidgets
 
 
 class PortType(Port):
@@ -21,8 +20,7 @@ class UniversalWrapper(NodeBaseWidget):
         self.set_name(label)
         self.set_label(label)
 
-        self.custom_ui = qt_widget
-        self.set_custom_widget(self.custom_ui)
+        self.set_custom_widget(qt_widget)
 
     def get_value(self):
         return ""  # Satisfies the library requirements
@@ -38,7 +36,9 @@ class NODE_INTERFACE(BaseNode):
     # INTERNALS
     def __init__(self):
         super(NODE_INTERFACE, self).__init__()
-        self.create_property(name="null", value="")
+        self.create_property(
+            name="null", value=""
+        )  # Satisfies the library requirements
 
         self.CB_IS_CRAWLER = self.on_should_crawl
         self.CB_ON_CRAWLER = self.on_execute_crawler
@@ -53,17 +53,12 @@ class NODE_INTERFACE(BaseNode):
         """Utilty empty function."""
 
     # GUI WRAPPERS
-    def build_ui(self) -> QtWidgets.QWidget:
-        """This function should Build a QtWidget and return it be the node content."""
-        return QtWidgets.QWidget()
+    def build_ui(self):
+        """This function should Build and Return a Naitive PySide6.QtWidgets.* to be in the node content."""
 
     def integrate_widget(self, qt_widget, label=""):
-        # Change parent=self.view to parent=None
-        self.node_widget = UniversalWrapper(qt_widget, label=label, parent=None)
-
-        # NodeGraphQt handles adding this to the node's internal proxy widget
-        self.add_custom_widget(self.node_widget)
-        self.widget = qt_widget
+        node_widget = UniversalWrapper(qt_widget, label=label, parent=self.view)
+        self.add_custom_widget(node_widget)
 
     def add_input(
         self,

@@ -38,129 +38,6 @@ if __name__ == "__main__":
     write_combined_output(files, os.path.join(current_dir, OUTPUT_FILE))
     print(f"✅ Combined {len(files)} files into {OUTPUT_FILE}")
 ========================================
-E:\soon\projects\PBNPR\code\addons\gl_studio\__init__.py
-========================================
-# This file belongs to S00N's PBNPR Blender Add-on
-# all rights reserved (C) 2026 S00N
-bl_info = {
-    "name": "PBNPR: GL studio",
-    "author": "S00N",
-    "version": (1, 0),
-    "blender": (5, 0, 1),
-    "location": "View3D > N-Panel > PBNPR",
-    "description": "High-performance GLSL viewport manager and baker",
-    "category"   : "Render",
-}
-
-import bpy
-from typing import cast
-from gl_studio.ui.pyside6 import main
-# ---------------------------------------
-ID_OP_EXEC_WINDOW = "wm.gl_open_gl_studio"
-
-# ---------------------------------------
-class gl_PT_main_settings(bpy.types.PropertyGroup):
-    fps: bpy.props.FloatProperty(
-        name="FPS",
-        description="Frames per second for DPG rendering",
-        default=30.0,
-        min=1.0,
-        max=120.0
-    ) # pyright: ignore[reportInvalidTypeForm]
-    is_running: bpy.props.BoolProperty(
-        name="Running State",
-        default=False
-    ) # pyright: ignore[reportInvalidTypeForm]
-
-class gl_OT_dpg(bpy.types.Operator):
-    bl_idname = ID_OP_EXEC_WINDOW
-    bl_label = "Open Window"
-    _timer = None
-
-    def modal(self, context, event):
-        settings = cast(gl_PT_main_settings,context.scene.gl_studio_settings)
-        
-        if not settings.is_running:
-            self.cancel(context)
-            return {'FINISHED'}
-
-        if event.type == 'TIMER':
-            if main.check_state():
-                main.process_frame()
-            else:
-                self.cancel(context)
-                return {'FINISHED'}
-        return {'PASS_THROUGH'}
-
-    def execute(self, context):
-        settings = cast(gl_PT_main_settings,context.scene.gl_studio_settings)
-        
-        if settings.is_running:
-            self.report({'INFO'}, "DPG is already running")
-            return {'CANCELLED'}
-
-
-        main.register()
-        
-        settings.is_running = True
-        
-
-        self._timer = context.window_manager.event_timer_add(
-            time_step=1.0/settings.fps, window=context.window)
-        context.window_manager.modal_handler_add(self)
-        
-        return {'RUNNING_MODAL'}
-    
-    def cancel(self, context):
-        if self._timer:
-            context.window_manager.event_timer_remove(self._timer)
-        settings = cast(gl_PT_main_settings,context.scene.gl_studio_settings)
-        
-        settings.is_running = False
-
-        main.unregister()
-
-
-class gl_PT_main(bpy.types.Panel):
-    bl_label = "gl manager"
-    bl_idname = "gl_PT_main_panel"
-    bl_space_type = 'VIEW_3D'
-    bl_region_type = 'UI'
-    bl_category = 'PBNPR'
-
-    def draw(self, context):
-        layout = self.layout
-        settings = cast(gl_PT_main_settings,context.scene.gl_studio_settings)
-        
-        col = layout.column(align=True)
-        col.prop(settings, "fps", slider=True)
-        
-        if not settings.is_running:
-            col.operator(ID_OP_EXEC_WINDOW, text="Start DPG", icon='PLAY')
-        else:
-            # Shutdown button (Toggles the bool which the modal watches)
-            col.prop(settings, "is_running", text="Shutdown DPG", icon='QUIT', toggle=True)
-            col.label(text="DONT CLICK!")
-
-# ---------------------------------------
-cls = (
-   gl_PT_main_settings,
-   gl_OT_dpg, 
-   gl_PT_main
-)
-
-def register():
-    for cl in cls:
-        bpy.utils.register_class(cl)
-    bpy.types.Scene.gl_studio_settings = bpy.props.PointerProperty(type=gl_PT_main_settings)
-
-def unregister():
-    del bpy.types.Scene.gl_studio_settings
-    for cl in reversed(cls):
-        bpy.utils.unregister_class(cl)
-    main.unregister()
-
-========================================
 E:\soon\projects\PBNPR\code\addons\gl_studio\examples\nodes\Node_bpy_camData.py
 ========================================
 import bpy
@@ -487,7 +364,7 @@ E:\soon\projects\PBNPR\code\addons\gl_studio\examples\nodes\Node_float.py
 ========================================
 from gl_studio.examples.nodes import Node_zPattren as BASE
 from gl_studio.util import util_types as t
-from PySide6.QtWidgets import QDoubleSpinBox
+from PySide6.QtWidgets import QDoubleSpinBox, QVBoxLayout, QWidget
 
 
 class NODE_FOLAT(BASE.NODE_INTERFACE):
@@ -495,8 +372,9 @@ class NODE_FOLAT(BASE.NODE_INTERFACE):
     CATEGORY = "Float"
 
     def __init__(self):
-        super(NODE_FOLAT, self).__init__()
-        self.O_float = self.add_output(type=t.F, default_value=0.0)
+        super().__init__()
+        self.O_float = self.add_output(name="float out", type=t.F, default_value=5.0)
+        self.reset()
 
     def build_ui(self):
         self.slider = QDoubleSpinBox()
@@ -508,8 +386,11 @@ class NODE_FOLAT(BASE.NODE_INTERFACE):
     def on_ui_change(self, v):
         self.O_float.value = v
 
+    def reset(self):
+        self.slider.setValue(self.O_float.value)
+
     def on_graph_load(self):
-        self.slider.setValue(float(self.O_float.value) if self.O_float.value else 0.0)
+        self.reset()
 
 ========================================
 E:\soon\projects\PBNPR\code\addons\gl_studio\examples\nodes\Node_float_math.py
@@ -517,6 +398,8 @@ E:\soon\projects\PBNPR\code\addons\gl_studio\examples\nodes\Node_float_math.py
 from gl_studio.examples.nodes import Node_zPattren as BASE
 from gl_studio.util import util_types as t
 from PySide6.QtWidgets import QCheckBox, QComboBox, QPushButton, QVBoxLayout, QWidget
+
+STATIC = "Math type"
 
 
 def add(a, b):
@@ -549,27 +432,34 @@ class NODE_FLOAT_MATH(BASE.NODE_INTERFACE):
         self.I_A = self.add_input("A", type=t.F, default_value=0.0)
         self.I_B = self.add_input("B", type=t.F, default_value=0.0)
         self.O_out = self.add_output("out_data", type=t.F)
+        self.reset()
 
     def build_ui(self):
-        widget = QWidget()
-        lay = QVBoxLayout()
-        widget.setLayout(lay)
+        self.Combo = QComboBox()
 
-        self.combo_types = QComboBox()
-        self.combo_types.addItems(ops.keys())
-        lay.addWidget(self.combo_types)
+        self.Combo.addItems(ops.keys())
+        self.Combo.currentTextChanged.connect(self.reset)
 
-        return widget
+        return self.Combo
 
     def on_execute_crawler(self):
-        self.O_out.value = ops[self.combo_types.currentText()](
-            self.I_A.value, self.I_B.value
-        )
+        self.O_out.value = ops[self.Combo.currentText()](self.I_A.value, self.I_B.value)
         self.reset()
 
     def reset(self):
         self.I_A.value = 0.0
         self.I_B.value = 0.0
+
+        if not self.has_property(STATIC):
+            self.create_property(STATIC, self.Combo.currentText())
+
+    def on_graph_save(self):
+        self.reset()
+
+    def on_graph_load(self):
+        if self.has_property(STATIC):
+            if self.get_property(STATIC) is not None:
+                self.Combo.setCurrentText(self.get_property(STATIC))
 
 ========================================
 E:\soon\projects\PBNPR\code\addons\gl_studio\examples\nodes\Node_mgl.py
@@ -848,22 +738,24 @@ class NODE_STRING(BASE.NODE_INTERFACE):
     CATEGORY = "String"
 
     def __init__(self):
-        super(NODE_STRING, self).__init__()
+        super().__init__()
         self.O_text = self.add_output(type=t.STR, default_value="helloWorld")
+        self.reset()
 
     def build_ui(self):
-        widget = QtWidgets.QWidget()
-        lay = QtWidgets.QVBoxLayout()
-        widget.setLayout(lay)
-
         self.line = QtWidgets.QLineEdit()
         self.line.textChanged.connect(self.on_text_change)
-        lay.addWidget(self.line)
 
-        return widget
+        return self.line
 
     def on_text_change(self, data):
         self.O_text.value = data
+
+    def reset(self):
+        self.line.setText(self.O_text.value)
+
+    def on_graph_load(self):
+        self.reset()
 
 ========================================
 E:\soon\projects\PBNPR\code\addons\gl_studio\examples\nodes\Node_str_block.py
@@ -884,6 +776,8 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+STATIC = "ui_file_path"
+
 
 class NODE_TEXT_BLOCK(BASE.NODE_INTERFACE):
     NODE_NAME = "Text Block"
@@ -893,6 +787,7 @@ class NODE_TEXT_BLOCK(BASE.NODE_INTERFACE):
         super().__init__()
         self.O_text = self.add_output("Text", type=t.STR)
         self.text_field_pacing = 0
+        self.reset()
 
     def build_ui(self):
         widget = QWidget()
@@ -965,6 +860,15 @@ class NODE_TEXT_BLOCK(BASE.NODE_INTERFACE):
             # Fallback: Just use what is manually typed in the box
             self.O_text.value = self.ui_text.toPlainText()
 
+    def reset(self):
+        if not self.has_property(STATIC):
+            self.create_property(STATIC, self.ui_filepath.text())
+        else:
+            self.ui_filepath.setText(self.get_property(STATIC))
+
+    def on_graph_load(self):
+        self.reset()
+
 ========================================
 E:\soon\projects\PBNPR\code\addons\gl_studio\examples\nodes\Node_str_combine.py
 ========================================
@@ -1020,8 +924,7 @@ class UniversalWrapper(NodeBaseWidget):
         self.set_name(label)
         self.set_label(label)
 
-        self.custom_ui = qt_widget
-        self.set_custom_widget(self.custom_ui)
+        self.set_custom_widget(qt_widget)
 
     def get_value(self):
         return ""  # Satisfies the library requirements
@@ -1037,7 +940,9 @@ class NODE_INTERFACE(BaseNode):
     # INTERNALS
     def __init__(self):
         super(NODE_INTERFACE, self).__init__()
-        self.create_property(name="null", value="")
+        self.create_property(
+            name="null", value=""
+        )  # Satisfies the library requirements
 
         self.CB_IS_CRAWLER = self.on_should_crawl
         self.CB_ON_CRAWLER = self.on_execute_crawler
@@ -1048,17 +953,16 @@ class NODE_INTERFACE(BaseNode):
         UTILITY_WIDGET = self.build_ui()
         self.integrate_widget(UTILITY_WIDGET)
 
+    def reset(self):
+        """Utilty empty function."""
+
     # GUI WRAPPERS
-    def build_ui(self) -> QtWidgets.QWidget:
-        """This function should Build a QtWidget and return it be the node content."""
-        return QtWidgets.QWidget()
+    def build_ui(self):
+        """This function should Build and Return a Naitive PySide6.QtWidgets.* to be in the node content."""
 
     def integrate_widget(self, qt_widget, label=""):
-        self.node_widget = UniversalWrapper(qt_widget, label=label, parent=self.view)
-
-        self.add_custom_widget(self.node_widget)
-
-        self.widget = qt_widget
+        node_widget = UniversalWrapper(qt_widget, label=label, parent=self.view)
+        self.add_custom_widget(node_widget)
 
     def add_input(
         self,
@@ -1074,9 +978,7 @@ class NODE_INTERFACE(BaseNode):
         port = super().add_input(
             name, multi_input, display_name, color, locked, painter_func
         )
-        if default_value:
-            if not port.value:
-                port.value = default_value
+        port.value = default_value
         port.Type = type
         return port
 
@@ -1094,6 +996,7 @@ class NODE_INTERFACE(BaseNode):
         port = super().add_output(
             name, multi_output, display_name, color, locked, painter_func
         )
+        x = port.value
         if default_value:
             if not port.value:
                 port.value = default_value
@@ -1289,6 +1192,7 @@ from typing import cast
 
 import NodeGraphQt
 from gl_studio.examples.nodes.Node_zPattren import NODE_INTERFACE as NODE
+from gl_studio.examples.nodes.Node_zPattren import PortType as PORT
 from gl_studio.ui.pyside6.internals import cfg as CFG
 from gl_studio.util import util_types as t
 from NodeGraphQt import BaseNode, NodeGraph, Port
@@ -1339,12 +1243,24 @@ class INTERFACE:
         if file_path:
             self.graph.clear_session()
 
+            # Load session - this will trigger property restoration
             self.graph.load_session(file_path)
             print(f"Graph loaded successfully from: {file_path}")
 
+            # Now trigger load callbacks on all nodes
+            # Use a slight delay or process events to ensure properties are ready
             for node in self.graph.all_nodes():
+                node = cast(NODE, node)
                 if hasattr(node, "CB_ON_LOAD"):
-                    node.CB_ON_LOAD()
+                    try:
+                        node.CB_ON_LOAD()
+                    except Exception as e:
+                        print(f"Load callback error on {node.NODE_NAME}: {e}")
+
+    def ref_pos(self):
+        for node in self.graph.all_nodes():
+            p = self.graph.widget.pos()
+            node.set_pos(p.x(), p.y())
 
 
 cfg = INTERFACE()
@@ -1477,23 +1393,28 @@ def delete_selected_nodes():
         cfg.graph.delete_nodes(selected_nodes)
 
 
+def safe_set_port_property(port_inst: Port, prop_prefix, value):
+    node = port_inst.node()
+    prop_name = f"{prop_prefix}_{port_inst.name()}"
+
+    # Create property if it doesn't exist (handles both normal use AND deserialization)
+    if not node.has_property(prop_name):
+        node.create_property(prop_name, value)
+    else:
+        node.set_property(prop_name, value)
+
+
+def safe_get_port_property(port_inst, prop_prefix):
+    node = port_inst.node()
+    prop_name = f"{prop_prefix}_{port_inst.name()}"
+
+    val = node.get_property(prop_name) if node.has_property(prop_name) else None
+
+    return val
+
+
 def class_alterations_preperations():
     from NodeGraphQt import Port as P
-
-    def safe_set_port_property(port_inst, prop_prefix, value):
-        node = port_inst.node()
-        prop_name = f"{prop_prefix}_{port_inst.name()}"
-
-        if node.has_property(prop_name):
-            node.set_property(prop_name, value)
-        else:
-            node.create_property(prop_name, value)
-
-    def safe_get_port_property(port_inst, prop_prefix):
-        node = port_inst.node()
-        prop_name = f"{prop_prefix}_{port_inst.name()}"
-        # Fallback to None if it hasn't been set yet
-        return node.get_property(prop_name) if node.has_property(prop_name) else None
 
     # Injecting the properties into the Port class
     P.value = property(
@@ -1508,6 +1429,8 @@ def class_alterations_preperations():
 
 
 # ========= APPLICATION LAYER LEVEL ===============
+
+
 def check_state():
     if cfg.graph:
         return True
@@ -1552,6 +1475,9 @@ def register():
 
     shortcut_x = QShortcut(QKeySequence("X"), cfg.graph.widget)
     shortcut_x.activated.connect(delete_selected_nodes)
+
+    shortcut_l = QShortcut(QKeySequence("l"), cfg.graph.widget)
+    shortcut_l.activated.connect(cfg.ref_pos)
 
     # --- DYNAMIC NODE REGISTRATION ---
 
@@ -1693,34 +1619,6 @@ def process_frame():
     editor_general.process_frame()
 
 ========================================
-E:\soon\projects\PBNPR\code\addons\gl_studio\util\main.py
-========================================
-from gl_studio.ui.pyside6 import internals
-from gl_studio.ui.pyside6 import editor_nodeGraph
-from gl_studio.ui.pyside6 import editor_general
-
-
-def register():
-    internals.register()
-    editor_nodeGraph.register()
-    editor_general.register()
-
-def unregister():
-    internals.unregister()
-    editor_nodeGraph.unregister()
-    editor_general.unregister()
-
-def check_state():
-    a = internals.check_state()
-    b = editor_nodeGraph.check_state()
-    c = editor_general.check_state()
-    return a and b and c
-
-def process_frame():
-    internals.process_frame()
-    editor_nodeGraph.process_frame()
-    editor_general.process_frame()
-========================================
 E:\soon\projects\PBNPR\code\addons\gl_studio\util\util_types.py
 ========================================
 STR = "string"
@@ -1738,6 +1636,9 @@ RES_H = 1024
 ========================================
 E:\soon\projects\PBNPR\code\util\blender_headless.py
 ========================================
+import sys
+
+sys.path.append("E:/soon/projects/PBNPR/code/addons/")
 from gl_studio.ui.pyside6 import main
 
 main.register()
