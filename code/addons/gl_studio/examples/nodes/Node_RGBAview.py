@@ -18,16 +18,16 @@ class NODE_RGBA_VIEWER(BASE.NODE_INTERFACE):
         self.I_height = self.add_input("height", type=t.F)
 
         # Default resolutions
-        self.I_width.value = 512.0
-        self.I_height.value = 512.0
+        self.I_width.value = t.RES_W
+        self.I_height.value = t.RES_H
 
         # Output (Pass-through)
         self.O_rgba = self.add_output("rgba_data", type=t.ANY)
-
+        self.O_mock = self.add_output("Mock output", type=t.NONE)
         # Internal state
         self.current_data = None
 
-    def build_ui(self):
+    def on_gui(self):
         widget = QWidget()
         lay = QVBoxLayout()
         lay.setContentsMargins(5, 5, 5, 5)
@@ -46,7 +46,8 @@ class NODE_RGBA_VIEWER(BASE.NODE_INTERFACE):
 
         return widget
 
-    def on_execute_crawler(self):
+    def on_stream(self):
+        self.on_sync_port_values()
         # 1. Grab data
         self.current_data = self.I_rgba.value
 
@@ -65,40 +66,40 @@ class NODE_RGBA_VIEWER(BASE.NODE_INTERFACE):
         data = self.current_data
 
         if data is None:
-            print("No data to view! Run the graph first.")
+            print("No data to view!")
             return
 
         try:
-            # Smart Check 1: If user plugged in the whole render_maps dict, grab 'combined'
-            if isinstance(data, dict) and "combined" in data:
-                data = data["combined"]
-
-            if not isinstance(data, np.ndarray):
-                print(f"Cannot view data of type: {type(data)}")
-                return
-
-            # Smart Check 2: Convert float32 [0.0 - 1.0] to uint8 [0 - 255]
-            if data.dtype == np.float32 or data.dtype == np.float64:
-                img_data = (np.clip(data, 0.0, 1.0) * 255).astype(np.uint8)
-            else:
-                img_data = data.astype(np.uint8)
-
             w = int(self.I_width.value)
             h = int(self.I_height.value)
 
-            # Smart Check 3: Reshape if it's a flat array
-            if len(img_data.shape) == 1:
-                # PIL expects (Height, Width, Channels)
-                img_data = img_data.reshape((h, w, 4))
+            # 1. Convert bytes back to a numpy array
+            if isinstance(data, bytes):
+                # Modern MGL usually outputs float32; use np.uint8 if your shader handles normalization
+                img_data = np.frombuffer(data, dtype=np.uint8)
+            elif isinstance(data, np.ndarray):
+                img_data = data
+            else:
+                print(f"Unsupported type: {type(data)}")
+                return
 
-            # Create PIL Image
-            img = Image.fromarray(img_data, "RGBA")
-
-            # Smart Check 4: OpenGL renders bottom-up. Flip it so it looks right.
-            img = ImageOps.flip(img)
-
-            # Show the image using the default OS image viewer
-            img.show()
+            # Create image from raw bytes
+            image = Image.frombytes(
+                "RGB",
+                (int(self.I_width.value), int(self.I_height.value)),
+                self.I_rgba.value,
+            )
+            image.show()
 
         except Exception as e:
             print(f"Viewer Error: {e}")
+
+    def reset(self):
+        self.I_rgba.value = None
+        self.O_rgba.value = None
+
+    def on_graph_save(self):
+        self.reset()
+
+    def on_graph_load(self):
+        self.reset()

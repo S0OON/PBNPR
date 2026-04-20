@@ -1,113 +1,119 @@
-import moderngl as g
+import moderngl as gl
 import numpy as np
-from gl_studio.util import util_types as t
 
 
-class GL:
-    def __init__(self, ctx: g.Context):
-        self.ctx = ctx
+class SHADER:
+    def __init__(self) -> None:
+        self.ctx = gl.create_context(standalone=True)
+
+        # State trackers for safe cleanup
         self.prog = None
-        self.vao = None
         self.fbo = None
+        self.vao = None
+        self.vbos = []  # Keep track of dynamic buffers!
 
-        # Keep track of generated objects so we can cleanly release them
-        self._vbos = []
-        self._textures = []
-        self._outputs = {}
+        # Default shaders
+        self.src_v = """
+            #version 330
+            in vec3 in_position;
+            void main() {
+                gl_Position = vec4(in_position, 1.0);
+            }
+        """
+        self.src_f = """
+            #version 330
 
-    def compile(
-        self,
-        V: str,
-        F: str,
-        dict_uni: dict,
-        dict_res: dict,
-        out_size=(t.RES_W, t.RES_H),
-    ):
-        # 1. Compile Shader
-        self.prog = self.ctx.program(vertex_shader=V, fragment_shader=F)
+            out vec4 f_color;
+            void main() {
+                f_color = vec4(1.0);
+            }
+        """
 
-        # 2. Handle Uniforms (Variables, Matrices, etc.)
-        for name, val in dict_uni.items():
-            if name in self.prog:
-                # MGL handles most types dynamically, but arrays need .write()
-                if isinstance(val, np.ndarray):
-                    self.prog[name].write(val.tobytes())
-                else:
-                    self.prog[name].value = val
-
-        # 3. Handle dict_res (Textures and Geometry/VBOs)
-        vao_content = []
-        tex_unit = 0
-
-        for name, data in dict_res.items():
-            if name not in self.prog:
-                continue  # Skip data the shader doesn't care about!
-
-            # TYPE A: It's an Image/Texture (Assuming a 3D numpy array: H, W, Channels)
-            if isinstance(data, np.ndarray) and len(data.shape) == 3:
-                h, w, c = data.shape
-                tex = self.ctx.texture((w, h), c, data.tobytes())  # 1. Upload to GPU
-                tex.use(location=tex_unit)  # 2. Put in a "Slot"
-                self.prog[name].value = tex_unit  # 3. Tell the shader which slot!
-                self._textures.append(tex)
-                tex_unit += 1
-
-            # TYPE B: It's Vertex Data / UVs (Assuming a 2D numpy array: Vertices, Components)
-            elif isinstance(data, np.ndarray) and len(data.shape) == 2:
-                components = data.shape[1]  # e.g., 3 for vec3 position, 2 for vec2 UV
-                vbo = self.ctx.buffer(data.astype("f4").tobytes())
-
-                # Format string for MGL (e.g., '3f', '2f')
-                mgl_format = f"{components}f"
-
-                # Append to our dynamic VAO list: (buffer, format, attribute_name)
-                vao_content.append((vbo, mgl_format, name))
-                self._vbos.append(vbo)
-
-        # 4. Build Dynamic VAO
-        # If no geometry was provided, we can't really draw, but we handle it safely
-        if vao_content:
-            self.vao = self.ctx.vertex_array(self.prog, vao_content)
-        else:
-            print("Warning: No vertex data provided for VAO!")
-
-        # 5. Handle Outputs (FBO)
-        # We create a dictionary of output textures. You can expand this to check for depth.
-        out_tex = self.ctx.texture(out_size, 4)  # RGBA combined output
-        self.fbo = self.ctx.framebuffer(color_attachments=[out_tex])
-        self._outputs["Combined"] = out_tex
-
-    def execute(self) -> dict:
-        if not self.vao or not self.fbo:
-            return {}
-
-        self.fbo.use()
-        self.ctx.clear(0.0, 0.0, 0.0, 0.0)
-        self.vao.render(g.TRIANGLES)
-
-        # Extract data from GPU back to CPU/Numpy for your node outputs
-        result_dict = {}
-        for name, tex in self._outputs.items():
-            raw = tex.read()
-            # Convert back to numpy array (H, W, 4)
-            arr = np.frombuffer(raw, dtype=np.uint8).reshape(
-                tex.height, tex.width, tex.components
-            )
-            result_dict[name] = arr
-
-        return result_dict
-
-    def release(self):
-        # END: ALWAYS CLEAR dynamically generated resources
-        if self.vao:
-            self.vao.release()
-        if self.fbo:
-            self.fbo.release()
+    def compile(self, w, h):
+        """Compiles the shader program and sets up the render target."""
+        # 1. Clear old data if re-compiling to prevent VRAM leaks
         if self.prog:
             self.prog.release()
-        for vbo in self._vbos:
+        if self.fbo:
+            self.fbo.release()
+
+        # 2. Compile Shader
+        self.prog = self.ctx.program(
+            vertex_shader=self.src_v,
+            fragment_shader=self.src_f,
+        )
+
+        # 3. Setup Off-screen Framebuffer
+        width, height = int(w), int(h)
+        self.fbo = self.ctx.simple_framebuffer((width, height), components=3)
+
+    def uniforms(self, uniforms_dict):
+        """Pushes global variables to the shader."""
+        if not self.prog or not uniforms_dict:
+            return
+
+        # Must use .items() to get both key and value!
+        for name, data in uniforms_dict.items():
+            if name in self.prog:
+                # Handle flattened matrices (16 floats) using raw bytes
+                if isinstance(data, (list, tuple)) and len(data) == 16:
+                    self.prog[name].write(np.array(data, dtype="f4").tobytes())
+                # Handle normal values (floats, vectors)
+                else:
+                    self.prog[name].value = data
+
+    def vertex_attributes(self, attributes_dict):
+        """Generates VBOs and creates the VAO layout."""
+        if not self.prog or not attributes_dict:
+            return
+
+        vao_blueprint = []
+        self.vbos = []  # Reset VBO tracker
+
+        for attr_name, attr_obj in attributes_dict.items():
+            if attr_name in self.prog:
+                # Create buffer and track it
+                vbo = self.ctx.buffer(attr_obj.data)
+                self.vbos.append(vbo)
+
+                # Add to blueprint
+                vao_blueprint.append((vbo, attr_obj.fmt, attr_name))
+
+        if not vao_blueprint:
+            return
+
+        # Build and store the VAO
+        self.vao = self.ctx.vertex_array(self.prog, vao_blueprint)
+
+    def render(self):
+        """Executes the draw call and returns RGB bytes."""
+        if not self.vao or not self.fbo:
+            return None
+
+        # Lock onto the FBO right before rendering
+        self.fbo.use()
+        self.ctx.clear(0.1, 0.1, 0.1)
+
+        self.ctx.enable(gl.DEPTH_TEST)
+        self.vao.render(gl.TRIANGLES)
+        self.ctx.disable(gl.DEPTH_TEST)
+
+        return self.fbo.read(components=3)
+
+    def clear(self):
+        """Safely destroys all GPU objects to free VRAM."""
+        if self.vao:
+            self.vao.release()
+            self.vao = None
+
+        for vbo in self.vbos:
             vbo.release()
-        for tex in self._textures:
-            tex.release()
-        for out in self._outputs.values():
-            out.release()
+        self.vbos.clear()
+
+        if self.prog:
+            self.prog.release()
+            self.prog = None
+
+        if self.fbo:
+            self.fbo.release()
+            self.fbo = None

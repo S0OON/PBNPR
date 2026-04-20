@@ -3,49 +3,56 @@ import sys
 from PySide6.QtWidgets import QApplication, QMainWindow, QTabWidget
 
 
+def _PreProcess():
+    pass
+
+
+def _Create_shortcuts():
+    pass
+
+
+def _Create_GUI():
+    pass
+
+
 class INTERFACE:
     def __init__(self):
         self.running = False
+
         self.app: QApplication = None
+
         self.window: QMainWindow = None
         self.tabs: QTabWidget = None
-        # self.check_state = None
-        # self.render_a_frame = None
-        # self.register = None
-        # self.unregister = None
+
+
+class Window(QMainWindow):
+    def __init__(self):
+        super().__init__()
+        self.setWindowTitle("GL Studio Editor")
+        self.resize(1000, 800)
+        self.Tabs = QTabWidget()
+        self.setCentralWidget(self.Tabs)
 
 
 cfg = INTERFACE()
 
 
 def register():
+    # init
     cfg.app = QApplication(sys.argv)
-    if cfg.app:
-        cfg.running = True
 
-        cfg.window = QMainWindow()
-        cfg.window.setWindowTitle("GL Studio Editor")
-        cfg.window.resize(800, 600)
-
-        cfg.tabs = QTabWidget()
-        cfg.window.setCentralWidget(cfg.tabs)
-
-        cfg.window.show()
-    else:
+    if cfg.app == None:
         print("Failed to create QApplication")
         return
 
-    # In internals.py
-    cfg.app.setStyleSheet("""
-        QLabel {
-            color: #E0E0E0;
-        }
-        QLineEdit, QPlainTextEdit {
-            background-color: #252525;
-            color: #FFFFFF;
-            border: 1px solid #444;
-        }
-    """)
+    # start
+    cfg.running = True
+
+    cfg.window = Window()
+
+    cfg.tabs = cfg.window.Tabs
+
+    cfg.window.show()
 
 
 def unregister():

@@ -1,12 +1,12 @@
 import importlib.util
 import inspect
 import os
+import traceback
 from typing import cast
 
-import NodeGraphQt
 from gl_studio.examples.nodes.Node_zPattren import NODE_INTERFACE as NODE
 from gl_studio.examples.nodes.Node_zPattren import PortType as PORT
-from gl_studio.ui.pyside6.internals import cfg as CFG
+from gl_studio.ui.pyside6.internals import cfg as PROG_CFG
 from gl_studio.util import util_types as t
 from NodeGraphQt import BaseNode, NodeGraph, Port
 from PySide6.QtGui import QKeySequence, QShortcut
@@ -16,7 +16,6 @@ from PySide6.QtWidgets import QFileDialog, QMenu, QMenuBar, QVBoxLayout, QWidget
 class INTERFACE:
     nodes = {}
     active_links = {}  # { Input_socket_id : Output_socket_id }
-    global_node_address = "node.pyside6"
     directories = []
 
     def __init__(self):
@@ -81,79 +80,54 @@ cfg = INTERFACE()
 
 class PAG:
     def __init__(self):
-        self.graph = None
         self.visited = set()
         self.exec_order = []
 
     def run(self):
-        self.graph = cfg.graph
-        if self.graph is None:
-            print("PAG.run skipped: no graph available yet.")
-            return
-
-        self.visited.clear()
-        self.exec_order.clear()
-
         # 2. Find "Terminal" nodes (Nodes that SHOULD_CRAWL)
-        for node in self.graph.all_nodes():
-            node = cast(NODE, node)
-            if hasattr(node, "CB_IS_CRAWLER") and node.CB_IS_CRAWLER():
+        for node in t.GLOBAL_OUTPUT_NODES:
+            if hasattr(node, "CB_IS_STREAM") and node.CB_IS_STREAM():
                 self.order(node)
 
-        self.execs_order()
+        self.exec()
         self.reset()
 
     def order(self, node: NODE):
-        """Builds the Topological Sort (Execution Order)"""
         if not node or node.id in self.visited:
             return
 
         self.visited.add(node.id)
 
-        # Look at all input ports
         for name, input_port in node.inputs().items():
-            # Get what is connected to this input
-            connected_ports = input_port.connected_ports()
-            if connected_ports:
-                # In NodeGraphQt, connected_ports[0] is the Output port of the sender
-                sender_node = connected_ports[0].node()
-                self.order(sender_node)
+            if out_ports := input_port.connected_ports():
+                for out_port in out_ports:
+                    out_node = out_port.node()
+                    self.order(out_node)
 
         # Post-order traversal: add to list after children are visited
         self.exec_order.append(node)
 
-    def execs_order(self):
+    def exec(self):
         for node in self.exec_order:
             node = cast(NODE, node)
-            # 1. Pull data from upstream
-            self._propagate_inputs(node)
-
             # 2. Execute the node's logic
             if hasattr(node, "CACHED"):
+                # FIX: Check if CACHED is False, not None
                 if not node.CACHED:
-                    if hasattr(node, "CB_ON_CRAWLER"):
+                    # FIX: Correct typo 'CB_ON_STERAM' to 'CB_ON_STREAM'
+                    if hasattr(node, "CB_ON_STREAM"):
                         node.CACHED = True
-                        node.CB_ON_CRAWLER()
-
-    def _propagate_inputs(self, node):
-        """The 'Sync' : Copies values from Output ports to Input ports"""
-        for name, input_port in node.inputs().items():
-            connected_ports = input_port.connected_ports()
-            if not connected_ports:
-                continue
-
-            output_port = connected_ports[0]
-
-            input_port = cast(PORT, input_port)
-            output_port = cast(PORT, output_port)
-
-            # Pull the 'value' property from the output socket to the input socket
-            if (output_port.Type == input_port.Type) or input_port.Type == t.ANY:
-                input_port.value = output_port.value
+                        try:
+                            node.CB_ON_STREAM()
+                        except Exception as e:
+                            print(f"[NODE GRAPH NODE REPORT] at {node.type_} : {e}")
+                            traceback.print_exc()
 
     def reset(self):
         for node in self.exec_order:
             node.CACHED = False
+        self.exec_order.clear()
+        self.visited.clear()
 
 
 pag = PAG()
@@ -202,43 +176,16 @@ def delete_selected_nodes():
     # Get nodes currently selected in the graph
     selected_nodes = cfg.graph.selected_nodes()
     if selected_nodes:
-        # delete_nodes is the standard safe way to remove nodes in NodeGraphQt
+        for node in selected_nodes:
+            if hasattr(node, "CB_ON_DEL"):
+                node.CB_ON_DEL()
         cfg.graph.delete_nodes(selected_nodes)
 
 
-def safe_set_port_property(port_inst: Port, prop_prefix, value):
-    node = port_inst.node()
-    prop_name = f"{prop_prefix}_{port_inst.name()}"
-
-    # Create property if it doesn't exist (handles both normal use AND deserialization)
-    if not node.has_property(prop_name):
-        node.create_property(prop_name, value)
-    else:
-        node.set_property(prop_name, value)
-
-
-def safe_get_port_property(port_inst, prop_prefix):
-    node = port_inst.node()
-    prop_name = f"{prop_prefix}_{port_inst.name()}"
-
-    val = node.get_property(prop_name) if node.has_property(prop_name) else None
-
-    return val
-
-
-def class_alterations_preperations():
-    from NodeGraphQt import Port as P
-
-    # Injecting the properties into the Port class
-    P.value = property(
-        fset=lambda self, val: safe_set_port_property(self, "port_val", val),
-        fget=lambda self: safe_get_port_property(self, "port_val"),
-    )
-
-    P.Type = property(
-        fset=lambda self, val: safe_set_port_property(self, "port_type", val),
-        fget=lambda self: safe_get_port_property(self, "port_type"),
-    )
+def duplicate_selected():
+    selections = cfg.graph.selected_nodes()
+    for node in selections:
+        safe_create_node(type(node))
 
 
 # ========= APPLICATION LAYER LEVEL ===============
@@ -248,30 +195,75 @@ def check_state():
     if cfg.graph:
         return True
     else:
+        print("[NODE GRAPH CRITICAL]  cfg.graph is NONE.")
         return False
 
 
 def process_frame():
-    try:
-        if check_state():
-            pag.run()
-    except Exception as e:
-        print(f"Error during frame processing: {e}")
+    pag.run()
 
 
-def register():
-    class_alterations_preperations()
-    # UI
+def _PreProcess():
+    """This function monkey-hooks Direct Property acceess functions inside NodeGraphQt.Port class"""
+
+    def safe_set_port_property(port_inst: Port, prop_prefix, value):
+        node = port_inst.node()
+        prop_name = f"{prop_prefix}_{port_inst.name()}"
+
+        # Create property if it doesn't exist (handles both normal use AND deserialization)
+        if not node.has_property(prop_name):
+            node.create_property(prop_name, value)
+        else:
+            node.set_property(prop_name, value)
+
+    def safe_get_port_property(port_inst, prop_prefix):
+        node = port_inst.node()
+        prop_name = f"{prop_prefix}_{port_inst.name()}"
+
+        val = node.get_property(prop_name) if node.has_property(prop_name) else None
+
+        return val
+
+    # Injecting the properties into the Port class
+    Port.value = property(
+        fset=lambda self, val: safe_set_port_property(self, "port_val", val),
+        fget=lambda self: safe_get_port_property(self, "port_val"),
+    )
+
+    Port.Type = property(
+        fset=lambda self, val: safe_set_port_property(self, "port_type", val),
+        fget=lambda self: safe_get_port_property(self, "port_type"),
+    )
+
+
+def _Create_shortcuts():
+    shortcut_del = QShortcut(QKeySequence("Delete"), cfg.graph.widget)
+    shortcut_del.activated.connect(delete_selected_nodes)
+
+    shortcut_x = QShortcut(QKeySequence("X"), cfg.graph.widget)
+    shortcut_x.activated.connect(delete_selected_nodes)
+
+    shortcut_save = QShortcut(QKeySequence("Ctrl+S"), cfg.graph.widget)
+    shortcut_save.activated.connect(cfg.save_graph)
+
+    shortcut_load = QShortcut(QKeySequence("Ctrl+L"), cfg.graph.widget)
+    shortcut_load.activated.connect(cfg.load_graph)
+
+    shortcut_dup = QShortcut(QKeySequence("Shift+D"), cfg.graph.widget)
+    shortcut_dup.activated.connect(duplicate_selected)
+
+
+def _Create_GUI():
     widget = QWidget()
-    CFG.tabs.addTab(widget, "Node editor")
+    PROG_CFG.tabs.addTab(widget, "Node editor")
 
     cfg.lay = QVBoxLayout()
     widget.setLayout(cfg.lay)
 
+    cfg.graph = NodeGraph()
+    cfg.graph.auto_layout_nodes()
     cfg.menu_bar = QMenuBar()
     cfg.lay.addWidget(cfg.menu_bar)
-
-    cfg.graph = NodeGraph()
     cfg.lay.addWidget(cfg.graph.widget)
 
     cfg.menu_add_node = QMenu(title="Add Node")
@@ -283,39 +275,19 @@ def register():
     (cfg.menu_Graph.addAction("Save")).triggered.connect(cfg.save_graph)
     (cfg.menu_Graph.addAction("Load")).triggered.connect(cfg.load_graph)
 
-    shortcut_del = QShortcut(QKeySequence("Delete"), cfg.graph.widget)
-    shortcut_del.activated.connect(delete_selected_nodes)
-
-    shortcut_x = QShortcut(QKeySequence("X"), cfg.graph.widget)
-    shortcut_x.activated.connect(delete_selected_nodes)
-
-    shortcut_l = QShortcut(QKeySequence("l"), cfg.graph.widget)
-    shortcut_l.activated.connect(cfg.ref_pos)
-
     # --- DYNAMIC NODE REGISTRATION ---
 
-    # 1. Resolve the absolute path to your 'nodes' directory
     current_dir = os.path.dirname(os.path.abspath(__file__))
-
-    # Adjust this relative path to point exactly to your 'nodes' folder
     nodes_directory = os.path.normpath(
         os.path.join(current_dir, "..", "..", "examples", "nodes")
     )
 
-    # ... inside register() in editor_nodeGraph.py ...
-
-    # 2. Discover classes
     node_classes = load_nodes_from_directory(nodes_directory)
 
-    # Dictionary to keep track of created submenus
     sub_menus = {}
-
-    # 3. Register to graph and add to QMenu with submenus
     for node_class in node_classes:
-        # Registers to NodeGraphQt (for Tab search)
         cfg.graph.register_node(node_class)
 
-        # Get the category; default to 'Misc' if not defined
         category_name = getattr(node_class, "CATEGORY", "Misc")
 
         # Create the submenu if it doesn't exist yet
@@ -332,7 +304,14 @@ def register():
         action.triggered.connect(lambda _, n=node_class: safe_create_node(n))
 
 
+def register():
+    _PreProcess()
+    _Create_GUI()
+    _Create_shortcuts()
+
+
 def unregister():
+    global cfg
     if cfg.graph:
-        cfg.graph.widget.close()
-        cfg.graph = None
+        cfg.graph.close()
+    del cfg

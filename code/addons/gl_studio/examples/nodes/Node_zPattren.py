@@ -2,6 +2,7 @@ from typing import Any
 
 from gl_studio.util import util_types as t
 from NodeGraphQt import BaseNode, NodeBaseWidget, Port
+from PySide6.QtWidgets import QWidget
 
 
 class PortType(Port):
@@ -9,29 +10,23 @@ class PortType(Port):
     Type = t.NONE
 
 
-class UniversalWrapper(NodeBaseWidget):
-    """
-    A generic wrapper that takes any QWidget and makes it
-    compatible with NodeGraphQt without requiring a custom class.
-    """
-
+class NODE_WIDGET(NodeBaseWidget):
     def __init__(self, qt_widget, label="Control", parent=None):
-        super(UniversalWrapper, self).__init__(parent)
+        super(NODE_WIDGET, self).__init__(parent)
         self.set_name(label)
-        self.set_label(label)
 
         self.set_custom_widget(qt_widget)
 
     def get_value(self):
         return ""  # Satisfies the library requirements
 
-    def set_value(self, value):
+    def set_value(self, text):
         pass  # Satisfies the library requirements
 
 
 class NODE_INTERFACE(BaseNode):
     NODE_NAME = "Node"
-    CATEGORY = ""
+    CATEGORY = "Misc"
 
     # INTERNALS
     def __init__(self):
@@ -40,24 +35,26 @@ class NODE_INTERFACE(BaseNode):
             name="null", value=""
         )  # Satisfies the library requirements
 
-        self.CB_IS_CRAWLER = self.on_should_crawl
-        self.CB_ON_CRAWLER = self.on_execute_crawler
+        self.CB_IS_STREAM = self.on_should_stream
+        self.CB_ON_STREAM = self.on_stream
         self.CB_ON_SAVE = self.on_graph_save
         self.CB_ON_LOAD = self.on_graph_load
+        self.CB_ON_DEL = self.on_delete
         self.CACHED = False
 
-        UTILITY_WIDGET = self.build_ui()
-        self.integrate_widget(UTILITY_WIDGET)
+        UTILITY_WIDGET = self.on_gui()
+        if UTILITY_WIDGET is not None:
+            self.integrate_widget(UTILITY_WIDGET)
 
     def reset(self):
         """Utilty empty function."""
 
     # GUI WRAPPERS
-    def build_ui(self):
+    def on_gui(self) -> QWidget:
         """This function should Build and Return a Naitive PySide6.QtWidgets.* to be in the node content."""
 
     def integrate_widget(self, qt_widget, label=""):
-        node_widget = UniversalWrapper(qt_widget, label=label, parent=self.view)
+        node_widget = NODE_WIDGET(qt_widget, label=label, parent=self.view)
         self.add_custom_widget(node_widget)
 
     def add_input(
@@ -92,22 +89,41 @@ class NODE_INTERFACE(BaseNode):
         port = super().add_output(
             name, multi_output, display_name, color, locked, painter_func
         )
-        x = port.value
-        if default_value:
-            if not port.value:
-                port.value = default_value
+        port.value = default_value
         port.Type = type
         return port
 
     # EXECUTION BEHAVIOURS
-    def on_should_crawl(self):
-        """Return True if this node is an output of a node connection branches"""
+    # EXECUTION BEHAVIOURS
+    def on_should_stream(self) -> bool:
+        """
+        Called by PAG,
 
-    def on_execute_crawler(self) -> None:
-        """What will happen if executed by connected nodes (by Crawler)"""
+        Return True if node is at GLOBAL_OUTPUT_NODES
+        and its connected branch needs to evaluate each node
+        """
+
+    def on_stream(self):
+        """
+        Called by PAG,
+
+        when its the node's turn inside ordering of an ACTIVE node branches (stream)
+        """
 
     def on_graph_save(self):
         """THis function Runs when we save a seesion"""
 
     def on_graph_load(self):
         """THis function Runs when we Load a seesion"""
+
+    def on_delete(self):
+        """Called by Qt shortcuts, when the node is selcted and deleted"""
+
+    def on_sync_port_values(self) -> None:
+        """Utlity function, Clones values from inputs to outputs at type matching or input is type of "ANY", so data steam is handled per node if overiden"""
+        for i_p in self.input_ports():
+            o_ps = i_p.connected_ports()
+            if o_ps:
+                o_p = o_ps[0]
+                if i_p.Type == t.ANY or (i_p.Type == o_p.Type):
+                    i_p.value = o_p.value

@@ -12,14 +12,13 @@ class NODE_FOLAT(BASE.NODE_INTERFACE):
         self.O_float = self.add_output(name="float out", type=t.F, default_value=5.0)
         self.reset()
 
-    def build_ui(self):
+    def on_gui(self):
         self.slider = QDoubleSpinBox()
         self.slider.setRange(-9999, 9999)
-        self.slider.valueChanged.connect(self.on_ui_change)
-
+        self.slider.valueChanged.connect(self.on_spin_change)
         return self.slider
 
-    def on_ui_change(self, v):
+    def on_spin_change(self, v):
         self.O_float.value = v
 
     def reset(self):

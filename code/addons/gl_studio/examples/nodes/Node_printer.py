@@ -1,48 +1,44 @@
 from gl_studio.examples.nodes import Node_zPattren as BASE
 from gl_studio.util import util_types as t
-from PySide6.QtWidgets import QCheckBox, QPushButton, QVBoxLayout, QWidget
+from PySide6.QtWidgets import QPushButton
 
 
 class NODE_PRINTER(BASE.NODE_INTERFACE):
     NODE_NAME = "Printer"
     CATEGORY = "Output"
 
-    def __init__(self):
-        super().__init__()
+    def on_gui(self):
         self.I_input = self.add_input(type=t.ANY)
-        self._Enabled = False
-        self._force_crawl = False  # Flag for the button click
 
-    def build_ui(self):
-        widget = QWidget()
-        widget.setMinimumSize(100, 100)
-        Lay = QVBoxLayout()
-        widget.setLayout(Lay)
+        self.btn = QPushButton(text="Execute connections")
+        self.btn.clicked.connect(self.on_click)
 
-        self.enabled = QCheckBox()
-        self.enabled.clicked.connect(self.on_Enable)
-        self.enabled.setText("Enable")
-        Lay.addWidget(self.enabled)
+        return self.btn
 
-        self.btn = QPushButton()
-        self.btn.setText("Execute Connections.")
-        self.btn.clicked.connect(self.on_btn_click)
-        Lay.addWidget(self.btn)
+    def on_click(self):
+        if self not in t.GLOBAL_OUTPUT_NODES:
+            t.GLOBAL_OUTPUT_NODES.append(self)
 
-        return widget
+    def on_should_stream(self) -> bool:
+        return True
 
-    def on_Enable(self):
-        self._Enabled = self.enabled.isChecked()
+    def on_stream(self):
+        self.on_sync_port_values()
+        print(f"Printer: {self.I_input.value}")
+        self.on_delete()
 
-    def on_btn_click(self):
-        self._force_crawl = True
+    def on_sync_port_values(self) -> None:
+        data = {}
+        i = 0
+        for O in self.I_input.connected_ports():
+            data.update({f"{i}_{O.node()}": O.value})
+            i += 1
+        self.I_input.value = data
 
-    def on_should_crawl(self):
-        # Check if button was clicked OR if checkbox is on
-        if self._force_crawl:
-            self._force_crawl = False  # Reset so it doesn't loop
-            return True
-        return self._Enabled
+    def on_graph_save(self):
+        self.I_input.value = None
 
-    def on_execute_crawler(self):
-        print("Printer: ", self.I_input.value)
+    def on_delete(self):
+        for i, j in enumerate(t.GLOBAL_OUTPUT_NODES):
+            if j == self:
+                t.GLOBAL_OUTPUT_NODES.pop(i)

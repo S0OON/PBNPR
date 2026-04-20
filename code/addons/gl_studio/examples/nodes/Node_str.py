@@ -12,10 +12,9 @@ class NODE_STRING(BASE.NODE_INTERFACE):
         self.O_text = self.add_output(type=t.STR, default_value="helloWorld")
         self.reset()
 
-    def build_ui(self):
+    def on_gui(self):
         self.line = QtWidgets.QLineEdit()
         self.line.textChanged.connect(self.on_text_change)
-
         return self.line
 
     def on_text_change(self, data):

@@ -6,12 +6,11 @@ from PySide6.QtWidgets import QLabel, QVBoxLayout, QWidget
 
 
 class NODE_CAMERA_EVAL(BASE.NODE_INTERFACE):
-    NODE_NAME = "Camera Eval"
+    NODE_NAME = "Camera Data"
     CATEGORY = "Blender"
 
     def __init__(self):
         super(NODE_CAMERA_EVAL, self).__init__()
-
         # Inputs
         self.I_name = self.add_input("cam_name", type=t.STR)
         self.I_width = self.add_input("Width", type=t.F)
@@ -19,26 +18,26 @@ class NODE_CAMERA_EVAL(BASE.NODE_INTERFACE):
 
         # Manual Defaults
         self.I_name.value = "active"
-        self.I_width.value = 1920.0
-        self.I_height.value = 1080.0
+        self.I_width.value = t.RES_W
+        self.I_height.value = t.RES_H
 
         # Outputs
         self.O_view = self.add_output("view_matrix", type=t.F16)
         self.O_proj = self.add_output("proj_matrix", type=t.F16)
 
-    def build_ui(self):
-        widget = QWidget()
-
-        lay = QVBoxLayout()
-        widget.setLayout(lay)
-
+    def on_gui(self):
         self.status_label = QLabel("Camera: ---")
-        lay.addWidget(self.status_label)
+        self.status_label.setStyleSheet(t.RED)
+        return self.status_label
 
-        return widget
+    def reset(self):
+        self.I_name.value = "active"
+        self.O_view.value = None
+        self.O_proj.value = None
 
-    def on_execute_crawler(self):
-        # 1. Resolve Camera
+    def on_stream(self):
+        self.on_sync_port_values()
+
         name_val = str(self.I_name.value)
         if not name_val or name_val.lower() == "active":
             cam = bpy.context.scene.camera
@@ -47,10 +46,11 @@ class NODE_CAMERA_EVAL(BASE.NODE_INTERFACE):
 
         if not cam or cam.type != "CAMERA":
             self.status_label.setText("Status: NOT FOUND")
+            self.status_label.setStyleSheet(t.RED)
             return
 
         self.status_label.setText(f"Status: {cam.name}")
-
+        self.status_label.setStyleSheet(t.GREEN)
         # 2. View Matrix (Inverse of World)
         view = np.array(
             cam.matrix_world.inverted().transposed(), dtype=np.float32
@@ -66,5 +66,11 @@ class NODE_CAMERA_EVAL(BASE.NODE_INTERFACE):
         )
         proj = np.array(proj_matrix.transposed(), dtype=np.float32).flatten()
 
-        self.O_view.value = view
-        self.O_proj.value = proj
+        self.O_view.value = view.tobytes()
+        self.O_proj.value = proj.tobytes()
+
+    def on_graph_save(self):
+        self.reset()
+
+    def on_graph_load(self):
+        self.reset()
