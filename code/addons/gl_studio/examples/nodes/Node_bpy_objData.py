@@ -52,34 +52,47 @@ class NODE_OBJECT_EVAL(BASE.NODE_INTERFACE):
         self.O_matrix.val = world_matrix
 
         # 3. Extract Mesh Data using Fast Numpy foreach_get()
+        # 3. Extract Mesh Data using Fast Numpy
         if obj.type == "MESH":
             mesh = obj.data
 
-            # Note: We enforce a depsgraph evaluation if there are modifiers,
-            # but using raw data as a baseline matching the old node logic.
+            # 1. Force Blender to generate triangulation data
+            mesh.calc_loop_triangles()
 
-            num_verts = len(mesh.vertices)
+            num_tris = len(mesh.loop_triangles)
+            num_tri_verts = num_tris * 3  # e.g. 36 for a cube
 
-            # Positions (Vertex Coordinates)
-            pos_data = np.empty(num_verts * 3, dtype=np.float32)
-            mesh.vertices.foreach_get("co", pos_data)
-            self.O_pos.val = pos_data
+            # Get the Vertex Indices and Loop Indices for every triangle corner
+            tri_vert_indices = np.empty(num_tri_verts, dtype=np.int32)
+            mesh.loop_triangles.foreach_get("vertices", tri_vert_indices)
 
-            # Normals (Vertex Normals)
-            normals_data = np.empty(num_verts * 3, dtype=np.float32)
-            mesh.vertices.foreach_get("normal", normals_data)
-            self.O_normals.val = normals_data
+            tri_loop_indices = np.empty(num_tri_verts, dtype=np.int32)
+            mesh.loop_triangles.foreach_get("loops", tri_loop_indices)
 
-            # UVs (Loop UVs extracted into a dictionary)
+            # --- Positions ---
+            raw_pos = np.empty(len(mesh.vertices) * 3, dtype=np.float32)
+            mesh.vertices.foreach_get("co", raw_pos)
+            raw_pos = raw_pos.reshape(-1, 3)
+            # Map raw vertices to unrolled triangle vertices
+            self.O_pos.val = raw_pos[tri_vert_indices].flatten()
+
+            # --- Normals ---
+            # (Note: For flat shading, you might want split normals (mesh.loops.normal),
+            # but here is the mapping for smooth vertex normals)
+            raw_norms = np.empty(len(mesh.vertices) * 3, dtype=np.float32)
+            mesh.vertices.foreach_get("normal", raw_norms)
+            raw_norms = raw_norms.reshape(-1, 3)
+            self.O_normals.val = raw_norms[tri_vert_indices].flatten()
+
+            # --- UVs ---
             uv_dict = {}
             if mesh.uv_layers:
-                num_loops = len(mesh.loops)
                 for layer in mesh.uv_layers:
-                    uv_data = np.empty(num_loops * 2, dtype=np.float32)
-                    layer.data.foreach_get("uv", uv_data)
-
-                    # Convert to bytes here so the dictionary is safe to compare!
-                    uv_dict[layer.name] = uv_data
+                    raw_uvs = np.empty(len(mesh.loops) * 2, dtype=np.float32)
+                    layer.data.foreach_get("uv", raw_uvs)
+                    raw_uvs = raw_uvs.reshape(-1, 2)
+                    # UVs are mapped by loop indices, not vertex indices!
+                    uv_dict[layer.name] = raw_uvs[tri_loop_indices].flatten()
 
             self.O_uvs.val = uv_dict
 
