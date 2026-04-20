@@ -7,38 +7,35 @@ class NODE_PRINTER(BASE.NODE_INTERFACE):
     NODE_NAME = "Printer"
     CATEGORY = "Output"
 
-    def on_gui(self):
+    def __init__(self):
+        super().__init__()
         self.I_input = self.add_input(type=t.ANY)
 
-        self.btn = QPushButton(text="Execute connections")
+    def on_gui(self):
+        self.btn = QPushButton(text="Evaluate Node Tree")
         self.btn.clicked.connect(self.on_click)
-
         return self.btn
 
     def on_click(self):
         if self not in t.GLOBAL_OUTPUT_NODES:
             t.GLOBAL_OUTPUT_NODES.append(self)
 
+    def reset(self):
+        for i, j in enumerate(t.GLOBAL_OUTPUT_NODES):
+            if j == self:
+                t.GLOBAL_OUTPUT_NODES.pop(i)
+
     def on_should_stream(self) -> bool:
         return True
 
     def on_stream(self):
         self.on_sync_port_values()
-        print(f"Printer: {self.I_input.value}")
-        self.on_delete()
+        print(f"Printer: {self.I_input.val}")
+        self.reset()
 
     def on_sync_port_values(self) -> None:
-        data = {}
-        i = 0
-        for O in self.I_input.connected_ports():
-            data.update({f"{i}_{O.node()}": O.value})
-            i += 1
-        self.I_input.value = data
+        data = []
+        for sender in self.I_input.connected_ports():
+            data.append(sender.val)
 
-    def on_graph_save(self):
-        self.I_input.value = None
-
-    def on_delete(self):
-        for i, j in enumerate(t.GLOBAL_OUTPUT_NODES):
-            if j == self:
-                t.GLOBAL_OUTPUT_NODES.pop(i)
+        self.I_input.val = data

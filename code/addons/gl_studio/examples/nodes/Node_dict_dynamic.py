@@ -10,6 +10,7 @@ from PySide6.QtWidgets import (
 )
 
 
+# DEPRICATED
 class NODE_IO_DYNAMIC(BASE.NODE_INTERFACE):
     NODE_NAME = "Dynamic IO"
     CATEGORY = "Containers"

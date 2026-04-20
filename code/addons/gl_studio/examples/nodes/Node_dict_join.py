@@ -11,16 +11,12 @@ class NODE_DICT_JOIN(BASE.NODE_INTERFACE):
 
     def __init__(self):
         super().__init__()
-        self.I_dicts = self.add_input("Dicts", type=t.DICT)
+        self.I_dicts = self.add_input("Dicts", type=t.DICT, multi_input=True)
         self.O_dict = self.add_output("Dict", type=t.DICT)
-        self.reset()
 
     def on_stream(self):
-        self.on_sync_port_values()
-        self.O_dict.value = {self.line.text(): self.I_val.value}
-
-    def on_graph_save(self):
-        self.reset()
-
-    def on_graph_load(self):
-        self.reset()
+        data = {}
+        for sender in self.I_dicts.connected_ports():
+            if isinstance(sender.val, dict):
+                data.update(sender.val)
+        self.O_dict.val = data

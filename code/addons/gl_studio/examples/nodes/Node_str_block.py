@@ -13,7 +13,8 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-STATIC = "ui_file_path"
+STATIC = "file_path_str"
+STATIC_BLK = "block_str"
 
 
 def show_dialog():
@@ -38,40 +39,45 @@ class NODE_TEXT_BLOCK(BASE.NODE_INTERFACE):
         lay = QVBoxLayout()
         widget.setLayout(lay)
 
-        lay.addWidget(QLabel("File Path (Optional):"))
+        label = QLabel("File Path (Optional):")
+        label.setStyleSheet("color: white;")
+        lay.addWidget(label)
 
         lay_H = QHBoxLayout()
         lay.addLayout(lay_H)
 
         self.ui_filepath = QLineEdit()
-        self.ui_filepath.textChanged.connect(self.on_line_change)
+        self.ui_filepath.textChanged.connect(
+            lambda v: self.set(STATIC, self.ui_filepath.text())
+        )
         lay_H.addWidget(self.ui_filepath)
 
         button = QPushButton(text="...")
-        button.clicked.connect(self.on_click)
+        button.clicked.connect(lambda: self.ui_filepath.setText(show_dialog()))
         lay_H.addWidget(button)
 
-        lay.addWidget(QLabel("Direct Text / File Content:"))
+        label = QLabel("Direct Text / File Content:")
+        label.setStyleSheet("color: white;")
+        lay.addWidget(label)
 
-        self.ui_text = QPlainTextEdit()
-        lay.addWidget(self.ui_text)
+        self.text_block = QPlainTextEdit()
+        self.text_block.textChanged.connect(
+            lambda: self.set(STATIC_BLK, self.text_block.toPlainText())
+        )
+        lay.addWidget(self.text_block)
 
         return widget
 
-    def on_click(self):
-        self.ui_filepath.setText(show_dialog())
-
-    def on_line_change(self, text):
-        if not self.has_property(STATIC):
-            self.create_property(STATIC, text)
-        else:
-            self.set_property(STATIC, text)
-
     def reset(self):
-        if not self.has_property(STATIC):
-            self.create_property(STATIC, self.ui_filepath.text())
+        if not self.has(STATIC):
+            self.add(STATIC, self.ui_filepath.text())
         else:
-            self.ui_filepath.setText(self.get_property(STATIC))
+            self.ui_filepath.setText(self.get(STATIC))
+
+        if not self.has(STATIC_BLK):
+            self.add(STATIC_BLK, self.text_block.toPlainText())
+        else:
+            self.text_block.setPlainText(self.get(STATIC_BLK))
 
     def on_stream(self):
         filepath = self.ui_filepath.text().strip()
@@ -84,19 +90,16 @@ class NODE_TEXT_BLOCK(BASE.NODE_INTERFACE):
 
                 # 2. Sync UI: Only update if the content is different
                 # (Prevents focus loss and cursor jumping)
-                if self.ui_text.toPlainText() != file_content:
-                    self.ui_text.setPlainText(file_content)
+                if self.text_block.toPlainText() != file_content:
+                    self.text_block.setPlainText(file_content)
 
-                self.O_text.value = file_content
+                self.O_text.val = file_content
 
             except Exception as e:
-                self.O_text.value = f"// Error reading path file: {e}"
+                self.O_text.val = f"// Error reading path file: {e}"
         else:
             # Fallback: Just use what is manually typed in the box
-            self.O_text.value = self.ui_text.toPlainText()
-
-    def on_graph_save(self):
-        self.reset()
+            self.O_text.val = self.text_block.toPlainText()
 
     def on_graph_load(self):
         self.reset()

@@ -1,7 +1,6 @@
 from gl_studio.examples.nodes import Node_zPattren as BASE
 from gl_studio.opengl import mgl
 from gl_studio.util import util_types as t
-from PIL import Image
 
 
 class NODE_MGL_BASIC(BASE.NODE_INTERFACE):
@@ -25,24 +24,26 @@ class NODE_MGL_BASIC(BASE.NODE_INTERFACE):
 
     def on_stream(self):
         self.on_sync_port_values()
+
         shader = mgl.SHADER()
-        if isinstance(self.I_vert.value, str):
-            shader.src_v = self.I_vert.value
-        if isinstance(self.I_frag.value, str):
-            shader.src_f = self.I_frag.value
 
-        shader.compile(self.I_w.value, self.I_h.value)
+        if isinstance(self.I_vert.val, str):
+            shader.src_v = self.I_vert.val
+        if isinstance(self.I_frag.val, str):
+            shader.src_f = self.I_frag.val
 
-        shader.uniforms(self.I_uniforms.value)
-        shader.vertex_attributes(self.I_attrs.value)
-        self.O_pixels.value = shader.render()
+        shader.compile(self.I_w.val, self.I_h.val)
+
+        shader.uniforms(self.I_uniforms.val)
+        shader.vertex_attributes(self.I_attrs.val)
+        self.O_pixels.val = shader.render()
 
     def reset(self):
-        self.I_vert.value = None
-        self.I_frag.value = None
-        self.I_uniforms.value = None
-        self.I_attrs.value = None
-        self.O_pixels.value = None
+        self.I_vert.val = None
+        self.I_frag.val = None
+        self.I_uniforms.val = None
+        self.I_attrs.val = None
+        self.O_pixels.val = None
 
     def on_graph_save(self):
         self.reset()

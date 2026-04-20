@@ -163,13 +163,11 @@ def unregister():
 ========================================
 E:\soon\projects\PBNPR\code\addons\gl_studio\examples\nodes\Node_bpy_camData.py
 ========================================
-from tkinter.constants import N
-
 import bpy
 import numpy as np
 from gl_studio.examples.nodes import Node_zPattren as BASE
 from gl_studio.util import util_types as t
-from PySide6.QtWidgets import QLabel, QVBoxLayout, QWidget
+from PySide6.QtWidgets import QLabel
 
 
 class NODE_CAMERA_EVAL(BASE.NODE_INTERFACE):
@@ -179,33 +177,32 @@ class NODE_CAMERA_EVAL(BASE.NODE_INTERFACE):
     def __init__(self):
         super(NODE_CAMERA_EVAL, self).__init__()
         # Inputs
-        self.I_name = self.add_input("cam_name", type=t.STR)
-        self.I_width = self.add_input("Width", type=t.F)
-        self.I_height = self.add_input("Height", type=t.F)
-
-        # Manual Defaults
-        self.I_name.value = "active"
-        self.I_width.value = t.RES_W
-        self.I_height.value = t.RES_H
+        self.I_name = self.add_input("camera name", type=t.STR)
+        self.I_w = self.add_input("Width", type=t.F)
+        self.I_h = self.add_input("Height", type=t.F)
 
         # Outputs
         self.O_view = self.add_output("view_matrix", type=t.F16)
         self.O_proj = self.add_output("proj_matrix", type=t.F16)
+        self.reset()
 
     def on_gui(self):
-        self.status_label = QLabel("Camera: ---")
-        self.status_label.setStyleSheet(t.RED)
+        self.status_label = QLabel()
         return self.status_label
 
     def reset(self):
-        self.I_name.value = "active"
-        self.O_view.value = None
-        self.O_proj.value = None
+        self.I_name.val = "active"
+        self.I_w.val = t.RES_W
+        self.I_h.val = t.RES_H
+        self.O_view.val = None
+        self.O_proj.val = None
+        self.status_label.setText("No Camera linked")
+        self.status_label.setStyleSheet(t.RED)
 
     def on_stream(self):
         self.on_sync_port_values()
 
-        name_val = str(self.I_name.value)
+        name_val = str(self.I_name.val)
         if not name_val or name_val.lower() == "active":
             cam = bpy.context.scene.camera
         else:
@@ -228,16 +225,13 @@ class NODE_CAMERA_EVAL(BASE.NODE_INTERFACE):
         depsgraph = bpy.context.evaluated_depsgraph_get()
         proj_matrix = cam.calc_matrix_camera(
             depsgraph,
-            x=int(self.I_width.value),
-            y=int(self.I_height.value),
+            x=int(self.I_w.val),
+            y=int(self.I_h.val),
         )
         proj = np.array(proj_matrix.transposed(), dtype=np.float32).flatten()
 
-        self.O_view.value = view
-        self.O_proj.value = proj
-
-    def on_graph_save(self):
-        self.reset()
+        self.O_view.val = view
+        self.O_proj.val = proj
 
     def on_graph_load(self):
         self.reset()
@@ -249,7 +243,7 @@ import bpy
 import numpy as np
 from gl_studio.examples.nodes import Node_zPattren as BASE
 from gl_studio.util import util_types as t
-from PySide6.QtWidgets import QLabel, QVBoxLayout, QWidget
+from PySide6.QtWidgets import QLabel
 
 
 class NODE_OBJECT_EVAL(BASE.NODE_INTERFACE):
@@ -258,11 +252,8 @@ class NODE_OBJECT_EVAL(BASE.NODE_INTERFACE):
 
     def __init__(self):
         super().__init__()
-
-        # Inputs
         self.I_name = self.add_input("obj_name", type=t.STR)
 
-        # Outputs
         self.O_pos = self.add_output("pos", type=t.ANY)
         self.O_normals = self.add_output("normals", type=t.ANY)
         self.O_uvs = self.add_output("uvs", type=t.DICT)  # Dict of Numpy Arrays
@@ -270,23 +261,21 @@ class NODE_OBJECT_EVAL(BASE.NODE_INTERFACE):
         self.reset()
 
     def on_gui(self):
-        self.status_label = QLabel("No object linked")
-        self.status_label.setStyleSheet(t.RED)
+        self.status_label = QLabel()
         return self.status_label
 
     def reset(self):
-        self.I_name.value = None
-        self.O_pos.value = None
-        self.O_normals.value = None
-        self.O_uvs.value = None
-        self.O_matrix.value = None
+        self.I_name.val = "Cube"
+        self.O_pos.val = None
+        self.O_normals.val = None
+        self.O_uvs.val = None
+        self.O_matrix.val = None
         self.status_label.setText("No object linked")
         self.status_label.setStyleSheet(t.RED)
 
     def on_stream(self):
         self.on_sync_port_values()
-        obj_name = self.I_name.value
-
+        obj_name = self.I_name.val
         obj = bpy.data.objects.get(obj_name)
         if obj is None:
             self.status_label.setText(f"Missing: {obj_name}")
@@ -301,7 +290,7 @@ class NODE_OBJECT_EVAL(BASE.NODE_INTERFACE):
         world_matrix = np.array(
             obj.matrix_world.transposed(), dtype=np.float32
         ).flatten()
-        self.O_matrix.value = world_matrix
+        self.O_matrix.val = world_matrix
 
         # 3. Extract Mesh Data using Fast Numpy foreach_get()
         if obj.type == "MESH":
@@ -315,31 +304,28 @@ class NODE_OBJECT_EVAL(BASE.NODE_INTERFACE):
             # Positions (Vertex Coordinates)
             pos_data = np.empty(num_verts * 3, dtype=np.float32)
             mesh.vertices.foreach_get("co", pos_data)
-            self.O_pos.value = pos_data
+            self.O_pos.val = pos_data
 
             # Normals (Vertex Normals)
             normals_data = np.empty(num_verts * 3, dtype=np.float32)
             mesh.vertices.foreach_get("normal", normals_data)
-            self.O_normals.value = normals_data
+            self.O_normals.val = normals_data
 
             # UVs (Loop UVs extracted into a dictionary)
             uv_dict = {}
-            num_loops = len(mesh.loops)
-            for layer in mesh.uv_layers:
-                uv_data = np.empty(num_loops * 2, dtype=np.float32)
-                layer.data.foreach_get("uv", uv_data)
-                uv_dict[layer.name] = uv_data
+            if mesh.uv_layers:
+                num_loops = len(mesh.loops)
+                for layer in mesh.uv_layers:
+                    uv_data = np.empty(num_loops * 2, dtype=np.float32)
+                    layer.data.foreach_get("uv", uv_data)
 
-            self.O_uvs.value = uv_dict
+                    # Convert to bytes here so the dictionary is safe to compare!
+                    uv_dict[layer.name] = uv_data
+
+            self.O_uvs.val = uv_dict
 
         else:
-            # Fallback for non-mesh objects
-            self.O_pos.value = np.array([], dtype=np.float32)
-            self.O_normals.value = np.array([], dtype=np.float32)
-            self.O_uvs.value = {}
-
-    def on_graph_save(self):
-        self.reset()
+            self.reset()
 
     def on_graph_load(self):
         self.reset()
@@ -359,6 +345,7 @@ from PySide6.QtWidgets import (
 )
 
 
+# DEPRICATED
 class NODE_IO_DYNAMIC(BASE.NODE_INTERFACE):
     NODE_NAME = "Dynamic IO"
     CATEGORY = "Containers"
@@ -469,6 +456,7 @@ from gl_studio.util import util_types as t
 from PySide6.QtWidgets import QComboBox, QVBoxLayout, QWidget
 
 
+# DEPRICAED
 class NODE_DICT_GETTER(BASE.NODE_INTERFACE):
     NODE_NAME = "Dict index"
     CATEGORY = "Containers"
@@ -503,11 +491,37 @@ class NODE_DICT_GETTER(BASE.NODE_INTERFACE):
         self.reset()
 
 ========================================
-E:\soon\projects\PBNPR\code\addons\gl_studio\examples\nodes\Node_dict_value.py
+E:\soon\projects\PBNPR\code\addons\gl_studio\examples\nodes\Node_dict_join.py
 ========================================
 from gl_studio.examples.nodes import Node_zPattren as BASE
 from gl_studio.util import util_types as t
 from PySide6 import QtWidgets
+
+STATIC = "Value_Dict_Key"
+
+
+class NODE_DICT_JOIN(BASE.NODE_INTERFACE):
+    NODE_NAME = "Dict join"
+    CATEGORY = "Containers"
+
+    def __init__(self):
+        super().__init__()
+        self.I_dicts = self.add_input("Dicts", type=t.DICT, multi_input=True)
+        self.O_dict = self.add_output("Dict", type=t.DICT)
+
+    def on_stream(self):
+        data = {}
+        for sender in self.I_dicts.connected_ports():
+            if isinstance(sender.val, dict):
+                data.update(sender.val)
+        self.O_dict.val = data
+
+========================================
+E:\soon\projects\PBNPR\code\addons\gl_studio\examples\nodes\Node_dict_value.py
+========================================
+from gl_studio.examples.nodes import Node_zPattren as BASE
+from gl_studio.util import util_types as t
+from PySide6.QtWidgets import QLineEdit
 
 STATIC = "Value_Dict_Key"
 
@@ -523,35 +537,31 @@ class NODE_VALUE_DICT(BASE.NODE_INTERFACE):
         self.reset()
 
     def on_gui(self):
-        self.line = QtWidgets.QLineEdit()
-        self.line.textChanged.connect(self.on_text_change)
+        self.line = QLineEdit()
+        self.line.textChanged.connect(lambda v: self.set(STATIC, v))
         return self.line
 
-    def on_text_change(self, data):
-        self.reset()
-
     def reset(self):
-        if not self.has_property(STATIC):
-            self.create_property(STATIC, self.line.text())
+        if not self.has(STATIC):
+            self.add(STATIC, self.line.text())
         else:
-            self.set_property(STATIC, self.line.text())
+            self.line.setText(self.get(STATIC))
 
     def on_stream(self):
         self.on_sync_port_values()
-        self.O_dict.value = {self.line.text(): self.I_val.value}
-
-    def on_graph_save(self):
-        self.reset()
+        self.O_dict.val = {self.get(STATIC): self.I_val.val}
 
     def on_graph_load(self):
-        self.line.setText(self.get_property(STATIC))
+        self.reset()
 
 ========================================
 E:\soon\projects\PBNPR\code\addons\gl_studio\examples\nodes\Node_float.py
 ========================================
 from gl_studio.examples.nodes import Node_zPattren as BASE
 from gl_studio.util import util_types as t
-from PySide6.QtWidgets import QDoubleSpinBox, QVBoxLayout, QWidget
+from PySide6.QtWidgets import QDoubleSpinBox
+
+PRESISTANT = "saved_float_value"
 
 
 class NODE_FOLAT(BASE.NODE_INTERFACE):
@@ -560,20 +570,25 @@ class NODE_FOLAT(BASE.NODE_INTERFACE):
 
     def __init__(self):
         super().__init__()
-        self.O_float = self.add_output(name="float out", type=t.F, default_value=5.0)
+        self.O_float = self.add_output(name="Float", type=t.F)
         self.reset()
 
     def on_gui(self):
         self.slider = QDoubleSpinBox()
         self.slider.setRange(-9999, 9999)
-        self.slider.valueChanged.connect(self.on_spin_change)
+        self.slider.valueChanged.connect(
+            lambda v: self.set(PRESISTANT, self.slider.value())
+        )
         return self.slider
 
-    def on_spin_change(self, v):
-        self.O_float.value = v
+    def reset(self, v=None):
+        if self.has(PRESISTANT):
+            self.slider.setValue(self.get(PRESISTANT))
+        else:
+            self.add(PRESISTANT, self.slider.value())
 
-    def reset(self):
-        self.slider.setValue(self.O_float.value)
+    def on_stream(self):
+        self.O_float.val = self.get(PRESISTANT)
 
     def on_graph_load(self):
         self.reset()
@@ -583,7 +598,7 @@ E:\soon\projects\PBNPR\code\addons\gl_studio\examples\nodes\Node_float_math.py
 ========================================
 from gl_studio.examples.nodes import Node_zPattren as BASE
 from gl_studio.util import util_types as t
-from PySide6.QtWidgets import QCheckBox, QComboBox, QPushButton, QVBoxLayout, QWidget
+from PySide6.QtWidgets import QComboBox
 
 STATIC = "Math type"
 
@@ -615,244 +630,186 @@ class NODE_FLOAT_MATH(BASE.NODE_INTERFACE):
 
     def __init__(self):
         super(NODE_FLOAT_MATH, self).__init__()
-        self.I_A = self.add_input("A", type=t.F, default_value=0.0)
-        self.I_B = self.add_input("B", type=t.F, default_value=0.0)
+        self.I_A = self.add_input("A", type=t.F)
+        self.I_B = self.add_input("B", type=t.F)
         self.O_out = self.add_output("out_data", type=t.F)
         self.reset()
 
     def on_gui(self):
         self.Combo = QComboBox()
         self.Combo.addItems(ops.keys())
-        self.Combo.currentTextChanged.connect(self.reset)
+        self.Combo.currentTextChanged.connect(lambda v: self.set(STATIC, v))
         return self.Combo
 
     def reset(self):
-        self.I_A.value = 0.0
-        self.I_B.value = 0.0
-        self.O_out.value = 0.0
-        if not self.has_property(STATIC):
-            self.create_property(STATIC, self.Combo.currentText())
+        if self.has(STATIC):
+            self.Combo.setCurrentText(self.get(STATIC))
+        else:
+            self.add(STATIC, self.Combo.currentText())
 
     def on_stream(self):
         self.on_sync_port_values()
-        self.O_out.value = ops[self.Combo.currentText()](self.I_A.value, self.I_B.value)
+        self.O_out.val = ops[self.get(STATIC)](self.I_A.val, self.I_B.val)
         self.reset()
+
+    def on_graph_load(self):
+        self.reset()
+
+========================================
+E:\soon\projects\PBNPR\code\addons\gl_studio\examples\nodes\Node_mgl_mesh.py
+========================================
+from gl_studio.examples.nodes import Node_zPattren as BASE
+from gl_studio.opengl import mgl
+from gl_studio.util import util_types as t
+
+
+class NODE_MGL_BASIC(BASE.NODE_INTERFACE):
+    NODE_NAME = "mgl mesh"
+    CATEGORY = "OpenGL"
+
+    def __init__(self):
+        super().__init__()
+        # --- Shader & Settings ---
+        self.I_w = self.add_input("width", type=t.F, default_value=t.RES_W)
+        self.I_h = self.add_input("Height", type=t.F, default_value=t.RES_H)
+
+        self.I_vert = self.add_input("Vert_str", type=t.STR)
+        self.I_frag = self.add_input("Frag_str", type=t.STR)
+
+        self.I_uniforms = self.add_input("Uniforms", type=t.DICT)
+        self.I_attrs = self.add_input("Attributes", type=t.DICT)
+
+        # --- Outputs ---
+        self.O_pixels = self.add_output("Pixels_RGBA", type=t.ANY)
+
+    def on_stream(self):
+        self.on_sync_port_values()
+
+        shader = mgl.SHADER()
+
+        if isinstance(self.I_vert.val, str):
+            shader.src_v = self.I_vert.val
+        if isinstance(self.I_frag.val, str):
+            shader.src_f = self.I_frag.val
+
+        shader.compile(self.I_w.val, self.I_h.val)
+
+        shader.uniforms(self.I_uniforms.val)
+        shader.vertex_attributes(self.I_attrs.val)
+        self.O_pixels.val = shader.render()
+
+    def reset(self):
+        self.I_vert.val = None
+        self.I_frag.val = None
+        self.I_uniforms.val = None
+        self.I_attrs.val = None
+        self.O_pixels.val = None
 
     def on_graph_save(self):
         self.reset()
 
     def on_graph_load(self):
-        if self.has_property(STATIC):
-            if self.get_property(STATIC) is not None:
-                self.Combo.setCurrentText(self.get_property(STATIC))
+        self.reset()
 
 ========================================
-E:\soon\projects\PBNPR\code\addons\gl_studio\examples\nodes\Node_mgl.py
+E:\soon\projects\PBNPR\code\addons\gl_studio\examples\nodes\Node_mgl_template.py
 ========================================
-import moderngl as mgl
+import moderngl
+import numpy as np
 from gl_studio.examples.nodes import Node_zPattren as BASE
-from gl_studio.opengl.mgl import GL as SHADER
 from gl_studio.util import util_types as t
-from PySide6.QtWidgets import QLabel, QVBoxLayout, QWidget
+from PIL import Image
 
 
-class NODE_MGL_SHADER(BASE.NODE_INTERFACE):
-    NODE_NAME = "MGL Dynamic Shader"
-    CATEGORY = "OpenGL"
+class NODE_MGL_TRINGLE(BASE.NODE_INTERFACE):
+    NODE_NAME = "mgl template"
 
     def __init__(self):
         super().__init__()
+        self.add_output("Resaulted Tringle", type=t.RGBA)
 
-        # --- INPUTS ---
-        self.I_width = self.add_input("width", type=t.F, default_value=t.RES_W)
-        self.I_height = self.add_input("height", type=t.F, default_value=t.RES_H)
+    def on_stream(self):
+        ctx = moderngl.create_context(standalone=True)
 
-        self.I_vert = self.add_input("vertex_code", type=t.STR)
-        self.I_frag = self.add_input("fragment_code", type=t.STR)
+        # 2. Setup an Off-screen Framebuffer (FBO) to render into
+        width, height = 512, 512
+        fbo = ctx.simple_framebuffer(
+            (width, height), components=3
+        )  # 3 components = RGB
+        fbo.use()
 
-        self.I_uni = self.add_input("dict_uni", type=t.DICT)
-        self.I_res = self.add_input("dict_res", type=t.DICT)
+        # 3. Write the Shader Program
+        prog = ctx.program(
+            vertex_shader="""
+                    #version 330
+                    in vec2 in_position;
+                    in vec3 in_color;
+                    out vec3 v_color;
 
-        # --- OUTPUTS ---
-        # Outputs the dict containing {'Combined': np.ndarray, ...}
-        self.O_maps = self.add_output("render_maps", type=t.DICT)
+                    void main() {
+                        gl_Position = vec4(in_position, 0.0, 1.0);
+                        v_color = in_color;
+                    }
+                """,
+            fragment_shader="""
+                    #version 330
+                    in vec3 v_color;
+                    out vec3 f_color;
 
-    def build_ui(self):
-        widget = QWidget()
-
-        lay = QVBoxLayout()
-        lay.setContentsMargins(5, 5, 5, 5)
-        widget.setLayout(lay)
-
-        self.status_label = QLabel("Status: Waiting...")
-        self.status_label.setStyleSheet("color: #AAA; font-weight: bold;")
-        lay.addWidget(self.status_label)
-
-        return widget
-
-    def on_execute_crawler(self):
-        # 1. Fetch Inputs
-        v_code = str(self.I_vert.value) if self.I_vert.value else ""
-        f_code = str(self.I_frag.value) if self.I_frag.value else ""
-
-        # Ensure we have dictionaries even if nothing is connected
-        dict_uni = self.I_uni.value if isinstance(self.I_uni.value, dict) else {}
-        dict_res = self.I_res.value if isinstance(self.I_res.value, dict) else {}
-
-        # Fallback if no shaders are provided
-        if not v_code or not f_code:
-            self.status_label.setText("Status: Missing GLSL Code")
-            self.status_label.setStyleSheet("color: #FFaa00;")
-            self.O_maps.value = {}
-            return
-
-        ctx = None
-        shader = None
-        # START
-        try:
-            ctx = mgl.create_context()
-            shader = SHADER(ctx)  # Instantiate our dynamic GL class
-
-            shader.compile(
-                V=v_code,
-                F=f_code,
-                dict_uni=dict_uni,
-                dict_res=dict_res,
-                out_size=(
-                    int(self.I_width.value),
-                    int(self.I_height.value),
-                ),
-            )
-
-            # 4. Execute (Render to FBO and get the pixel dictionary back)
-            result_maps_dict = shader.execute()
-
-            # 5. Output the results downstream
-            self.O_maps.value = result_maps_dict
-
-            # Update UI on success
-            self.status_label.setText("Status: Rendered OK")
-            self.status_label.setStyleSheet("color: #55FF55;")
-
-        except Exception as e:
-            # Update UI on failure (e.g., GLSL syntax error, missing uniform)
-            self.status_label.setText("Status: Error")
-            self.status_label.setStyleSheet("color: #FF5555;")
-            print(f"[MGL Shader Error]: {e}")
-            self.O_maps.value = {}
-
-        finally:
-            # 6. ALWAYS Cleanup GPU Resources!
-            # The try/finally block ensures that even if the shader crashes
-            # midway through compiling, the GPU memory is released.
-            if shader:
-                shader.release()
-            if ctx:
-                ctx.release()
-
-========================================
-E:\soon\projects\PBNPR\code\addons\gl_studio\examples\nodes\Node_online.py
-========================================
-from NodeGraphQt import BaseNode, NodeBaseWidget
-from Qt import QtCore, QtWidgets
-
-
-class MyCustomWidget(QtWidgets.QWidget):
-    """
-    Custom widget to be embedded inside a node.
-    """
-
-    def __init__(self, parent=None):
-        super(MyCustomWidget, self).__init__(parent)
-        self.combo_1 = QtWidgets.QComboBox()
-        self.combo_1.addItems(["a", "b", "c"])
-        self.combo_2 = QtWidgets.QComboBox()
-        self.combo_2.addItems(["a", "b", "c"])
-        self.btn_go = QtWidgets.QPushButton("Go")
-
-        layout = QtWidgets.QHBoxLayout(self)
-        layout.setContentsMargins(0, 0, 0, 0)
-        layout.addWidget(self.combo_1)
-        layout.addWidget(self.combo_2)
-        layout.addWidget(self.btn_go)
-
-
-class NodeWidgetWrapper(NodeBaseWidget):
-    """
-    Wrapper that allows the widget to be added in a node object.
-    """
-
-    def __init__(self, parent=None):
-        super(NodeWidgetWrapper, self).__init__(parent)
-
-        # set the name for node property.
-        self.set_name("my_widget")
-
-        # set the label above the widget.
-        self.set_label("Custom Widget")
-
-        # set the custom widget.
-        self.set_custom_widget(MyCustomWidget())
-
-        # connect up the signals & slots.
-        self.wire_signals()
-
-    def wire_signals(self):
-        widget = self.get_custom_widget()
-
-        # wire up the combo boxes.
-        widget.combo_1.currentIndexChanged.connect(self.on_value_changed)
-        widget.combo_2.currentIndexChanged.connect(self.on_value_changed)
-
-        # wire up the button.
-        widget.btn_go.clicked.connect(self.on_btn_go_clicked)
-
-    def on_btn_go_clicked(self):
-        print('Clicked on node: "{}"'.format(self.node.name()))
-
-    def get_value(self):
-        widget = self.get_custom_widget()
-        return "{}/{}".format(
-            widget.combo_1.currentText(), widget.combo_2.currentText()
+                    void main() {
+                        f_color = v_color;
+                    }
+                """,
         )
 
-    def set_value(self, value):
-        value = value.split("/")
-        if len(value) < 2:
-            combo1_val = value[0]
-            combo2_val = ""
-        else:
-            combo1_val, combo2_val = value
-        widget = self.get_custom_widget()
+        # 4. Define Triangle Data: (x, y) + (r, g, b)
+        # Numpy 'f4' is required to match OpenGL 32-bit floats
+        vertices = np.array(
+            [
+                # X,     Y,      R,   G,   B
+                0.0,
+                0.8,
+                1.0,
+                0.0,
+                0.0,  # Top (Red)
+                -0.8,
+                -0.8,
+                0.0,
+                1.0,
+                0.0,  # Bottom Left (Green)
+                0.8,
+                -0.8,
+                0.0,
+                0.0,
+                1.0,  # Bottom Right (Blue)
+            ],
+            dtype="f4",
+        )
 
-        cb1_index = widget.combo_1.findText(combo1_val, QtCore.Qt.MatchExactly)
-        cb2_index = widget.combo_1.findText(combo2_val, QtCore.Qt.MatchExactly)
+        # 5. Create VBO and VAO
+        vbo = ctx.buffer(vertices.tobytes())
 
-        widget.combo_1.setCurrentIndex(cb1_index)
-        widget.combo_2.setCurrentIndex(cb2_index)
+        # The format '2f 3f' tells ModernGL:
+        # "Read 2 floats for 'in_position', then 3 floats for 'in_color'"
+        vao = ctx.vertex_array(prog, [(vbo, "2f 3f", "in_position", "in_color")])
 
+        # 6. Render the frame
+        ctx.clear(0.1, 0.1, 0.1)  # Dark gray background
+        vao.render(moderngl.TRIANGLES)
 
-class MyNode(BaseNode):
-    """
-    Example node.
-    """
+        # 7. Extract raw pixels to PIL
+        raw_bytes = fbo.read(components=3)
+        image = Image.frombytes("RGB", (width, height), raw_bytes)
 
-    # set a unique node identifier.
-    __identifier__ = "io.github.jchanvfx"
+        # OpenGL renders bottom-up, so we must flip the image vertically
+        image = image.transpose(Image.FLIP_TOP_BOTTOM)
 
-    # set the initial default node name.
-    NODE_NAME = "my node"
+        # 8. Show the image and cleanup
+        image.show()
 
-    def __init__(self):
-        super(MyNode, self).__init__()
-
-        # create input and output port.
-        self.add_input("in")
-        self.add_output("out")
-
-        # add custom widget to node with "node.view" as the parent.
-        node_widget = NodeWidgetWrapper(self.view)
-        self.add_custom_widget(node_widget, tab="Custom")
+        vao.release()
+        vbo.release()
+        prog.release()
 
 ========================================
 E:\soon\projects\PBNPR\code\addons\gl_studio\examples\nodes\Node_printer.py
@@ -866,41 +823,38 @@ class NODE_PRINTER(BASE.NODE_INTERFACE):
     NODE_NAME = "Printer"
     CATEGORY = "Output"
 
-    def on_gui(self):
+    def __init__(self):
+        super().__init__()
         self.I_input = self.add_input(type=t.ANY)
 
-        self.btn = QPushButton(text="Execute connections")
+    def on_gui(self):
+        self.btn = QPushButton(text="Evaluate Node Tree")
         self.btn.clicked.connect(self.on_click)
-
         return self.btn
 
     def on_click(self):
         if self not in t.GLOBAL_OUTPUT_NODES:
             t.GLOBAL_OUTPUT_NODES.append(self)
 
+    def reset(self):
+        for i, j in enumerate(t.GLOBAL_OUTPUT_NODES):
+            if j == self:
+                t.GLOBAL_OUTPUT_NODES.pop(i)
+
     def on_should_stream(self) -> bool:
         return True
 
     def on_stream(self):
         self.on_sync_port_values()
-        print(f"Printer: {self.I_input.value}")
-        self.on_delete()
+        print(f"Printer: {self.I_input.val}")
+        self.reset()
 
     def on_sync_port_values(self) -> None:
-        data = {}
-        i = 0
-        for O in self.I_input.connected_ports():
-            data.update({f"{i}_{O.node()}": O.value})
-            i += 1
-        self.I_input.value = data
+        data = []
+        for sender in self.I_input.connected_ports():
+            data.append(sender.val)
 
-    def on_graph_save(self):
-        self.I_input.value = None
-
-    def on_delete(self):
-        for i, j in enumerate(t.GLOBAL_OUTPUT_NODES):
-            if j == self:
-                t.GLOBAL_OUTPUT_NODES.pop(i)
+        self.I_input.val = data
 
 ========================================
 E:\soon\projects\PBNPR\code\addons\gl_studio\examples\nodes\Node_RGBAview.py
@@ -925,16 +879,14 @@ class NODE_RGBA_VIEWER(BASE.NODE_INTERFACE):
         self.I_height = self.add_input("height", type=t.F)
 
         # Default resolutions
-        self.I_width.value = 512.0
-        self.I_height.value = 512.0
+        self.I_width.val = t.RES_W
+        self.I_height.val = t.RES_H
 
         # Output (Pass-through)
         self.O_rgba = self.add_output("rgba_data", type=t.ANY)
+        self.O_mock = self.add_output("Mock output", type=t.NONE)
 
-        # Internal state
-        self.current_data = None
-
-    def build_ui(self):
+    def on_gui(self):
         widget = QWidget()
         lay = QVBoxLayout()
         lay.setContentsMargins(5, 5, 5, 5)
@@ -953,12 +905,13 @@ class NODE_RGBA_VIEWER(BASE.NODE_INTERFACE):
 
         return widget
 
-    def on_execute_crawler(self):
+    def on_stream(self):
+        self.on_sync_port_values()
         # 1. Grab data
-        self.current_data = self.I_rgba.value
+        self.current_data = self.I_rgba.val
 
         # 2. Pass it directly to output
-        self.O_rgba.value = self.current_data
+        self.O_rgba.val = self.current_data
 
         # 3. Update UI
         if self.current_data is not None:
@@ -969,53 +922,50 @@ class NODE_RGBA_VIEWER(BASE.NODE_INTERFACE):
             self.status_label.setStyleSheet("color: #AAA;")
 
     def on_view_clicked(self):
-        data = self.current_data
+        data = self.I_rgba.val
 
-        if data is None:
-            print("No data to view! Run the graph first.")
+        # Safer check: 'not any(data)' can throw errors on large byte arrays or numpy arrays
+        if not data:
+            print("No data to view!")
             return
 
         try:
-            # Smart Check 1: If user plugged in the whole render_maps dict, grab 'combined'
-            if isinstance(data, dict) and "combined" in data:
-                data = data["combined"]
+            w = int(self.I_width.val)
+            h = int(self.I_height.val)
 
-            if not isinstance(data, np.ndarray):
-                print(f"Cannot view data of type: {type(data)}")
-                return
+            # 1. Feed the raw fbo.read() bytes directly into PIL.
+            # PIL expects size as a tuple (w, h).
+            # "RGB" matches components=3.
+            image = Image.frombytes("RGB", (w, h), data)
 
-            # Smart Check 2: Convert float32 [0.0 - 1.0] to uint8 [0 - 255]
-            if data.dtype == np.float32 or data.dtype == np.float64:
-                img_data = (np.clip(data, 0.0, 1.0) * 255).astype(np.uint8)
-            else:
-                img_data = data.astype(np.uint8)
+            # 2. ModernGL's origin is bottom-left, PIL's is top-left.
+            # We must flip it vertically so it doesn't display upside down.
+            image = image.transpose(Image.FLIP_TOP_BOTTOM)
 
-            w = int(self.I_width.value)
-            h = int(self.I_height.value)
-
-            # Smart Check 3: Reshape if it's a flat array
-            if len(img_data.shape) == 1:
-                # PIL expects (Height, Width, Channels)
-                img_data = img_data.reshape((h, w, 4))
-
-            # Create PIL Image
-            img = Image.fromarray(img_data, "RGBA")
-
-            # Smart Check 4: OpenGL renders bottom-up. Flip it so it looks right.
-            img = ImageOps.flip(img)
-
-            # Show the image using the default OS image viewer
-            img.show()
+            # 3. Show it using the default system image viewer
+            image.show()
 
         except Exception as e:
             print(f"Viewer Error: {e}")
+
+    def reset(self):
+        self.I_rgba.val = None
+        self.O_rgba.val = None
+
+    def on_graph_save(self):
+        self.reset()
+
+    def on_graph_load(self):
+        self.reset()
 
 ========================================
 E:\soon\projects\PBNPR\code\addons\gl_studio\examples\nodes\Node_str.py
 ========================================
 from gl_studio.examples.nodes import Node_zPattren as BASE
 from gl_studio.util import util_types as t
-from PySide6 import QtWidgets
+from PySide6.QtWidgets import QLineEdit
+
+PRESISTANT = "saved_str_value"
 
 
 class NODE_STRING(BASE.NODE_INTERFACE):
@@ -1024,19 +974,22 @@ class NODE_STRING(BASE.NODE_INTERFACE):
 
     def __init__(self):
         super().__init__()
-        self.O_text = self.add_output(type=t.STR, default_value="helloWorld")
+        self.O_str = self.add_output(name="String", type=t.F)
         self.reset()
 
     def on_gui(self):
-        self.line = QtWidgets.QLineEdit()
-        self.line.textChanged.connect(self.on_text_change)
+        self.line = QLineEdit()
+        self.line.textChanged.connect(lambda v: self.set(PRESISTANT, v))
         return self.line
 
-    def on_text_change(self, data):
-        self.O_text.value = data
+    def reset(self, v=None):
+        if self.has(PRESISTANT):
+            self.line.setText(self.get(PRESISTANT))
+        else:
+            self.add(PRESISTANT, self.line.text())
 
-    def reset(self):
-        self.line.setText(self.O_text.value)
+    def on_stream(self):
+        self.O_str.val = self.get(PRESISTANT)
 
     def on_graph_load(self):
         self.reset()
@@ -1059,7 +1012,8 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-STATIC = "ui_file_path"
+STATIC = "file_path_str"
+STATIC_BLK = "block_str"
 
 
 def show_dialog():
@@ -1084,33 +1038,45 @@ class NODE_TEXT_BLOCK(BASE.NODE_INTERFACE):
         lay = QVBoxLayout()
         widget.setLayout(lay)
 
-        lay.addWidget(QLabel("File Path (Optional):"))
+        label = QLabel("File Path (Optional):")
+        label.setStyleSheet("color: white;")
+        lay.addWidget(label)
 
         lay_H = QHBoxLayout()
         lay.addLayout(lay_H)
 
         self.ui_filepath = QLineEdit()
+        self.ui_filepath.textChanged.connect(
+            lambda v: self.set(STATIC, self.ui_filepath.text())
+        )
         lay_H.addWidget(self.ui_filepath)
 
         button = QPushButton(text="...")
-        button.clicked.connect(self.on_click)
+        button.clicked.connect(lambda: self.ui_filepath.setText(show_dialog()))
         lay_H.addWidget(button)
 
-        lay.addWidget(QLabel("Direct Text / File Content:"))
+        label = QLabel("Direct Text / File Content:")
+        label.setStyleSheet("color: white;")
+        lay.addWidget(label)
 
-        self.ui_text = QPlainTextEdit()
-        lay.addWidget(self.ui_text)
+        self.text_block = QPlainTextEdit()
+        self.text_block.textChanged.connect(
+            lambda: self.set(STATIC_BLK, self.text_block.toPlainText())
+        )
+        lay.addWidget(self.text_block)
 
         return widget
 
-    def on_click(self):
-        self.ui_filepath.setText(show_dialog())
-
     def reset(self):
-        if not self.has_property(STATIC):
-            self.create_property(STATIC, self.ui_filepath.text())
+        if not self.has(STATIC):
+            self.add(STATIC, self.ui_filepath.text())
         else:
-            self.ui_filepath.setText(self.get_property(STATIC))
+            self.ui_filepath.setText(self.get(STATIC))
+
+        if not self.has(STATIC_BLK):
+            self.add(STATIC_BLK, self.text_block.toPlainText())
+        else:
+            self.text_block.setPlainText(self.get(STATIC_BLK))
 
     def on_stream(self):
         filepath = self.ui_filepath.text().strip()
@@ -1123,19 +1089,54 @@ class NODE_TEXT_BLOCK(BASE.NODE_INTERFACE):
 
                 # 2. Sync UI: Only update if the content is different
                 # (Prevents focus loss and cursor jumping)
-                if self.ui_text.toPlainText() != file_content:
-                    self.ui_text.setPlainText(file_content)
+                if self.text_block.toPlainText() != file_content:
+                    self.text_block.setPlainText(file_content)
 
-                self.O_text.value = file_content
+                self.O_text.val = file_content
 
             except Exception as e:
-                self.O_text.value = f"// Error reading path file: {e}"
+                self.O_text.val = f"// Error reading path file: {e}"
         else:
             # Fallback: Just use what is manually typed in the box
-            self.O_text.value = self.ui_text.toPlainText()
+            self.O_text.val = self.text_block.toPlainText()
 
-    def on_graph_save(self):
+    def on_graph_load(self):
         self.reset()
+
+========================================
+E:\soon\projects\PBNPR\code\addons\gl_studio\examples\nodes\Node_value_format.py
+========================================
+from gl_studio.examples.nodes import Node_zPattren as BASE
+from gl_studio.util import util_types as t
+from PySide6 import QtWidgets
+
+STATIC = "Value_format_Key"
+
+
+class NODE_VALUE_FORMAT(BASE.NODE_INTERFACE):
+    NODE_NAME = "Format value"
+    CATEGORY = "Containers"
+
+    def __init__(self):
+        super().__init__()
+        self.I_val = self.add_input("Value", type=t.ANY)
+        self.O_frmt = self.add_output("frmt", type=t.ANY)
+        self.reset()
+
+    def on_gui(self):
+        self.line = QtWidgets.QLineEdit()
+        self.line.textChanged.connect(lambda v: self.set(STATIC, v))
+        return self.line
+
+    def reset(self):
+        if not self.has(STATIC):
+            self.add(STATIC, self.line.text())
+        else:
+            self.line.setText(self.get(STATIC))
+
+    def on_stream(self):
+        self.on_sync_port_values()
+        self.O_frmt.val = t.formated_data(data=self.I_val.val, fmt=self.line.text())
 
     def on_graph_load(self):
         self.reset()
@@ -1151,13 +1152,15 @@ from PySide6.QtWidgets import QWidget
 
 
 class PortType(Port):
-    value = Any
-    Type = t.NONE
+    val = Any
+    Fmt = ""
+    Type = ""
 
 
 class NODE_WIDGET(NodeBaseWidget):
     def __init__(self, qt_widget, label="Control", parent=None):
         super(NODE_WIDGET, self).__init__(parent)
+
         self.set_name(label)
 
         self.set_custom_widget(qt_widget)
@@ -1171,7 +1174,7 @@ class NODE_WIDGET(NodeBaseWidget):
 
 class NODE_INTERFACE(BaseNode):
     NODE_NAME = "Node"
-    CATEGORY = ""
+    CATEGORY = "Misc"
 
     # INTERNALS
     def __init__(self):
@@ -1187,6 +1190,11 @@ class NODE_INTERFACE(BaseNode):
         self.CB_ON_DEL = self.on_delete
         self.CACHED = False
 
+        self.has = self.has_property
+        self.get = self.get_property
+        self.set = self.set_property
+        self.add = self.create_property
+
         UTILITY_WIDGET = self.on_gui()
         if UTILITY_WIDGET is not None:
             self.integrate_widget(UTILITY_WIDGET)
@@ -1199,13 +1207,14 @@ class NODE_INTERFACE(BaseNode):
         """This function should Build and Return a Naitive PySide6.QtWidgets.* to be in the node content."""
 
     def integrate_widget(self, qt_widget, label=""):
-        node_widget = NODE_WIDGET(qt_widget, label=label, parent=self.view)
-        self.add_custom_widget(node_widget)
+        qt_widget = NODE_WIDGET(qt_widget, label=label, parent=self.view)
+        self.add_custom_widget(qt_widget)
 
     def add_input(
         self,
         name="input",
         type=None,
+        format=None,
         default_value=None,
         multi_input=False,
         display_name=True,
@@ -1216,14 +1225,16 @@ class NODE_INTERFACE(BaseNode):
         port = super().add_input(
             name, multi_input, display_name, color, locked, painter_func
         )
-        port.value = default_value
+        port.val = default_value
         port.Type = type
+        port.fmt = format
         return port
 
     def add_output(
         self,
         name="output",
         type=None,
+        format=None,
         default_value=None,
         multi_output=True,
         display_name=True,
@@ -1234,11 +1245,11 @@ class NODE_INTERFACE(BaseNode):
         port = super().add_output(
             name, multi_output, display_name, color, locked, painter_func
         )
-        port.value = default_value
+        port.val = default_value
         port.Type = type
+        port.fmt = format
         return port
 
-    # EXECUTION BEHAVIOURS
     # EXECUTION BEHAVIOURS
     def on_should_stream(self) -> bool:
         """
@@ -1271,157 +1282,156 @@ class NODE_INTERFACE(BaseNode):
             if o_ps:
                 o_p = o_ps[0]
                 if i_p.Type == t.ANY or (i_p.Type == o_p.Type):
-                    i_p.value = o_p.value
+                    i_p.val = o_p.val
 
 ========================================
 E:\soon\projects\PBNPR\code\addons\gl_studio\examples\opengl\Fdefault.glsl
 ========================================
 #version 330
-in vec3 v_normal;
+
 out vec4 f_color;
 
-uniform vec3 light_dir; // The direction of our light source
-
 void main() {
-    // DOT PRODUCT EXAMPLE:
-    // dot(a, b) returns 1.0 if vectors face the same way, 0 if perpendicular.
-    // We use 'max' to ensure we don't get negative light.
-    float brightness = max(dot(normalize(v_normal), normalize(light_dir)), 0.0);
-
-    vec3 base_color = vec3(0.2, 0.6, 1.0); // Blueish surface
-    f_color = vec4(base_color * brightness, 1.0);
+    f_color = vec4(1.0);
 }
 
 ========================================
 E:\soon\projects\PBNPR\code\addons\gl_studio\examples\opengl\Vdefault.glsl
 ========================================
-
 #version 330
-in vec2 in_vert;
-in vec3 in_normal; // Normal vector of the surface
-out vec3 v_normal;
+
+uniform mat4 mOBJ;
+uniform mat4 mVIEW;
+uniform mat4 mPROJ;
+
+in vec3 in_vert;
 
 void main() {
-    v_normal = in_normal;
-    gl_Position = vec4(in_vert, 0.0, 1.0);
+    gl_Position = mPROJ * mVIEW * mOBJ * vec4(in_vert, 1.0);
 }
 
 ========================================
 E:\soon\projects\PBNPR\code\addons\gl_studio\opengl\mgl.py
 ========================================
-import moderngl as g
+import moderngl as gl
 import numpy as np
-from gl_studio.util import util_types as t
 
 
-class GL:
-    def __init__(self, ctx: g.Context):
-        self.ctx = ctx
+class SHADER:
+    def __init__(self) -> None:
+        self.ctx = gl.create_context(standalone=True)
+
+        # State trackers for safe cleanup
         self.prog = None
-        self.vao = None
         self.fbo = None
+        self.vao = None
+        self.vbos = []  # Keep track of dynamic buffers!
 
-        # Keep track of generated objects so we can cleanly release them
-        self._vbos = []
-        self._textures = []
-        self._outputs = {}
+        # Default shaders
+        self.src_v = """
+            #version 330
+            in vec3 in_position;
+            void main() {
+                gl_Position = vec4(in_position, 1.0);
+            }
+        """
+        self.src_f = """
+            #version 330
 
-    def compile(
-        self,
-        V: str,
-        F: str,
-        dict_uni: dict,
-        dict_res: dict,
-        out_size=(t.RES_W, t.RES_H),
-    ):
-        # 1. Compile Shader
-        self.prog = self.ctx.program(vertex_shader=V, fragment_shader=F)
+            out vec4 f_color;
+            void main() {
+                f_color = vec4(1.0);
+            }
+        """
 
-        # 2. Handle Uniforms (Variables, Matrices, etc.)
-        for name, val in dict_uni.items():
-            if name in self.prog:
-                # MGL handles most types dynamically, but arrays need .write()
-                if isinstance(val, np.ndarray):
-                    self.prog[name].write(val.tobytes())
-                else:
-                    self.prog[name].value = val
-
-        # 3. Handle dict_res (Textures and Geometry/VBOs)
-        vao_content = []
-        tex_unit = 0
-
-        for name, data in dict_res.items():
-            if name not in self.prog:
-                continue  # Skip data the shader doesn't care about!
-
-            # TYPE A: It's an Image/Texture (Assuming a 3D numpy array: H, W, Channels)
-            if isinstance(data, np.ndarray) and len(data.shape) == 3:
-                h, w, c = data.shape
-                tex = self.ctx.texture((w, h), c, data.tobytes())  # 1. Upload to GPU
-                tex.use(location=tex_unit)  # 2. Put in a "Slot"
-                self.prog[name].value = tex_unit  # 3. Tell the shader which slot!
-                self._textures.append(tex)
-                tex_unit += 1
-
-            # TYPE B: It's Vertex Data / UVs (Assuming a 2D numpy array: Vertices, Components)
-            elif isinstance(data, np.ndarray) and len(data.shape) == 2:
-                components = data.shape[1]  # e.g., 3 for vec3 position, 2 for vec2 UV
-                vbo = self.ctx.buffer(data.astype("f4").tobytes())
-
-                # Format string for MGL (e.g., '3f', '2f')
-                mgl_format = f"{components}f"
-
-                # Append to our dynamic VAO list: (buffer, format, attribute_name)
-                vao_content.append((vbo, mgl_format, name))
-                self._vbos.append(vbo)
-
-        # 4. Build Dynamic VAO
-        # If no geometry was provided, we can't really draw, but we handle it safely
-        if vao_content:
-            self.vao = self.ctx.vertex_array(self.prog, vao_content)
-        else:
-            print("Warning: No vertex data provided for VAO!")
-
-        # 5. Handle Outputs (FBO)
-        # We create a dictionary of output textures. You can expand this to check for depth.
-        out_tex = self.ctx.texture(out_size, 4)  # RGBA combined output
-        self.fbo = self.ctx.framebuffer(color_attachments=[out_tex])
-        self._outputs["Combined"] = out_tex
-
-    def execute(self) -> dict:
-        if not self.vao or not self.fbo:
-            return {}
-
-        self.fbo.use()
-        self.ctx.clear(0.0, 0.0, 0.0, 0.0)
-        self.vao.render(g.TRIANGLES)
-
-        # Extract data from GPU back to CPU/Numpy for your node outputs
-        result_dict = {}
-        for name, tex in self._outputs.items():
-            raw = tex.read()
-            # Convert back to numpy array (H, W, 4)
-            arr = np.frombuffer(raw, dtype=np.uint8).reshape(
-                tex.height, tex.width, tex.components
-            )
-            result_dict[name] = arr
-
-        return result_dict
-
-    def release(self):
-        # END: ALWAYS CLEAR dynamically generated resources
-        if self.vao:
-            self.vao.release()
-        if self.fbo:
-            self.fbo.release()
+    def compile(self, w, h):
+        """Compiles the shader program and sets up the render target."""
+        # 1. Clear old data if re-compiling to prevent VRAM leaks
         if self.prog:
             self.prog.release()
-        for vbo in self._vbos:
+        if self.fbo:
+            self.fbo.release()
+
+        # 2. Compile Shader
+        self.prog = self.ctx.program(
+            vertex_shader=self.src_v,
+            fragment_shader=self.src_f,
+        )
+
+        # 3. Setup Off-screen Framebuffer
+        width, height = int(w), int(h)
+        self.fbo = self.ctx.simple_framebuffer((width, height), components=3)
+
+    def uniforms(self, uniforms_dict):
+        """Pushes global variables to the shader."""
+        if not self.prog or not uniforms_dict:
+            return
+
+        # Must use .items() to get both key and value!
+        for name, data in uniforms_dict.items():
+            if name in self.prog:
+                # Handle flattened matrices (16 floats) using raw bytes
+                if isinstance(data, (list, tuple)) and len(data) == 16:
+                    self.prog[name].write(np.array(data, dtype="f4").tobytes())
+                # Handle normal values (floats, vectors)
+                else:
+                    self.prog[name].value = data
+
+    def vertex_attributes(self, attributes_dict):
+        """Generates VBOs and creates the VAO layout."""
+        if not self.prog or not attributes_dict:
+            return
+
+        vao_blueprint = []
+        self.vbos = []  # Reset VBO tracker
+
+        for attr_name, attr_obj in attributes_dict.items():
+            if attr_name in self.prog:
+                # Create buffer and track it
+                vbo = self.ctx.buffer(attr_obj.data)
+                self.vbos.append(vbo)
+
+                # Add to blueprint
+                vao_blueprint.append((vbo, attr_obj.fmt, attr_name))
+
+        if not vao_blueprint:
+            return
+
+        # Build and store the VAO
+        self.vao = self.ctx.vertex_array(self.prog, vao_blueprint)
+
+    def render(self):
+        """Executes the draw call and returns RGB bytes."""
+        if not self.vao or not self.fbo:
+            return None
+
+        # Lock onto the FBO right before rendering
+        self.fbo.use()
+        self.ctx.clear(0.1, 0.1, 0.1)
+
+        self.ctx.enable(gl.DEPTH_TEST)
+        self.vao.render(gl.TRIANGLES)
+        self.ctx.disable(gl.DEPTH_TEST)
+
+        return self.fbo.read(components=3)
+
+    def clear(self):
+        """Safely destroys all GPU objects to free VRAM."""
+        if self.vao:
+            self.vao.release()
+            self.vao = None
+
+        for vbo in self.vbos:
             vbo.release()
-        for tex in self._textures:
-            tex.release()
-        for out in self._outputs.values():
-            out.release()
+        self.vbos.clear()
+
+        if self.prog:
+            self.prog.release()
+            self.prog = None
+
+        if self.fbo:
+            self.fbo.release()
+            self.fbo = None
 
 ========================================
 E:\soon\projects\PBNPR\code\addons\gl_studio\ui\pyside6\editor_general_template_module_file.py
@@ -1645,9 +1655,13 @@ def delete_selected_nodes():
         cfg.graph.delete_nodes(selected_nodes)
 
 
-# ========= APPLICATION LAYER LEVEL ===============
+def duplicate_selected():
+    selections = cfg.graph.selected_nodes()
+    for node in selections:
+        safe_create_node(type(node))
 
 
+# ============================
 def check_state():
     if cfg.graph:
         return True
@@ -1658,39 +1672,19 @@ def check_state():
 
 def process_frame():
     pag.run()
+    for node in cfg.graph.all_nodes():
+        node = cast(NODE, node)
+        pos = node.view.pos()
+        x = pos.x()
+        y = pos.y()
+        node.set_pos(x, y)
 
 
 def _PreProcess():
     """This function monkey-hooks Direct Property acceess functions inside NodeGraphQt.Port class"""
-
-    def safe_set_port_property(port_inst: Port, prop_prefix, value):
-        node = port_inst.node()
-        prop_name = f"{prop_prefix}_{port_inst.name()}"
-
-        # Create property if it doesn't exist (handles both normal use AND deserialization)
-        if not node.has_property(prop_name):
-            node.create_property(prop_name, value)
-        else:
-            node.set_property(prop_name, value)
-
-    def safe_get_port_property(port_inst, prop_prefix):
-        node = port_inst.node()
-        prop_name = f"{prop_prefix}_{port_inst.name()}"
-
-        val = node.get_property(prop_name) if node.has_property(prop_name) else None
-
-        return val
-
-    # Injecting the properties into the Port class
-    Port.value = property(
-        fset=lambda self, val: safe_set_port_property(self, "port_val", val),
-        fget=lambda self: safe_get_port_property(self, "port_val"),
-    )
-
-    Port.Type = property(
-        fset=lambda self, val: safe_set_port_property(self, "port_type", val),
-        fget=lambda self: safe_get_port_property(self, "port_type"),
-    )
+    Port.val = None
+    Port.Fmt = None
+    Port.Type = None
 
 
 def _Create_shortcuts():
@@ -1705,6 +1699,9 @@ def _Create_shortcuts():
 
     shortcut_load = QShortcut(QKeySequence("Ctrl+L"), cfg.graph.widget)
     shortcut_load.activated.connect(cfg.load_graph)
+
+    shortcut_dup = QShortcut(QKeySequence("Shift+D"), cfg.graph.widget)
+    shortcut_dup.activated.connect(duplicate_selected)
 
 
 def _Create_GUI():
@@ -2003,6 +2000,15 @@ def process_frame():
 ========================================
 E:\soon\projects\PBNPR\code\addons\gl_studio\util\util_types.py
 ========================================
+from dataclasses import dataclass
+
+
+@dataclass
+class formated_data:
+    data: bytes  # The raw .tobytes() data
+    fmt: str  # The layout format (e.g., '3f', '2f', '4f')
+
+
 # Ouput nodes list,
 # itterated by PAG to evaluate the branches's nodes.
 # lifetime is managed by node itself
@@ -2012,10 +2018,10 @@ NONE = "NONE"  # flags
 ANY = "ANY"
 STR = "string"  # basic
 INT = "int"
-F = "F1"
-F2 = "F2"
-F3 = "F3"
-F4 = "F4"
+F = "f"
+F2 = "2f"
+F3 = "3f"
+F4 = "4f"
 F16 = "F16"
 DICT = "Dict"  # containers
 DICTS = "Dicts"
@@ -2028,6 +2034,7 @@ LNKED_FAIL = "Not Linked."
 # --- HEX (pyside6)
 RED = "color: #ff0000;"
 GREEN = "color: #00ff00;"
+# --- mgl specific
 
 ========================================
 E:\soon\projects\PBNPR\code\util\blender_headless.py

@@ -17,24 +17,18 @@ class NODE_VALUE_FORMAT(BASE.NODE_INTERFACE):
 
     def on_gui(self):
         self.line = QtWidgets.QLineEdit()
-        self.line.textChanged.connect(self.on_text_change)
+        self.line.textChanged.connect(lambda v: self.set(STATIC, v))
         return self.line
 
-    def on_text_change(self, data):
-        self.reset()
-
     def reset(self):
-        if not self.has_property(STATIC):
-            self.create_property(STATIC, self.line.text())
+        if not self.has(STATIC):
+            self.add(STATIC, self.line.text())
         else:
-            self.set_property(STATIC, self.line.text())
+            self.line.setText(self.get(STATIC))
 
     def on_stream(self):
         self.on_sync_port_values()
-        self.O_frmt.value = t.formated_data(data=self.I_val.value, fmt=self.line.text())
-
-    def on_graph_save(self):
-        self.reset()
+        self.O_frmt.val = t.formated_data(data=self.I_val.val, fmt=self.line.text())
 
     def on_graph_load(self):
-        self.line.setText(self.get_property(STATIC))
+        self.reset()

@@ -6,13 +6,15 @@ from PySide6.QtWidgets import QWidget
 
 
 class PortType(Port):
-    value = Any
-    Type = t.NONE
+    val = Any
+    Fmt = ""
+    Type = ""
 
 
 class NODE_WIDGET(NodeBaseWidget):
     def __init__(self, qt_widget, label="Control", parent=None):
         super(NODE_WIDGET, self).__init__(parent)
+
         self.set_name(label)
 
         self.set_custom_widget(qt_widget)
@@ -42,6 +44,11 @@ class NODE_INTERFACE(BaseNode):
         self.CB_ON_DEL = self.on_delete
         self.CACHED = False
 
+        self.has = self.has_property
+        self.get = self.get_property
+        self.set = self.set_property
+        self.add = self.create_property
+
         UTILITY_WIDGET = self.on_gui()
         if UTILITY_WIDGET is not None:
             self.integrate_widget(UTILITY_WIDGET)
@@ -54,13 +61,14 @@ class NODE_INTERFACE(BaseNode):
         """This function should Build and Return a Naitive PySide6.QtWidgets.* to be in the node content."""
 
     def integrate_widget(self, qt_widget, label=""):
-        node_widget = NODE_WIDGET(qt_widget, label=label, parent=self.view)
-        self.add_custom_widget(node_widget)
+        qt_widget = NODE_WIDGET(qt_widget, label=label, parent=self.view)
+        self.add_custom_widget(qt_widget)
 
     def add_input(
         self,
         name="input",
         type=None,
+        format=None,
         default_value=None,
         multi_input=False,
         display_name=True,
@@ -71,14 +79,16 @@ class NODE_INTERFACE(BaseNode):
         port = super().add_input(
             name, multi_input, display_name, color, locked, painter_func
         )
-        port.value = default_value
+        port.val = default_value
         port.Type = type
+        port.fmt = format
         return port
 
     def add_output(
         self,
         name="output",
         type=None,
+        format=None,
         default_value=None,
         multi_output=True,
         display_name=True,
@@ -89,11 +99,11 @@ class NODE_INTERFACE(BaseNode):
         port = super().add_output(
             name, multi_output, display_name, color, locked, painter_func
         )
-        port.value = default_value
+        port.val = default_value
         port.Type = type
+        port.fmt = format
         return port
 
-    # EXECUTION BEHAVIOURS
     # EXECUTION BEHAVIOURS
     def on_should_stream(self) -> bool:
         """
@@ -126,4 +136,4 @@ class NODE_INTERFACE(BaseNode):
             if o_ps:
                 o_p = o_ps[0]
                 if i_p.Type == t.ANY or (i_p.Type == o_p.Type):
-                    i_p.value = o_p.value
+                    i_p.val = o_p.val

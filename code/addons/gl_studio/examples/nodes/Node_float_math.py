@@ -1,6 +1,6 @@
 from gl_studio.examples.nodes import Node_zPattren as BASE
 from gl_studio.util import util_types as t
-from PySide6.QtWidgets import QCheckBox, QComboBox, QPushButton, QVBoxLayout, QWidget
+from PySide6.QtWidgets import QComboBox
 
 STATIC = "Math type"
 
@@ -32,33 +32,27 @@ class NODE_FLOAT_MATH(BASE.NODE_INTERFACE):
 
     def __init__(self):
         super(NODE_FLOAT_MATH, self).__init__()
-        self.I_A = self.add_input("A", type=t.F, default_value=0.0)
-        self.I_B = self.add_input("B", type=t.F, default_value=0.0)
+        self.I_A = self.add_input("A", type=t.F)
+        self.I_B = self.add_input("B", type=t.F)
         self.O_out = self.add_output("out_data", type=t.F)
         self.reset()
 
     def on_gui(self):
         self.Combo = QComboBox()
         self.Combo.addItems(ops.keys())
-        self.Combo.currentTextChanged.connect(self.reset)
+        self.Combo.currentTextChanged.connect(lambda v: self.set(STATIC, v))
         return self.Combo
 
     def reset(self):
-        self.I_A.value = 0.0
-        self.I_B.value = 0.0
-        self.O_out.value = 0.0
-        if not self.has_property(STATIC):
-            self.create_property(STATIC, self.Combo.currentText())
+        if self.has(STATIC):
+            self.Combo.setCurrentText(self.get(STATIC))
+        else:
+            self.add(STATIC, self.Combo.currentText())
 
     def on_stream(self):
         self.on_sync_port_values()
-        self.O_out.value = ops[self.Combo.currentText()](self.I_A.value, self.I_B.value)
-        self.reset()
-
-    def on_graph_save(self):
+        self.O_out.val = ops[self.get(STATIC)](self.I_A.val, self.I_B.val)
         self.reset()
 
     def on_graph_load(self):
-        if self.has_property(STATIC):
-            if self.get_property(STATIC) is not None:
-                self.Combo.setCurrentText(self.get_property(STATIC))
+        self.reset()

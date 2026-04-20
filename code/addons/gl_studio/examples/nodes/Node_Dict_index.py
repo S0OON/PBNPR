@@ -3,6 +3,7 @@ from gl_studio.util import util_types as t
 from PySide6.QtWidgets import QComboBox, QVBoxLayout, QWidget
 
 
+# DEPRICAED
 class NODE_DICT_GETTER(BASE.NODE_INTERFACE):
     NODE_NAME = "Dict index"
     CATEGORY = "Containers"

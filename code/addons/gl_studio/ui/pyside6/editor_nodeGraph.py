@@ -188,9 +188,7 @@ def duplicate_selected():
         safe_create_node(type(node))
 
 
-# ========= APPLICATION LAYER LEVEL ===============
-
-
+# ============================
 def check_state():
     if cfg.graph:
         return True
@@ -201,39 +199,19 @@ def check_state():
 
 def process_frame():
     pag.run()
+    for node in cfg.graph.all_nodes():
+        node = cast(NODE, node)
+        pos = node.view.pos()
+        x = pos.x()
+        y = pos.y()
+        node.set_pos(x, y)
 
 
 def _PreProcess():
     """This function monkey-hooks Direct Property acceess functions inside NodeGraphQt.Port class"""
-
-    def safe_set_port_property(port_inst: Port, prop_prefix, value):
-        node = port_inst.node()
-        prop_name = f"{prop_prefix}_{port_inst.name()}"
-
-        # Create property if it doesn't exist (handles both normal use AND deserialization)
-        if not node.has_property(prop_name):
-            node.create_property(prop_name, value)
-        else:
-            node.set_property(prop_name, value)
-
-    def safe_get_port_property(port_inst, prop_prefix):
-        node = port_inst.node()
-        prop_name = f"{prop_prefix}_{port_inst.name()}"
-
-        val = node.get_property(prop_name) if node.has_property(prop_name) else None
-
-        return val
-
-    # Injecting the properties into the Port class
-    Port.value = property(
-        fset=lambda self, val: safe_set_port_property(self, "port_val", val),
-        fget=lambda self: safe_get_port_property(self, "port_val"),
-    )
-
-    Port.Type = property(
-        fset=lambda self, val: safe_set_port_property(self, "port_type", val),
-        fget=lambda self: safe_get_port_property(self, "port_type"),
-    )
+    Port.val = None
+    Port.Fmt = None
+    Port.Type = None
 
 
 def _Create_shortcuts():
