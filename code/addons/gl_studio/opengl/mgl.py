@@ -211,7 +211,7 @@ class SHADER:
 
         self.vao.render(render_flag)
 
-        return self.fbo.read(components=4)
+        return self.fbo.read(components=3)
 
     def clear(self):
         """Safely destroys all GPU objects to free VRAM."""

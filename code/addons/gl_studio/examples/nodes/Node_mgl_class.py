@@ -40,7 +40,7 @@ class NODE_MGL_BASIC(BASE.NODE_INTERFACE):
         shader.vertex_attributes(self.I_attrs.val)
         shader.textures(self.I_textures.val)
         shader.ctx.enable(mgl.flag_context_enable["DEPTH_TEST"])
-        self.O_pixels.val = shader.render(mgl.flag_primitive_modes["TRIANGLE_STRIP"])
+        self.O_pixels.val = shader.render(mgl.flag_primitive_modes["TRIANGLES"])
         shader.clear()
 
     def reset(self):
