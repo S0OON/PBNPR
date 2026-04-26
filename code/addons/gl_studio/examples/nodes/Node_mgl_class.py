@@ -19,6 +19,8 @@ class NODE_MGL_BASIC(BASE.NODE_INTERFACE):
         self.I_uniforms = self.add_input("Uniforms", type=t.DICT)
         self.I_attrs = self.add_input("Attributes", type=t.DICT)
 
+        self.I_textures = self.add_input("Textures", type=t.DICT)
+
         # --- Outputs ---
         self.O_pixels = self.add_output("Pixels_RGBA", type=t.ANY)
 
@@ -36,7 +38,10 @@ class NODE_MGL_BASIC(BASE.NODE_INTERFACE):
 
         shader.uniforms(self.I_uniforms.val)
         shader.vertex_attributes(self.I_attrs.val)
-        self.O_pixels.val = shader.render()
+        shader.textures(self.I_textures.val)
+        shader.ctx.enable(mgl.flag_context_enable["DEPTH_TEST"])
+        self.O_pixels.val = shader.render(mgl.flag_primitive_modes["TRIANGLE_STRIP"])
+        shader.clear()
 
     def reset(self):
         self.I_vert.val = None

@@ -11,7 +11,7 @@ class NODE_VALUE_FORMAT(BASE.NODE_INTERFACE):
 
     def __init__(self):
         super().__init__()
-        self.I_val = self.add_input("Value", type=t.ANY)
+        self.I_data = self.add_input("Value", type=t.ANY)
         self.O_frmt = self.add_output("frmt", type=t.ANY)
         self.reset()
 
@@ -28,7 +28,7 @@ class NODE_VALUE_FORMAT(BASE.NODE_INTERFACE):
 
     def on_stream(self):
         self.on_sync_port_values()
-        self.O_frmt.val = t.formated_data(data=self.I_val.val, fmt=self.line.text())
+        self.O_frmt.val = t.formated_data(data=self.I_data.val, fmt=self.line.text())
 
     def on_graph_load(self):
         self.reset()

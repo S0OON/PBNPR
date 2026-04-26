@@ -15,8 +15,8 @@ def _Create_GUI():
 
 
 def register():
-    placeholder = QtWidgets.QWidget()
-    CFG.tabs.addTab(placeholder, "Template")
+    Tab = QtWidgets.QWidget()
+    CFG.tabs.addTab(Tab, "Template")
 
 
 def unregister():

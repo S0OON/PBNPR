@@ -3,18 +3,6 @@ import sys
 from PySide6.QtWidgets import QApplication, QMainWindow, QTabWidget
 
 
-def _PreProcess():
-    pass
-
-
-def _Create_shortcuts():
-    pass
-
-
-def _Create_GUI():
-    pass
-
-
 class INTERFACE:
     def __init__(self):
         self.running = False
@@ -35,6 +23,18 @@ class Window(QMainWindow):
 
 
 cfg = INTERFACE()
+
+
+def _PreProcess():
+    pass
+
+
+def _Create_shortcuts():
+    pass
+
+
+def _Create_GUI():
+    pass
 
 
 def register():

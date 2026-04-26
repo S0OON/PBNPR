@@ -11,7 +11,7 @@ class NODE_STRING(BASE.NODE_INTERFACE):
 
     def __init__(self):
         super().__init__()
-        self.O_str = self.add_output(name="String", type=t.F)
+        self.O_str = self.add_output(name="String", type=t.STR)
         self.reset()
 
     def on_gui(self):

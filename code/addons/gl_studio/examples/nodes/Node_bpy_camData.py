@@ -11,14 +11,14 @@ class NODE_CAMERA_EVAL(BASE.NODE_INTERFACE):
 
     def __init__(self):
         super(NODE_CAMERA_EVAL, self).__init__()
-        # Inputs
         self.I_name = self.add_input("camera name", type=t.STR)
         self.I_w = self.add_input("Width", type=t.F)
         self.I_h = self.add_input("Height", type=t.F)
 
-        # Outputs
         self.O_view = self.add_output("view_matrix", type=t.F16)
         self.O_proj = self.add_output("proj_matrix", type=t.F16)
+
+        self.O_pkg = self.add_output("Packed matricies", type=t.DICT)
         self.reset()
 
     def on_gui(self):
@@ -31,6 +31,7 @@ class NODE_CAMERA_EVAL(BASE.NODE_INTERFACE):
         self.I_h.val = t.RES_H
         self.O_view.val = None
         self.O_proj.val = None
+        self.O_pkg.val = {}
         self.status_label.setText("No Camera linked")
         self.status_label.setStyleSheet(t.RED)
 
@@ -67,6 +68,8 @@ class NODE_CAMERA_EVAL(BASE.NODE_INTERFACE):
 
         self.O_view.val = view
         self.O_proj.val = proj
+
+        self.O_pkg.val = {"view_matrix": view, "proj_matrix": proj}
 
     def on_graph_load(self):
         self.reset()

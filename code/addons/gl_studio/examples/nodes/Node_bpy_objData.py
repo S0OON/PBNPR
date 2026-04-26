@@ -17,6 +17,7 @@ class NODE_OBJECT_EVAL(BASE.NODE_INTERFACE):
         self.O_normals = self.add_output("normals", type=t.ANY)
         self.O_uvs = self.add_output("uvs", type=t.DICT)  # Dict of Numpy Arrays
         self.O_matrix = self.add_output("world_matrix", type=t.F16)
+        self.O_pkg = self.add_output("Packed vertex attributes", type=t.DICT)
         self.reset()
 
     def on_gui(self):
@@ -29,6 +30,7 @@ class NODE_OBJECT_EVAL(BASE.NODE_INTERFACE):
         self.O_normals.val = None
         self.O_uvs.val = None
         self.O_matrix.val = None
+        self.O_pkg.val = {}
         self.status_label.setText("No object linked")
         self.status_label.setStyleSheet(t.RED)
 
@@ -92,10 +94,17 @@ class NODE_OBJECT_EVAL(BASE.NODE_INTERFACE):
                     layer.data.foreach_get("uv", raw_uvs)
                     raw_uvs = raw_uvs.reshape(-1, 2)
                     # UVs are mapped by loop indices, not vertex indices!
-                    uv_dict[layer.name] = raw_uvs[tri_loop_indices].flatten()
+                    uv_dict[layer.name] = t.formated_data(
+                        data=raw_uvs[tri_loop_indices].flatten(), fmt="2f"
+                    )
 
             self.O_uvs.val = uv_dict
 
+            self.O_pkg.val = {
+                "positions": t.formated_data(data=self.O_pos.val, fmt=t.F3),
+                "normals": t.formated_data(data=self.O_normals.val, fmt=t.F3),
+                **uv_dict,
+            }
         else:
             self.reset()
 

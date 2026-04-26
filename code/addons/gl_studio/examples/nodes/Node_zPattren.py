@@ -1,7 +1,7 @@
 from typing import Any
 
 from gl_studio.util import util_types as t
-from NodeGraphQt import BaseNode, NodeBaseWidget, Port
+from OdenGraphQt import BaseNode, NodeBaseWidget, Port
 from PySide6.QtWidgets import QWidget
 
 
@@ -77,7 +77,7 @@ class NODE_INTERFACE(BaseNode):
         painter_func=None,
     ) -> PortType:
         port = super().add_input(
-            name, multi_input, display_name, color, locked, painter_func
+            name, multi_input, display_name, color if color is not None else t.get_socket_color(type), locked, painter_func
         )
         port.val = default_value
         port.Type = type
@@ -97,7 +97,7 @@ class NODE_INTERFACE(BaseNode):
         painter_func=None,
     ) -> PortType:
         port = super().add_output(
-            name, multi_output, display_name, color, locked, painter_func
+            name, multi_output, display_name, color if color is not None else t.get_socket_color(type), locked, painter_func
         )
         port.val = default_value
         port.Type = type
@@ -121,10 +121,10 @@ class NODE_INTERFACE(BaseNode):
         """
 
     def on_graph_save(self):
-        """THis function Runs when we save a seesion"""
+        """Called by Qt shortcuts, THis function Runs when we save a seesion"""
 
     def on_graph_load(self):
-        """THis function Runs when we Load a seesion"""
+        """Called by Qt shortcuts, THis function Runs when we Load a seesion"""
 
     def on_delete(self):
         """Called by Qt shortcuts, when the node is selcted and deleted"""

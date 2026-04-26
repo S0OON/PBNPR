@@ -8,22 +8,58 @@ from gl_studio.examples.nodes.Node_zPattren import NODE_INTERFACE as NODE
 from gl_studio.examples.nodes.Node_zPattren import PortType as PORT
 from gl_studio.ui.pyside6.internals import cfg as PROG_CFG
 from gl_studio.util import util_types as t
-from NodeGraphQt import BaseNode, NodeGraph, Port
+from OdenGraphQt import BaseNode, NodeGraph, Port
 from PySide6.QtGui import QKeySequence, QShortcut
-from PySide6.QtWidgets import QFileDialog, QMenu, QMenuBar, QVBoxLayout, QWidget
-
+from PySide6.QtWidgets import QSizePolicy,QFileDialog, QMenu, QMenuBar, QVBoxLayout, QWidget, QSplitter,QTabWidget
+from PySide6 import QtCore
 
 class INTERFACE:
+    Tab_main_label = "Node Editor"
+    Tab_settings_label = "Settings"
+    Tab_Inspec_label = "Inspect"
     nodes = {}
     active_links = {}  # { Input_socket_id : Output_socket_id }
     directories = []
 
     def __init__(self):
+        self.widget:QWidget = None
         self.lay: QVBoxLayout = None
-        self.graph: NodeGraph = None
+
         self.menu_bar: QMenuBar = None
-        self.menu_Graph: QMenu = None
         self.menu_add_node: QMenu = None
+        self.menu_Graph: QMenu = None
+
+        self.splitter:QWidget = None
+        self.graph: NodeGraph = None
+        self.side_panel:QTabWidget = None
+        self.tab_sets:QWidget = None
+        self.tab_inspec:QWidget = None
+
+    def setup_layout(self):
+        PROG_CFG.tabs.addTab(self.widget,self.Tab_main_label)
+
+        self.widget.setLayout(self.lay)
+
+        self.lay.addWidget(self.menu_bar)
+        self.lay.addWidget(self.splitter)
+        #self.widget.setStyleSheet("border: 2px solid red;")
+
+
+        self.menu_bar.addMenu(self.menu_add_node)
+        self.menu_bar.addMenu(self.menu_Graph)
+        self.menu_bar.setSizePolicy(QSizePolicy.Policy.Expanding,QSizePolicy.Policy.Fixed)
+
+        self.splitter.addWidget(self.graph.widget)
+        self.splitter.addWidget(self.side_panel)
+
+        self.side_panel.addTab(self.tab_sets,self.Tab_settings_label)
+        self.side_panel.addTab(self.tab_inspec,self.Tab_Inspec_label)
+
+    def toggle_side_panel(self):
+        if self.side_panel.isHidden():
+            self.side_panel.show()
+        else:
+            self.side_panel.hide()
 
     def save_graph(self):
         """Opens a dialog to save the current node session to a JSON file."""
@@ -133,7 +169,7 @@ class PAG:
 pag = PAG()
 
 
-# ============================
+# ============== NODES SPECIFIC ==============
 def load_nodes_from_directory(directory_path):
     """Scans directory and returns a list of valid BaseNode subclasses."""
     discovered_nodes = []
@@ -230,28 +266,35 @@ def _Create_shortcuts():
     shortcut_dup = QShortcut(QKeySequence("Shift+D"), cfg.graph.widget)
     shortcut_dup.activated.connect(duplicate_selected)
 
+    short_tog_panel = QShortcut(QKeySequence("N"), cfg.graph.widget)
+    short_tog_panel.activated.connect(cfg.toggle_side_panel)
 
 def _Create_GUI():
-    widget = QWidget()
-    PROG_CFG.tabs.addTab(widget, "Node editor")
+    cfg.widget = QWidget()
 
     cfg.lay = QVBoxLayout()
-    widget.setLayout(cfg.lay)
+
+    cfg.menu_bar = QMenuBar()
+
+    cfg.splitter = QSplitter(QtCore.Qt.Horizontal)
 
     cfg.graph = NodeGraph()
-    cfg.graph.auto_layout_nodes()
-    cfg.menu_bar = QMenuBar()
-    cfg.lay.addWidget(cfg.menu_bar)
-    cfg.lay.addWidget(cfg.graph.widget)
+
+    cfg.side_panel = QTabWidget()
+
+    cfg.tab_sets = QWidget()
+
+    cfg.tab_inspec = QWidget()
 
     cfg.menu_add_node = QMenu(title="Add Node")
-    cfg.menu_bar.addMenu(cfg.menu_add_node)
 
     cfg.menu_Graph = QMenu(title="Graph settings")
-    cfg.menu_bar.addMenu(cfg.menu_Graph)
+
+    cfg.setup_layout()
 
     (cfg.menu_Graph.addAction("Save")).triggered.connect(cfg.save_graph)
     (cfg.menu_Graph.addAction("Load")).triggered.connect(cfg.load_graph)
+    (cfg.menu_Graph.addAction("Panel")).triggered.connect(cfg.toggle_side_panel)
 
     # --- DYNAMIC NODE REGISTRATION ---
 
@@ -286,6 +329,7 @@ def register():
     _PreProcess()
     _Create_GUI()
     _Create_shortcuts()
+    t.GLOB_INSPECTOR_WIDGET = cfg.tab_inspec
 
 
 def unregister():
