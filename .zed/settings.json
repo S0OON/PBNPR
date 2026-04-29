@@ -1,3 +1,18 @@
 {
-  "format_on_save": "off",
+  "format_on_save":"off",
+  "languages": {
+    "Python": {
+      "language_servers": ["basedpyright", "!pylsp"],
+      "lsp": {
+        "basedpyright": {
+          "settings": {
+            "basedpyright.analysis": {
+              "autoImportCompletions": false,
+              "diagnosticMode": "openFilesOnly"
+            }
+          }
+        }
+      }
+    }
+  }
 }

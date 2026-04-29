@@ -1,12 +1,32 @@
 from dataclasses import dataclass
+from functools import lru_cache
 from typing import Any
 from PySide6.QtWidgets import QWidget
+import numpy as np
 
-@dataclass
+@dataclass(slots=True)
 class formated_data:
     data: Any
     fmt: str
 
+MGL_TYPES = {
+    np.float32: 'f',
+    np.float64: 'd',
+    np.int32:   'i',
+    np.uint8:   'u1'
+}
+
+#@lru_cache(maxsize=128)
+def get_mgl_format(array: np.ndarray) -> str:
+    """Dynamically generates a ModernGL format string from an N-Dimensional Numpy Array."""
+
+    mgl_char = MGL_TYPES.get(array.dtype.type, 'f')
+
+    # If the array is 2D (e.g. Nx3), components = 3.
+    # If the array is 1D (e.g. N), components = 1.
+    components = array.shape[1] if len(array.shape) > 1 else 1
+
+    return f"{components}{mgl_char}"
 
 # Ouput nodes list,
 # itterated by PAG to evaluate the branches's nodes.
@@ -79,5 +99,39 @@ WHITE = "color: #ffffff;"
 RED = "color: #ff0000;"
 GREEN = "color: #00ff00;"
 BLUE = "color: #0000ff;"
+# --- ModernGl
+POS = 'positions'
+UV = 'UVMap'
+RES = 'resolution'
+GLOBAL_DEFAULT_SCREEN_V = np.array([
+     1.0,  1.0,  # Top-Right
+     1.0, -1.0,  # Bottom-Right
+    -1.0,  1.0,  # Top-Left
+    -1.0, -1.0,  # Bottom-Left
+], dtype=np.float32).reshape(4, 2)
+
+GLOBAL_DEFAULT_SCREEN_UV = np.array([
+    1.0, 1.0,  # Top-Right
+    1.0, 0.0,  # Bottom-Right
+    0.0, 1.0,  # Top-Left
+    0.0, 0.0,  # Bottom-Left
+], dtype=np.float32).reshape(4, 2)
+SRC_SCREEN_VERT = f"""
+    #version 330
+    in vec2 {POS};
+
+    void main() {{
+        gl_Position = vec4(vec3({POS},0.0), 1.0);
+    }}
+"""
+SRC_SCREEN_FRAG = """
+    #version 330
+
+    out vec4 fragColor;
+
+    void main() {
+        fragColor = vec4(1.0);
+    }
+"""
 # --- Global nukes, fast and unsafe access.
 GLOB_INSPECTOR_WIDGET : QWidget = None

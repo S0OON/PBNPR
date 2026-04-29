@@ -310,23 +310,121 @@ class NODE_IMG_DATA(BASE.NODE_INTERFACE):
         self.status_label.setStyleSheet(t.GREEN)
 
         w, h = img.size
-        channels = img.channels  # Usually 4 (RGBA)
+        channels = img.channels
 
-        # 1. Pre-allocate a NumPy array (float32 is standard for bpy)
-        # Total size is width * height * channels
-        pixels = np.empty(w * h * channels, dtype=np.float32)
+        # 1. Pre-allocate (1D flat array)
+        result = np.empty(w * h * channels, dtype=np.float32)
 
-        # 2. Use for_each() equivalent: foreach_get
-        # This is a high-speed C-level copy
-        img.pixels.foreach_get(pixels)
+        # 2. Fast copy
+        img.pixels.foreach_get(result)
 
-        self.O_pixels.val = pixels
+        # 3. Reshape (Must be Height first, then Width)
+        # Also, assign it back to the variable!
+        result = result.reshape((h, w, channels))
+        #result = np.flipud(result)
+
+
+        self.O_pixels.val = result
         self.O_w.val = w
         self.O_h.val = h
         self.O_Channels.val = channels
         self.O_pkg.val = {
-            self.line.text(): t.formated_data(data=pixels, fmt=f"{w},{h},{channels},f4")
+            self.line.text(): result
         }
+
+    def on_graph_load(self):
+        self.reset()
+
+========================================
+E:\soon\projects\PBNPR\code\addons\gl_studio\examples\nodes\Node_bpy_imgWrite.py
+========================================
+import bpy
+import numpy as np
+from gl_studio.examples.nodes import Node_zPattren as BASE
+from gl_studio.util import util_types as t
+from PySide6.QtWidgets import QLabel, QLineEdit, QVBoxLayout, QWidget
+
+
+PRESISTANT = "img_name"
+
+class NODE_IMG_WRITE(BASE.NODE_INTERFACE):
+    NODE_NAME = "Image Write"
+    CATEGORY = "Blender"
+
+    def __init__(self):
+        super().__init__()
+        self.I_pixels = self.add_input(name="Pixels", type=t.RGBA)
+        self.reset()
+
+    def on_gui(self):
+        widget = QWidget()
+        lay = QVBoxLayout()
+        widget.setLayout(lay)
+
+        self.line = QLineEdit()
+        self.line.setPlaceholderText("Target Image Name...")
+        self.line.textChanged.connect(lambda v: self.set(PRESISTANT, v))
+        lay.addWidget(self.line)
+
+        self.status_label = QLabel()
+        lay.addWidget(self.status_label)
+
+        return widget
+
+    def reset(self, v=None):
+        if self.has(PRESISTANT):
+            self.line.setText(self.get(PRESISTANT))
+        else:
+            self.add(PRESISTANT, self.line.text())
+
+        self.status_label.setText("No target image")
+        self.status_label.setStyleSheet(t.RED)
+
+    def on_stream(self):
+        img_name = self.line.text()
+        if not img_name:
+            self.status_label.setText("Enter image name")
+            self.status_label.setStyleSheet(t.RED)
+            return
+
+        img = bpy.data.images.get(img_name)
+        if not img:
+            self.status_label.setText(f"Missing: {img_name}")
+            self.status_label.setStyleSheet(t.RED)
+            return
+
+        pixels_data = self.I_pixels.val
+
+        # Check if input has valid data
+        if pixels_data is None or (isinstance(pixels_data, (int, float)) and pixels_data == 0):
+            self.status_label.setText("Waiting for pixels...")
+            self.status_label.setStyleSheet(t.RED)
+            return
+
+        try:
+            if not isinstance(pixels_data, np.ndarray):
+                pixels_data = np.array(pixels_data, dtype=np.float32)
+
+            # Flatten to 1D as required by Blender's foreach_set
+            pixels_flat = pixels_data.ravel()
+
+            # Verify dimensions match
+            expected_size = img.size[0] * img.size[1] * img.channels
+
+            if len(pixels_flat) != expected_size:
+                self.status_label.setText(f"Size Error: {len(pixels_flat)} vs {expected_size}")
+                self.status_label.setStyleSheet(t.RED)
+                return
+
+            img.pixels.foreach_set(pixels_flat)
+            img.update()
+
+            self.status_label.setText(f"Updated: {img.name}")
+            self.status_label.setStyleSheet(t.GREEN)
+
+        except Exception as e:
+            self.status_label.setText(f"Error: {str(e)}")
+            self.status_label.setStyleSheet(t.RED)
 
     def on_graph_load(self):
         self.reset()
@@ -394,7 +492,7 @@ class NODE_OBJECT_EVAL(BASE.NODE_INTERFACE):
         if obj.type == "MESH":
             mesh = obj.data
 
-            # 1. Force Blender to generate triangulation data
+            # 1. generate triangulation data
             mesh.calc_loop_triangles()
 
             num_tris = len(mesh.loop_triangles)
@@ -407,20 +505,22 @@ class NODE_OBJECT_EVAL(BASE.NODE_INTERFACE):
             tri_loop_indices = np.empty(num_tri_verts, dtype=np.int32)
             mesh.loop_triangles.foreach_get("loops", tri_loop_indices)
 
+
             # --- Positions ---
             raw_pos = np.empty(len(mesh.vertices) * 3, dtype=np.float32)
             mesh.vertices.foreach_get("co", raw_pos)
             raw_pos = raw_pos.reshape(-1, 3)
-            # Map raw vertices to unrolled triangle vertices
-            self.O_pos.val = raw_pos[tri_vert_indices].flatten()
+
+            # REMOVED .flatten() -> Array is now shape (Num_Tri_Verts, 3)
+            self.O_pos.val = raw_pos[tri_vert_indices]
 
             # --- Normals ---
-            # (Note: For flat shading, you might want split normals (mesh.loops.normal),
-            # but here is the mapping for smooth vertex normals)
             raw_norms = np.empty(len(mesh.vertices) * 3, dtype=np.float32)
             mesh.vertices.foreach_get("normal", raw_norms)
             raw_norms = raw_norms.reshape(-1, 3)
-            self.O_normals.val = raw_norms[tri_vert_indices].flatten()
+
+            # REMOVED .flatten()
+            self.O_normals.val = raw_norms[tri_vert_indices]
 
             # --- UVs ---
             uv_dict = {}
@@ -429,16 +529,16 @@ class NODE_OBJECT_EVAL(BASE.NODE_INTERFACE):
                     raw_uvs = np.empty(len(mesh.loops) * 2, dtype=np.float32)
                     layer.data.foreach_get("uv", raw_uvs)
                     raw_uvs = raw_uvs.reshape(-1, 2)
-                    # UVs are mapped by loop indices, not vertex indices!
-                    uv_dict[layer.name] = t.formated_data(
-                        data=raw_uvs[tri_loop_indices].flatten(), fmt="2f"
-                    )
+
+                    # REMOVED formated_data and .flatten() -> Array is now shape (Num_Tri_Verts, 2)
+                    uv_dict[layer.name] = raw_uvs[tri_loop_indices]
 
             self.O_uvs.val = uv_dict
 
+            # Now O_pkg is just a clean dictionary of pure NumPy arrays
             self.O_pkg.val = {
-                "positions": t.formated_data(data=self.O_pos.val, fmt=t.F3),
-                "normals": t.formated_data(data=self.O_normals.val, fmt=t.F3),
+                "positions": self.O_pos.val,
+                "normals": self.O_normals.val,
                 **uv_dict,
             }
         else:
@@ -672,6 +772,21 @@ class NODE_VALUE_DICT(BASE.NODE_INTERFACE):
         self.reset()
 
 ========================================
+E:\soon\projects\PBNPR\code\addons\gl_studio\examples\nodes\Node_empty.py
+========================================
+from gl_studio.examples.nodes import Node_zPattren as BASE
+from gl_studio.util import util_types as t
+
+
+class NODE_EMPTY(BASE.NODE_INTERFACE):
+    NODE_NAME = "Empty"
+
+    def __init__(self):
+        super().__init__()
+        self.I_a = self.add_input('in',type=t.NONE)
+        self.O_b = self.add_output('out',type=t.NONE)
+
+========================================
 E:\soon\projects\PBNPR\code\addons\gl_studio\examples\nodes\Node_float.py
 ========================================
 from gl_studio.examples.nodes import Node_zPattren as BASE
@@ -778,7 +893,9 @@ E:\soon\projects\PBNPR\code\addons\gl_studio\examples\nodes\Node_mgl_class.py
 from gl_studio.examples.nodes import Node_zPattren as BASE
 from gl_studio.opengl import mgl
 from gl_studio.util import util_types as t
+from PySide6.QtWidgets import QComboBox
 
+STATICc = 'Combo_vertex_array_primitive'
 
 class NODE_MGL_BASIC(BASE.NODE_INTERFACE):
     NODE_NAME = "mgl mesh"
@@ -787,8 +904,8 @@ class NODE_MGL_BASIC(BASE.NODE_INTERFACE):
     def __init__(self):
         super().__init__()
         # --- Shader & Settings ---
-        self.I_w = self.add_input("width", type=t.F, default_value=t.RES_W)
-        self.I_h = self.add_input("Height", type=t.F, default_value=t.RES_H)
+        self.I_w = self.add_input("width", type=t.F)
+        self.I_h = self.add_input("Height", type=t.F)
 
         self.I_vert = self.add_input("Vert_str", type=t.STR)
         self.I_frag = self.add_input("Frag_str", type=t.STR)
@@ -800,35 +917,53 @@ class NODE_MGL_BASIC(BASE.NODE_INTERFACE):
 
         # --- Outputs ---
         self.O_pixels = self.add_output("Pixels_RGBA", type=t.ANY)
+        self.reset()
+
+    def on_gui(self):
+        self.combo = QComboBox()
+        self.combo.addItems(mgl.flag_primitive_modes.keys())
+        self.combo.currentTextChanged.connect(
+            lambda x: self.set(STATICc,self.combo.currentText()))
+
+        return self.combo
+
+    def reset(self):
+        self.I_w.val = t.RES_W
+        self.I_h.val = t.RES_H
+        self.I_vert.val = t.SRC_SCREEN_VERT
+        self.I_frag.val = t.SRC_SCREEN_FRAG
+        self.I_uniforms.val = None
+        self.I_attrs.val = None
+        self.O_pixels.val = None
+
+        if self.has(STATICc):
+            self.combo.setCurrentText(self.get(STATICc))
+        else:
+            self.add(STATICc,self.combo.currentText())
 
     def on_stream(self):
         self.on_sync_port_values()
 
         shader = mgl.SHADER()
 
+        shader.w = self.I_w.val
+        shader.h = self.I_h.val
         if isinstance(self.I_vert.val, str):
             shader.src_v = self.I_vert.val
         if isinstance(self.I_frag.val, str):
             shader.src_f = self.I_frag.val
 
-        shader.compile(self.I_w.val, self.I_h.val)
+        shader.compile()
 
         shader.uniforms(self.I_uniforms.val)
+        shader.uniforms_textures(self.I_textures.val)
         shader.vertex_attributes(self.I_attrs.val)
-        shader.textures(self.I_textures.val)
-        shader.ctx.enable(mgl.flag_context_enable["DEPTH_TEST"])
-        self.O_pixels.val = shader.render(mgl.flag_primitive_modes["TRIANGLE_STRIP"])
+
+        shader.ctx.enable(mgl.Flags.context.depth_test)
+        resault = shader.render(mgl.flag_primitive_modes[self.get(STATICc)])
         shader.clear()
 
-    def reset(self):
-        self.I_vert.val = None
-        self.I_frag.val = None
-        self.I_uniforms.val = None
-        self.I_attrs.val = None
-        self.O_pixels.val = None
-
-    def on_graph_save(self):
-        self.reset()
+        self.O_pixels.val = resault
 
     def on_graph_load(self):
         self.reset()
@@ -938,7 +1073,7 @@ class NODE_MGL_TRINGLE(BASE.NODE_INTERFACE):
         prog.release()
 
 ========================================
-E:\soon\projects\PBNPR\code\addons\gl_studio\examples\nodes\Node_printer.py
+E:\soon\projects\PBNPR\code\addons\gl_studio\examples\nodes\Node_output.py
 ========================================
 from gl_studio.examples.nodes import Node_zPattren as BASE
 from gl_studio.util import util_types as t
@@ -1005,11 +1140,11 @@ class NODE_RGBA_VIEWER(BASE.NODE_INTERFACE):
 
         self.O_rgba = self.add_output("rgba_data", type=t.ANY)
         self.O_mock = self.add_output("Mock output", type=t.NONE)
+        self.reset()
 
     def on_gui(self):
         widget = QWidget()
         lay = QVBoxLayout()
-        lay.setContentsMargins(5, 5, 5, 5)
         widget.setLayout(lay)
 
         self.status_label = QLabel()
@@ -1023,6 +1158,14 @@ class NODE_RGBA_VIEWER(BASE.NODE_INTERFACE):
         lay.addWidget(btn_view)
 
         return widget
+
+    def reset(self, txt="No Data"):
+        self.I_w.val = t.RES_W
+        self.I_h.val = t.RES_H
+        self.I_rgba.val = None
+        self.O_rgba.val = None
+        self.status_label.setText(txt)
+        self.status_label.setStyleSheet(t.RED)
 
     def on_stream(self):
         self.on_sync_port_values()
@@ -1066,13 +1209,6 @@ class NODE_RGBA_VIEWER(BASE.NODE_INTERFACE):
             print(f"Viewer Error: {e}")
             self.reset("Error viweing")
 
-    def reset(self, txt="No Data"):
-        self.I_w.val = t.RES_W
-        self.I_h.val = t.RES_H
-        self.I_rgba.val = None
-        self.O_rgba.val = None
-        self.status_label.setText(txt)
-        self.status_label.setStyleSheet(t.RED)
 
     def on_graph_load(self):
         self.reset()
@@ -1404,6 +1540,40 @@ class NODE_INTERFACE(BaseNode):
                     i_p.val = o_p.val
 
 ========================================
+E:\soon\projects\PBNPR\code\addons\gl_studio\examples\opengl\CircleF.glsl
+========================================
+#version 330
+
+in vec2 UV;
+
+out vec4 fragCol;
+
+uniform vec2 resolution;
+
+
+void main(){
+
+vec3 circle = vec3(distance(UV,vec2(0.5,0.5)));
+
+fragCol=vec4(vec3(circle),1.0);
+}
+
+========================================
+E:\soon\projects\PBNPR\code\addons\gl_studio\examples\opengl\CircleV.glsl
+========================================
+#version 330
+
+in vec2 positions;
+in vec2 UVMap;
+
+out vec2 UV;
+
+void main() {
+    UV = UVMap;
+    gl_Position = vec4(positions,0.0, 1.0);
+}
+
+========================================
 E:\soon\projects\PBNPR\code\addons\gl_studio\examples\opengl\defaultF.glsl
 ========================================
 #version 330
@@ -1464,6 +1634,47 @@ void main() {
 }
 
 ========================================
+E:\soon\projects\PBNPR\code\addons\gl_studio\examples\opengl\GlitchF.glsl
+========================================
+#version 330
+
+in vec3 N;
+in vec2 UVs;
+
+out vec4 FragColor;
+
+uniform vec2 resolution;
+
+void main() {
+    float d = dot(N,vec3(1.0,1.0,1.0));
+    d = step(0.5,d);
+    FragColor = vec4(vec3(d),1.0);
+}
+
+========================================
+E:\soon\projects\PBNPR\code\addons\gl_studio\examples\opengl\GlitchV.glsl
+========================================
+#version 330
+
+in vec3 positions;
+in vec3 normals;
+in vec2 UVMap;
+
+out vec2 UVs;
+out vec3 N;
+
+uniform mat4 world_matrix;
+uniform mat4 view_matrix;
+uniform mat4 proj_matrix;
+
+void main() {
+    UVs = UVMap;
+    N = normalize(normals);
+
+    gl_Position = proj_matrix * view_matrix * world_matrix * vec4(positions, 1.0);
+}
+
+========================================
 E:\soon\projects\PBNPR\code\addons\gl_studio\examples\opengl\outlineF.glsl
 ========================================
 #version 330
@@ -1504,6 +1715,36 @@ void main() {
     N = normals;
 
     gl_Position = proj_matrix * view_matrix * world_matrix * vec4(positions, 1.0);
+}
+
+========================================
+E:\soon\projects\PBNPR\code\addons\gl_studio\examples\opengl\screenF.glsl
+========================================
+#version 330
+
+in vec2 UV;
+
+out vec4 fragCol;
+
+uniform vec2 resolution;
+
+void main() {
+    fragCol = vec4(UV, 0.0, 1.0);
+}
+
+========================================
+E:\soon\projects\PBNPR\code\addons\gl_studio\examples\opengl\screenV.glsl
+========================================
+#version 330
+
+in vec2 positions;
+in vec2 UVMap;
+
+out vec2 UV;
+
+void main() {
+    UV = UVMap;
+    gl_Position = vec4(positions,0.0, 1.0);
 }
 
 ========================================
@@ -1548,6 +1789,8 @@ import moderngl as gl
 import moderngl as mgl
 import numpy as np
 from gl_studio.util import util_types as t
+
+#---- Defaulted Constants
 
 flag_context_enable = {
     "NOTHING": mgl.NOTHING,
@@ -1606,8 +1849,68 @@ flag_vertex_conventions = {
 }
 
 
+class ContextFlags:
+    nothing = mgl.NOTHING
+    blend = mgl.BLEND
+    depth_test = mgl.DEPTH_TEST
+    cull_face = mgl.CULL_FACE
+    rasterizer_discard = mgl.RASTERIZER_DISCARD
+    program_point_size = mgl.PROGRAM_POINT_SIZE
+
+class PrimitiveFlags:
+    points = mgl.POINTS
+    lines = mgl.LINES
+    line_loop = mgl.LINE_LOOP
+    line_strip = mgl.LINE_STRIP
+    triangles = mgl.TRIANGLES
+    triangle_strip = mgl.TRIANGLE_STRIP
+    triangle_fan = mgl.TRIANGLE_FAN
+    lines_adjacency = mgl.LINES_ADJACENCY
+    line_strip_adjacency = mgl.LINE_STRIP_ADJACENCY
+    triangles_adjacency = mgl.TRIANGLES_ADJACENCY
+    triangle_strip_adjacency = mgl.TRIANGLE_STRIP_ADJACENCY
+    patches = mgl.PATCHES
+
+class TextureFlags:
+    nearest = mgl.NEAREST
+    linear = mgl.LINEAR
+    nearest_mipmap_nearest = mgl.NEAREST_MIPMAP_NEAREST
+    linear_mipmap_nearest = mgl.LINEAR_MIPMAP_NEAREST
+    nearest_mipmap_linear = mgl.NEAREST_MIPMAP_LINEAR
+    linear_mipmap_linear = mgl.LINEAR_MIPMAP_LINEAR
+
+class BlendFlags:
+    zero = mgl.ZERO
+    one = mgl.ONE
+    src_color = mgl.SRC_COLOR
+    one_minus_src_color = mgl.ONE_MINUS_SRC_COLOR
+    src_alpha = mgl.SRC_ALPHA
+    one_minus_src_alpha = mgl.ONE_MINUS_SRC_ALPHA
+    dst_alpha = mgl.DST_ALPHA
+    one_minus_dst_alpha = mgl.ONE_MINUS_DST_ALPHA
+    dst_color = mgl.DST_COLOR
+    one_minus_dst_color = mgl.ONE_MINUS_DST_COLOR
+    func_add = mgl.FUNC_ADD
+    func_subtract = mgl.FUNC_SUBTRACT
+    func_reverse_subtract = mgl.FUNC_REVERSE_SUBTRACT
+    min = mgl.MIN
+    max = mgl.MAX
+
+class ConventionFlags:
+    first_vertex = mgl.FIRST_VERTEX_CONVENTION
+    last_vertex = mgl.LAST_VERTEX_CONVENTION
+
+# The Composite Class
+class Flags:
+    context = ContextFlags
+    primitive = PrimitiveFlags
+    texture = TextureFlags
+    blend = BlendFlags
+    convention = ConventionFlags
+
+
 class SHADER:
-    """One-shor or temporary testing abtraction class"""
+    """One-shot or temporary testing abtraction class"""
 
     def __init__(self, Standalone_context=True) -> None:
         self.ctx = gl.create_context(standalone=Standalone_context)
@@ -1619,44 +1922,14 @@ class SHADER:
         self.texs = {}
         self.tex_list = []  # Keep track of textures for safe cleanup
 
-        # Default shaders
-        self.src_v = """
-            #version 330
-            in vec3 positions;
-            void main() {
-                gl_Position = vec4(positions, 1.0);
-            }
-        """
-        self.src_f = """
-            #version 330
-
-            out vec4 fragColor;
-            void main() {
-                fragColor = vec4(1.0);
-            }
-        """
+        self.src_v = t.SRC_SCREEN_VERT
+        self.src_f = t.SRC_SCREEN_FRAG
         self.w = int(t.RES_W)
         self.h = int(t.RES_H)
-        self.screen = np.array(
-            [
-                -1.0,
-                -1.0,  # Bottom Left
-                1.0,
-                -1.0,  # Bottom Right
-                -1.0,
-                1.0,  # Top Left
-                1.0,
-                1.0,  # Top Right
-            ],
-            dtype=np.float32,
-        )
+        self.def_screen_pos = t.GLOBAL_DEFAULT_SCREEN_V
+        self.def_screen_uv = t.GLOBAL_DEFAULT_SCREEN_UV
 
-    def compile(self, w=None, h=None):
-        if w is not None:
-            self.w = int(w)
-        if h is not None:
-            self.h = int(h)
-
+    def compile(self):
         self.prog = self.ctx.program(
             vertex_shader=self.src_v,
             fragment_shader=self.src_f,
@@ -1669,8 +1942,8 @@ class SHADER:
             return
         uniforms = uniforms_dict if isinstance(uniforms_dict, dict) else {}
 
-        if "resolution" not in uniforms.keys():
-            uniforms["resolution"] = (self.w, self.h)
+        if t.RES not in uniforms.keys():
+            uniforms[t.RES] = (self.w, self.h)
 
         for name, data in uniforms.items():
             if name in self.prog:
@@ -1680,65 +1953,56 @@ class SHADER:
                     # Handle normal values (floats, vectors)
                     self.prog[name].value = data
 
-    def textures(self, textures_dict):
-        """Creates textures, (Uniformic Data)"""
+    def uniforms_textures(self, textures_dict):
         if not self.prog:
             return
 
         textures = textures_dict if isinstance(textures_dict, dict) else {}
-
-        # Keep track of the texture unit (slot) we are assigning
-        # We start at slot 0 and count up for each texture
         texture_location = 0
 
         for name, tex_obj in textures.items():
             if name in self.prog:
-                # 1. Extract metadata
-                # Assuming fmt is a tuple like (width, height, components)
-                # If it's literally a string like "1024,1024,3,4f":
-                parts = tex_obj.fmt.split(",")
-                w, h, components = map(int, parts[:3])
-                dtype = parts[3]
-                # 2. Create the texture in VRAM
-                # ModernGL expects raw bytes, so we convert the numpy array
-                pixel_bytes = tex_obj.data.tobytes()
+                if isinstance(tex_obj, np.ndarray):
+                    # Valid way to get dimensions from a (H, W, C) array
+                    h, w, c = tex_obj.shape
+                    pixels = tex_obj.tobytes()
+                    dtype = 'f4' # Defaulting to float32 as used in your nodes [cite: 108, 112]
+                else:
+                    print(f"[MGL CLASS] invalid texture object type: {type(tex_obj)}")
+                    return
 
-                tex = self.ctx.texture(
-                    (w, h), components, data=pixel_bytes, dtype=dtype
-                )
+                tex = self.ctx.texture((w, h), c, data=pixels, dtype=dtype)
                 tex.filter = (gl.NEAREST, gl.NEAREST)
-
-                # Store for safe cleanup later
                 self.tex_list.append(tex)
-
-                # 3. Bind it to a specific texture unit (slot)
                 tex.use(location=texture_location)
-
-                # 4. Tell the shader's sampler2D which slot to look at
                 self.prog[name].value = texture_location
-
-                # Increment slot for the next texture in the loop
                 texture_location += 1
 
     def vertex_attributes(self, attributes_dict):
         """Generates VBOs and creates the VAO layout. Non-Uniformic data (Varying per Vertex)"""
         if not self.prog:
             return
-        attrs = attributes_dict if isinstance(attributes_dict, dict) else {}
 
-        if "positions" not in attrs.keys():
-            attrs["positions"] = t.formated_data(self.screen, t.F2)
+        attrs = attributes_dict if isinstance(attributes_dict, dict) else {}
+        keys = attrs.keys()
+
+        if t.POS not in keys:
+            attrs[t.POS] = self.def_screen_pos
+        if t.UV not in keys:
+            attrs[t.UV] = self.def_screen_uv
 
         vao_blueprint = []
         self.vbos = []  # Reset VBO tracker
 
         for name, obj in attrs.items():
             if name in self.prog:
-                # Create buffer and track it
-                vbo = self.ctx.buffer(obj.data)  # suggested to be np arrays
-                self.vbos.append(vbo)
-                # Add to blueprint
-                vao_blueprint.append((vbo, obj.fmt, name))
+                if isinstance(obj,np.ndarray):
+                    vbo = self.ctx.buffer(obj)
+                    fmt = t.get_mgl_format(obj)
+                    vao_blueprint.append((vbo, fmt, name))
+                else:
+                    print(f"[MGL CLASS] invalid: {type(obj)}")
+                    return
 
         if not vao_blueprint:
             return
@@ -1757,7 +2021,7 @@ class SHADER:
 
         self.vao.render(render_flag)
 
-        return self.fbo.read(components=4)
+        return self.fbo.read(components=3)
 
     def clear(self):
         """Safely destroys all GPU objects to free VRAM."""
@@ -2268,14 +2532,34 @@ def process_frame():
 E:\soon\projects\PBNPR\code\addons\gl_studio\util\util_types.py
 ========================================
 from dataclasses import dataclass
+from functools import lru_cache
 from typing import Any
 from PySide6.QtWidgets import QWidget
+import numpy as np
 
-@dataclass
+@dataclass(slots=True)
 class formated_data:
     data: Any
     fmt: str
 
+MGL_TYPES = {
+    np.float32: 'f',
+    np.float64: 'd',
+    np.int32:   'i',
+    np.uint8:   'u1'
+}
+
+#@lru_cache(maxsize=128)
+def get_mgl_format(array: np.ndarray) -> str:
+    """Dynamically generates a ModernGL format string from an N-Dimensional Numpy Array."""
+
+    mgl_char = MGL_TYPES.get(array.dtype.type, 'f')
+
+    # If the array is 2D (e.g. Nx3), components = 3.
+    # If the array is 1D (e.g. N), components = 1.
+    components = array.shape[1] if len(array.shape) > 1 else 1
+
+    return f"{components}{mgl_char}"
 
 # Ouput nodes list,
 # itterated by PAG to evaluate the branches's nodes.
@@ -2348,6 +2632,40 @@ WHITE = "color: #ffffff;"
 RED = "color: #ff0000;"
 GREEN = "color: #00ff00;"
 BLUE = "color: #0000ff;"
+# --- ModernGl
+POS = 'positions'
+UV = 'UVMap'
+RES = 'resolution'
+GLOBAL_DEFAULT_SCREEN_V = np.array([
+     1.0,  1.0,  # Top-Right
+     1.0, -1.0,  # Bottom-Right
+    -1.0,  1.0,  # Top-Left
+    -1.0, -1.0,  # Bottom-Left
+], dtype=np.float32).reshape(4, 2)
+
+GLOBAL_DEFAULT_SCREEN_UV = np.array([
+    1.0, 1.0,  # Top-Right
+    1.0, 0.0,  # Bottom-Right
+    0.0, 1.0,  # Top-Left
+    0.0, 0.0,  # Bottom-Left
+], dtype=np.float32).reshape(4, 2)
+SRC_SCREEN_VERT = f"""
+    #version 330
+    in vec2 {POS};
+
+    void main() {{
+        gl_Position = vec4(vec3({POS},0.0), 1.0);
+    }}
+"""
+SRC_SCREEN_FRAG = """
+    #version 330
+
+    out vec4 fragColor;
+
+    void main() {
+        fragColor = vec4(1.0);
+    }
+"""
 # --- Global nukes, fast and unsafe access.
 GLOB_INSPECTOR_WIDGET : QWidget = None
 

@@ -58,7 +58,7 @@ class NODE_OBJECT_EVAL(BASE.NODE_INTERFACE):
         if obj.type == "MESH":
             mesh = obj.data
 
-            # 1. Force Blender to generate triangulation data
+            # 1. generate triangulation data
             mesh.calc_loop_triangles()
 
             num_tris = len(mesh.loop_triangles)
@@ -71,20 +71,22 @@ class NODE_OBJECT_EVAL(BASE.NODE_INTERFACE):
             tri_loop_indices = np.empty(num_tri_verts, dtype=np.int32)
             mesh.loop_triangles.foreach_get("loops", tri_loop_indices)
 
+
             # --- Positions ---
             raw_pos = np.empty(len(mesh.vertices) * 3, dtype=np.float32)
             mesh.vertices.foreach_get("co", raw_pos)
             raw_pos = raw_pos.reshape(-1, 3)
-            # Map raw vertices to unrolled triangle vertices
-            self.O_pos.val = raw_pos[tri_vert_indices].flatten()
+
+            # REMOVED .flatten() -> Array is now shape (Num_Tri_Verts, 3)
+            self.O_pos.val = raw_pos[tri_vert_indices]
 
             # --- Normals ---
-            # (Note: For flat shading, you might want split normals (mesh.loops.normal),
-            # but here is the mapping for smooth vertex normals)
             raw_norms = np.empty(len(mesh.vertices) * 3, dtype=np.float32)
             mesh.vertices.foreach_get("normal", raw_norms)
             raw_norms = raw_norms.reshape(-1, 3)
-            self.O_normals.val = raw_norms[tri_vert_indices].flatten()
+
+            # REMOVED .flatten()
+            self.O_normals.val = raw_norms[tri_vert_indices]
 
             # --- UVs ---
             uv_dict = {}
@@ -93,16 +95,16 @@ class NODE_OBJECT_EVAL(BASE.NODE_INTERFACE):
                     raw_uvs = np.empty(len(mesh.loops) * 2, dtype=np.float32)
                     layer.data.foreach_get("uv", raw_uvs)
                     raw_uvs = raw_uvs.reshape(-1, 2)
-                    # UVs are mapped by loop indices, not vertex indices!
-                    uv_dict[layer.name] = t.formated_data(
-                        data=raw_uvs[tri_loop_indices].flatten(), fmt="2f"
-                    )
+
+                    # REMOVED formated_data and .flatten() -> Array is now shape (Num_Tri_Verts, 2)
+                    uv_dict[layer.name] = raw_uvs[tri_loop_indices]
 
             self.O_uvs.val = uv_dict
 
+            # Now O_pkg is just a clean dictionary of pure NumPy arrays
             self.O_pkg.val = {
-                "positions": t.formated_data(data=self.O_pos.val, fmt=t.F3),
-                "normals": t.formated_data(data=self.O_normals.val, fmt=t.F3),
+                "positions": self.O_pos.val,
+                "normals": self.O_normals.val,
                 **uv_dict,
             }
         else:

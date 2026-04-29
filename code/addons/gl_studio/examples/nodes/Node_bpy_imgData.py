@@ -60,22 +60,26 @@ class NODE_IMG_DATA(BASE.NODE_INTERFACE):
         self.status_label.setStyleSheet(t.GREEN)
 
         w, h = img.size
-        channels = img.channels  # Usually 4 (RGBA)
+        channels = img.channels
 
-        # 1. Pre-allocate a NumPy array (float32 is standard for bpy)
-        # Total size is width * height * channels
-        pixels = np.empty(w * h * channels, dtype=np.float32)
+        # 1. Pre-allocate (1D flat array)
+        result = np.empty(w * h * channels, dtype=np.float32)
 
-        # 2. Use for_each() equivalent: foreach_get
-        # This is a high-speed C-level copy
-        img.pixels.foreach_get(pixels)
+        # 2. Fast copy
+        img.pixels.foreach_get(result)
 
-        self.O_pixels.val = pixels
+        # 3. Reshape (Must be Height first, then Width)
+        # Also, assign it back to the variable!
+        result = result.reshape((h, w, channels))
+        #result = np.flipud(result)
+
+
+        self.O_pixels.val = result
         self.O_w.val = w
         self.O_h.val = h
         self.O_Channels.val = channels
         self.O_pkg.val = {
-            self.line.text(): t.formated_data(data=pixels, fmt=f"{w},{h},{channels},f4")
+            self.line.text(): result
         }
 
     def on_graph_load(self):

@@ -3,6 +3,8 @@ import moderngl as mgl
 import numpy as np
 from gl_studio.util import util_types as t
 
+#---- Defaulted Constants
+
 flag_context_enable = {
     "NOTHING": mgl.NOTHING,
     "BLEND": mgl.BLEND,
@@ -60,62 +62,98 @@ flag_vertex_conventions = {
 }
 
 
+class ContextFlags:
+    nothing = mgl.NOTHING
+    blend = mgl.BLEND
+    depth_test = mgl.DEPTH_TEST
+    cull_face = mgl.CULL_FACE
+    rasterizer_discard = mgl.RASTERIZER_DISCARD
+    program_point_size = mgl.PROGRAM_POINT_SIZE
+
+class PrimitiveFlags:
+    points = mgl.POINTS
+    lines = mgl.LINES
+    line_loop = mgl.LINE_LOOP
+    line_strip = mgl.LINE_STRIP
+    triangles = mgl.TRIANGLES
+    triangle_strip = mgl.TRIANGLE_STRIP
+    triangle_fan = mgl.TRIANGLE_FAN
+    lines_adjacency = mgl.LINES_ADJACENCY
+    line_strip_adjacency = mgl.LINE_STRIP_ADJACENCY
+    triangles_adjacency = mgl.TRIANGLES_ADJACENCY
+    triangle_strip_adjacency = mgl.TRIANGLE_STRIP_ADJACENCY
+    patches = mgl.PATCHES
+
+class TextureFlags:
+    nearest = mgl.NEAREST
+    linear = mgl.LINEAR
+    nearest_mipmap_nearest = mgl.NEAREST_MIPMAP_NEAREST
+    linear_mipmap_nearest = mgl.LINEAR_MIPMAP_NEAREST
+    nearest_mipmap_linear = mgl.NEAREST_MIPMAP_LINEAR
+    linear_mipmap_linear = mgl.LINEAR_MIPMAP_LINEAR
+
+class BlendFlags:
+    zero = mgl.ZERO
+    one = mgl.ONE
+    src_color = mgl.SRC_COLOR
+    one_minus_src_color = mgl.ONE_MINUS_SRC_COLOR
+    src_alpha = mgl.SRC_ALPHA
+    one_minus_src_alpha = mgl.ONE_MINUS_SRC_ALPHA
+    dst_alpha = mgl.DST_ALPHA
+    one_minus_dst_alpha = mgl.ONE_MINUS_DST_ALPHA
+    dst_color = mgl.DST_COLOR
+    one_minus_dst_color = mgl.ONE_MINUS_DST_COLOR
+    func_add = mgl.FUNC_ADD
+    func_subtract = mgl.FUNC_SUBTRACT
+    func_reverse_subtract = mgl.FUNC_REVERSE_SUBTRACT
+    min = mgl.MIN
+    max = mgl.MAX
+
+class ConventionFlags:
+    first_vertex = mgl.FIRST_VERTEX_CONVENTION
+    last_vertex = mgl.LAST_VERTEX_CONVENTION
+
+# The Composite Class
+class Flags:
+    context = ContextFlags
+    primitive = PrimitiveFlags
+    texture = TextureFlags
+    blend = BlendFlags
+    convention = ConventionFlags
+
+
 class SHADER:
-    """One-shor or temporary testing abtraction class"""
+    """One-shot or temporary testing abtraction class"""
 
     def __init__(self, Standalone_context=True) -> None:
         self.ctx = gl.create_context(standalone=Standalone_context)
+        self.ctx.gc_mode = 'context_gc'
         # State trackers for safe cleanup
         self.prog = None
         self.fbo = None
+        self.depth=None
         self.vao = None
         self.vbos = []  # Keep track of dynamic buffers
         self.texs = {}
         self.tex_list = []  # Keep track of textures for safe cleanup
 
-        # Default shaders
-        self.src_v = """
-            #version 330
-            in vec3 positions;
-            void main() {
-                gl_Position = vec4(positions, 1.0);
-            }
-        """
-        self.src_f = """
-            #version 330
-
-            out vec4 fragColor;
-            void main() {
-                fragColor = vec4(1.0);
-            }
-        """
+        self.src_v = t.SRC_SCREEN_VERT
+        self.src_f = t.SRC_SCREEN_FRAG
         self.w = int(t.RES_W)
         self.h = int(t.RES_H)
-        self.screen = np.array(
-            [
-                -1.0,
-                -1.0,  # Bottom Left
-                1.0,
-                -1.0,  # Bottom Right
-                -1.0,
-                1.0,  # Top Left
-                1.0,
-                1.0,  # Top Right
-            ],
-            dtype=np.float32,
-        )
+        self.def_screen_pos = t.GLOBAL_DEFAULT_SCREEN_V
+        self.def_screen_uv = t.GLOBAL_DEFAULT_SCREEN_UV
 
-    def compile(self, w=None, h=None):
-        if w is not None:
-            self.w = int(w)
-        if h is not None:
-            self.h = int(h)
-
+    def compile(self):
         self.prog = self.ctx.program(
             vertex_shader=self.src_v,
             fragment_shader=self.src_f,
         )
-        self.fbo = self.ctx.simple_framebuffer((self.w, self.h))
+
+        self.col = self.ctx.renderbuffer((self.w, self.h),dtype='f4')
+        self.depth = self.ctx.depth_renderbuffer((self.w,self.h))
+
+        self.fbo = self.ctx.framebuffer(color_attachments=self.col,depth_attachment=self.depth)
 
     def uniforms(self, uniforms_dict):
         """Pushes global variables to the shader. (Uniformic data)"""
@@ -123,8 +161,8 @@ class SHADER:
             return
         uniforms = uniforms_dict if isinstance(uniforms_dict, dict) else {}
 
-        if "resolution" not in uniforms.keys():
-            uniforms["resolution"] = (self.w, self.h)
+        if t.RES not in uniforms.keys():
+            uniforms[t.RES] = (self.w, self.h)
 
         for name, data in uniforms.items():
             if name in self.prog:
@@ -134,65 +172,56 @@ class SHADER:
                     # Handle normal values (floats, vectors)
                     self.prog[name].value = data
 
-    def textures(self, textures_dict):
-        """Creates textures, (Uniformic Data)"""
+    def uniforms_textures(self, textures_dict):
         if not self.prog:
             return
 
         textures = textures_dict if isinstance(textures_dict, dict) else {}
-
-        # Keep track of the texture unit (slot) we are assigning
-        # We start at slot 0 and count up for each texture
         texture_location = 0
 
         for name, tex_obj in textures.items():
             if name in self.prog:
-                # 1. Extract metadata
-                # Assuming fmt is a tuple like (width, height, components)
-                # If it's literally a string like "1024,1024,3,4f":
-                parts = tex_obj.fmt.split(",")
-                w, h, components = map(int, parts[:3])
-                dtype = parts[3]
-                # 2. Create the texture in VRAM
-                # ModernGL expects raw bytes, so we convert the numpy array
-                pixel_bytes = tex_obj.data.tobytes()
+                if isinstance(tex_obj, np.ndarray):
+                    # Valid way to get dimensions from a (H, W, C) array
+                    h, w, c = tex_obj.shape
+                    pixels = tex_obj.tobytes()
+                    dtype = 'f4' # Defaulting to float32 as used in your nodes [cite: 108, 112]
+                else:
+                    print(f"[MGL CLASS] invalid texture object type: {type(tex_obj)}")
+                    return
 
-                tex = self.ctx.texture(
-                    (w, h), components, data=pixel_bytes, dtype=dtype
-                )
+                tex = self.ctx.texture((w, h), c, data=pixels, dtype=dtype)
                 tex.filter = (gl.NEAREST, gl.NEAREST)
-
-                # Store for safe cleanup later
                 self.tex_list.append(tex)
-
-                # 3. Bind it to a specific texture unit (slot)
                 tex.use(location=texture_location)
-
-                # 4. Tell the shader's sampler2D which slot to look at
                 self.prog[name].value = texture_location
-
-                # Increment slot for the next texture in the loop
                 texture_location += 1
 
     def vertex_attributes(self, attributes_dict):
         """Generates VBOs and creates the VAO layout. Non-Uniformic data (Varying per Vertex)"""
         if not self.prog:
             return
-        attrs = attributes_dict if isinstance(attributes_dict, dict) else {}
 
-        if "positions" not in attrs.keys():
-            attrs["positions"] = t.formated_data(self.screen, t.F2)
+        attrs = attributes_dict if isinstance(attributes_dict, dict) else {}
+        keys = attrs.keys()
+
+        if t.POS not in keys:
+            attrs[t.POS] = self.def_screen_pos
+        if t.UV not in keys:
+            attrs[t.UV] = self.def_screen_uv
 
         vao_blueprint = []
         self.vbos = []  # Reset VBO tracker
 
         for name, obj in attrs.items():
             if name in self.prog:
-                # Create buffer and track it
-                vbo = self.ctx.buffer(obj.data)  # suggested to be np arrays
-                self.vbos.append(vbo)
-                # Add to blueprint
-                vao_blueprint.append((vbo, obj.fmt, name))
+                if isinstance(obj,np.ndarray):
+                    vbo = self.ctx.buffer(obj)
+                    fmt = t.get_mgl_format(obj)
+                    vao_blueprint.append((vbo, fmt, name))
+                else:
+                    print(f"[MGL CLASS] invalid: {type(obj)}")
+                    return
 
         if not vao_blueprint:
             return
@@ -201,21 +230,26 @@ class SHADER:
         self.vao = self.ctx.vertex_array(self.prog, vao_blueprint)
 
     def render(self, render_flag):
-        """Executes the draw call and returns RGB bytes."""
+        """Executes the draw call and returns bytes."""
         if not self.vao or not self.fbo:
             return None
 
-        # Lock onto the FBO right before rendering
         self.fbo.use()
         self.ctx.clear()
-
         self.vao.render(render_flag)
 
-        return self.fbo.read(components=3)
+        # 1. Add dtype to frombuffer (defaults to float64, which is wrong for 1-byte color)
+        raw = self.fbo.read(components=4, dtype='f4')
+        rawD = self.fbo.read(attachment=-1,components=1, dtype='f4')
+
+        return raw, rawD
+
 
     def clear(self):
         """Safely destroys all GPU objects to free VRAM."""
         # Add this inside clear(self)
+        self.ctx.gc()
+        return
         for tex in self.tex_list:
             tex.release()
         self.tex_list.clear()
