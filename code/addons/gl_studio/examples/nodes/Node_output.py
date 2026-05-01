@@ -1,8 +1,12 @@
 import time
 from gl_studio.examples.nodes import Node_zPattren as BASE
 from gl_studio.util import util_types as t
+from gl_studio.util import export_cloud as c
 from PySide6.QtWidgets import QWidget, QVBoxLayout, QPushButton, QCheckBox, QSlider, QLabel
 from PySide6.QtCore import Qt
+
+#PRESISTANT_P = 'should_print' 
+#PRESISTANT_I = 'interval_seconds'
 
 class NODE_PULSE(BASE.NODE_INTERFACE):
     NODE_NAME = "Pulse"
@@ -64,32 +68,24 @@ class NODE_PULSE(BASE.NODE_INTERFACE):
     def on_active_toggled(self, checked):
         self.is_active = checked
         if self.is_active:
-            # Register to the execution engine loop
-            if self not in t.GLOBAL_OUTPUT_NODES:
-                t.GLOBAL_OUTPUT_NODES.append(self)
+            c.OUTPUT_NODES[self] = True
         else:
-            # Remove from loop
-            self.reset()
+            self.reset()# Remove from loop
 
     def on_slider_changed(self, value):
         self.interval_seconds = value / 10.0
         self.lbl_slider.setText(f"Interval: {self.interval_seconds:.1f}s")
 
     def on_manual_click(self):
-        # Force one-time execution by adding it to globals temporarily
-        if self not in t.GLOBAL_OUTPUT_NODES:
-            t.GLOBAL_OUTPUT_NODES.append(self)
+        # Force one-time execution by adding it to globals temporarily 
+        c.OUTPUT_NODES[self] = True
 
     # --- Node Logic ---
-    def reset(self):
-        # Important: only pop from GLOBAL_OUTPUT_NODES if the node is NOT active.
+    def reset(self): 
         if not self.is_active:
-            for i, j in enumerate(t.GLOBAL_OUTPUT_NODES):
-                if j == self:
-                    t.GLOBAL_OUTPUT_NODES.pop(i)
-                    break
+            c.OUTPUT_NODES.pop(self, None)
 
-    def on_should_stream(self) -> bool:
+    def on_should_stream(self):
         # Manual trigger
         if not self.is_active:
             return True
@@ -109,7 +105,7 @@ class NODE_PULSE(BASE.NODE_INTERFACE):
         if self.should_print:
             print(f"Pulse: {self.I_input.val}")
 
-        # Cleanup routine (Will keep it in t.GLOBAL_OUTPUT_NODES if active, pop if manual trigger)
+        # Cleanup routine (Will keep it in c.OUTPUT_NODES if active, pop if manual trigger)
         self.reset()
 
     def on_sync_port_values(self) -> None:

@@ -1,18 +1,17 @@
 {
-  "format_on_save":"off",
   "languages": {
     "Python": {
-      "language_servers": ["basedpyright", "!pylsp"],
-      "lsp": {
-        "basedpyright": {
-          "settings": {
-            "basedpyright.analysis": {
-              "autoImportCompletions": false,
-              "diagnosticMode": "openFilesOnly"
-            }
-          }
-        }
-      }
-    }
-  }
+      "language_servers": ["pyright", "ruff"],
+      "format_on_save": "off",
+    },
+  },
+  "lsp": {
+    "ruff": {
+      "initialization_options": {
+        "settings": {
+          "configuration": "ruff.toml",
+        },
+      },
+    },
+  },
 }

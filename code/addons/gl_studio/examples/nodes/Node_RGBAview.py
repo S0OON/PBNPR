@@ -1,10 +1,11 @@
 import numpy as np
 from gl_studio.examples.nodes import Node_zPattren as BASE
 from gl_studio.util import util_types as t
-from PIL import Image, ImageOps
+from PIL import Image
 from PySide6.QtWidgets import QLabel, QPushButton, QVBoxLayout, QWidget
 from PySide6.QtGui import QImage, QPixmap
-
+from PySide6.QtGui import QImage, QPixmap
+from PySide6.QtCore import Qt
 
 
 
@@ -27,11 +28,6 @@ class NODE_RGBA_VIEWER(BASE.NODE_INTERFACE):
         widget = QWidget()
         lay = QVBoxLayout()
         widget.setLayout(lay)
-
-        self.image_label = QLabel()
-        self.image_label.setScaledContents(False)
-        self.image_label.setFixedSize(100,100)
-        lay.addWidget(self.image_label)
 
         self.status_label = QLabel()
         lay.addWidget(self.status_label)
@@ -68,42 +64,30 @@ class NODE_RGBA_VIEWER(BASE.NODE_INTERFACE):
             self.reset()
             return
 
-        # Assuming 'img_array' is an np.array of shape (H, W, 4) of type uint8
-        height, width, channels = current_pixels.shape
-        bytes_per_line = channels * width
-
-        # Convert numpy array to QImage
-        q_img = QImage(current_pixels.data, width, height, bytes_per_line, QImage.Format_RGBA8888)
-        self.image_label.setPixmap(QPixmap.fromImage(q_img))
 
     def on_view_clicked(self):
-        data = self.I_rgba.val
+        data = self.I_rgba.val  # This is now an np.array
 
-        # Safer check: 'not any(data)' can throw errors on large byte arrays or numpy arrays
-        if not any(data):
+        # 1. Validation check for numpy arrays
+        if data is None or data.size == 0:
             self.reset("No data to view!")
             return
 
         try:
-            w = int(self.I_w.val)
-            h = int(self.I_h.val)
+            # Convert float32 (0.0-1.0) to uint8 (0-255)
+            A_viz = (data * 255).clip(0, 255).astype(np.uint8)
 
-            # 1. Feed the raw fbo.read() bytes directly into PIL.
-            # PIL expects size as a tuple (w, h).
-            # "RGB" matches components=3.
-            image = Image.
-            image = Image.frombytes("RGB", (w, h), data)
+            # Create the PIL image
+            image = Image.fromarray(A_viz)
 
-            # 2. ModernGL's origin is bottom-left, PIL's is top-left.
-            # We must flip it vertically so it doesn't display upside down.
-            image = image.transpose(Image.FLIP_TOP_BOTTOM)
+            # Properly assign the flipped image to a variable
+            flipped_image = image.transpose(Image.FLIP_TOP_BOTTOM)
 
-            # 3. Show it using the default system image viewer
-            image.show()
+            # 4. Display only the flipped image
+            flipped_image.show()
 
         except Exception as e:
-            print(f"Viewer Error: {e}")
-            self.reset("Error viweing")
+            self.reset(f"Error viewing image: {e}")
 
 
     def on_graph_load(self):

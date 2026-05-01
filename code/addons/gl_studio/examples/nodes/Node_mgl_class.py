@@ -1,6 +1,7 @@
 from gl_studio.examples.nodes import Node_zPattren as BASE
-from gl_studio.opengl import mgl
+from gl_studio.opengl import mgl_class
 from gl_studio.util import util_types as t
+from gl_studio.util import export_cloud as c
 from PySide6.QtWidgets import QComboBox
 import numpy as np
 STATICc = 'Combo_vertex_array_primitive'
@@ -12,6 +13,7 @@ class NODE_MGL_BASIC(BASE.NODE_INTERFACE):
     def __init__(self):
         super().__init__()
         # --- Shader & Settings ---
+        self.shader = mgl_class.MGL(c.CTX)
         self.I_w = self.add_input("width", type=t.F)
         self.I_h = self.add_input("Height", type=t.F)
 
@@ -30,13 +32,18 @@ class NODE_MGL_BASIC(BASE.NODE_INTERFACE):
 
     def on_gui(self):
         self.combo = QComboBox()
-        self.combo.addItems(mgl.flag_primitive_modes.keys())
+        self.combo.addItems(t.flag_primitive_modes.keys())
         self.combo.currentTextChanged.connect(
             lambda x: self.set(STATICc,self.combo.currentText()))
 
         return self.combo
 
     def reset(self):
+        if self.has(STATICc):
+            self.combo.setCurrentText(self.get(STATICc))
+        else:
+            self.add(STATICc,self.combo.currentText())
+
         self.I_w.val = t.RES_W
         self.I_h.val = t.RES_H
         self.I_vert.val = t.SRC_SCREEN_VERT
@@ -45,15 +52,10 @@ class NODE_MGL_BASIC(BASE.NODE_INTERFACE):
         self.I_attrs.val = None
         self.O_pixels.val = None
 
-        if self.has(STATICc):
-            self.combo.setCurrentText(self.get(STATICc))
-        else:
-            self.add(STATICc,self.combo.currentText())
 
     def on_stream(self):
         self.on_sync_port_values()
-
-        shader = mgl.SHADER()
+        shader = self.shader
 
         shader.w = self.I_w.val
         shader.h = self.I_h.val
@@ -62,15 +64,15 @@ class NODE_MGL_BASIC(BASE.NODE_INTERFACE):
         if isinstance(self.I_frag.val, str):
             shader.src_f = self.I_frag.val
 
-        shader.compile()
+        rebuild = shader.compile()
 
         shader.uniforms(self.I_uniforms.val)
         shader.uniforms_textures(self.I_textures.val)
-        shader.vertex_attributes(self.I_attrs.val)
+        shader.vertex_attributes(self.I_attrs.val,force_rebuild=rebuild)
 
-        shader.ctx.enable(mgl.Flags.context.depth_test)
+        shader.ctx.enable(t.Flags.context.depth_test)
 
-        a,d = shader.render(mgl.flag_primitive_modes[self.get(STATICc)])
+        a,d = shader.render(t.flag_primitive_modes[self.get(STATICc)])
 
         A = np.frombuffer(a,dtype=np.float32)
         A = A.reshape((shader.h,shader.w,4))
@@ -80,7 +82,10 @@ class NODE_MGL_BASIC(BASE.NODE_INTERFACE):
 
         self.O_pixels.val = A
         self.O_depth.val = B
-        shader.clear()
+
 
     def on_graph_load(self):
         self.reset()
+
+    def on_delete(self):
+        self.shader.clear()

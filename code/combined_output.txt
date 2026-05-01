@@ -211,7 +211,7 @@ class NODE_CAMERA_EVAL(BASE.NODE_INTERFACE):
 
         name_val = str(self.I_name.val)
         if not name_val or name_val.lower() == "active":
-            cam = bpy.context.scene.camera
+            cam = bpy.context.scene.camera # pyright: ignore
         else:
             cam = bpy.data.objects.get(name_val)
 
@@ -712,7 +712,6 @@ E:\soon\projects\PBNPR\code\addons\gl_studio\examples\nodes\Node_dict_join.py
 ========================================
 from gl_studio.examples.nodes import Node_zPattren as BASE
 from gl_studio.util import util_types as t
-from PySide6 import QtWidgets
 
 STATIC = "Value_Dict_Key"
 
@@ -891,10 +890,11 @@ class NODE_FLOAT_MATH(BASE.NODE_INTERFACE):
 E:\soon\projects\PBNPR\code\addons\gl_studio\examples\nodes\Node_mgl_class.py
 ========================================
 from gl_studio.examples.nodes import Node_zPattren as BASE
-from gl_studio.opengl import mgl
+from gl_studio.opengl import mgl_class
 from gl_studio.util import util_types as t
+from gl_studio.util import export_cloud as c
 from PySide6.QtWidgets import QComboBox
-
+import numpy as np
 STATICc = 'Combo_vertex_array_primitive'
 
 class NODE_MGL_BASIC(BASE.NODE_INTERFACE):
@@ -904,6 +904,7 @@ class NODE_MGL_BASIC(BASE.NODE_INTERFACE):
     def __init__(self):
         super().__init__()
         # --- Shader & Settings ---
+        self.shader = mgl_class.MGL(c.CTX)
         self.I_w = self.add_input("width", type=t.F)
         self.I_h = self.add_input("Height", type=t.F)
 
@@ -916,18 +917,24 @@ class NODE_MGL_BASIC(BASE.NODE_INTERFACE):
         self.I_textures = self.add_input("Textures", type=t.DICT)
 
         # --- Outputs ---
-        self.O_pixels = self.add_output("Pixels_RGBA", type=t.ANY)
+        self.O_pixels = self.add_output("Pixels_RGBA", type=t.RGBA)
+        self.O_depth = self.add_output("Depth",type=t.RGBA)
         self.reset()
 
     def on_gui(self):
         self.combo = QComboBox()
-        self.combo.addItems(mgl.flag_primitive_modes.keys())
+        self.combo.addItems(t.flag_primitive_modes.keys())
         self.combo.currentTextChanged.connect(
             lambda x: self.set(STATICc,self.combo.currentText()))
 
         return self.combo
 
     def reset(self):
+        if self.has(STATICc):
+            self.combo.setCurrentText(self.get(STATICc))
+        else:
+            self.add(STATICc,self.combo.currentText())
+
         self.I_w.val = t.RES_W
         self.I_h.val = t.RES_H
         self.I_vert.val = t.SRC_SCREEN_VERT
@@ -936,15 +943,10 @@ class NODE_MGL_BASIC(BASE.NODE_INTERFACE):
         self.I_attrs.val = None
         self.O_pixels.val = None
 
-        if self.has(STATICc):
-            self.combo.setCurrentText(self.get(STATICc))
-        else:
-            self.add(STATICc,self.combo.currentText())
 
     def on_stream(self):
         self.on_sync_port_values()
-
-        shader = mgl.SHADER()
+        shader = self.shader
 
         shader.w = self.I_w.val
         shader.h = self.I_h.val
@@ -959,14 +961,25 @@ class NODE_MGL_BASIC(BASE.NODE_INTERFACE):
         shader.uniforms_textures(self.I_textures.val)
         shader.vertex_attributes(self.I_attrs.val)
 
-        shader.ctx.enable(mgl.Flags.context.depth_test)
-        resault = shader.render(mgl.flag_primitive_modes[self.get(STATICc)])
-        shader.clear()
+        shader.ctx.enable(t.Flags.context.depth_test)
 
-        self.O_pixels.val = resault
+        a,d = shader.render(t.flag_primitive_modes[self.get(STATICc)])
+
+        A = np.frombuffer(a,dtype=np.float32)
+        A = A.reshape((shader.h,shader.w,4))
+
+        B = np.frombuffer(d,dtype=np.float32)
+        B = B.reshape((shader.h,shader.w))
+
+        self.O_pixels.val = A
+        self.O_depth.val = B
+
 
     def on_graph_load(self):
         self.reset()
+
+    def on_delete(self):
+        self.shader.clear()
 
 ========================================
 E:\soon\projects\PBNPR\code\addons\gl_studio\examples\nodes\Node_mgl_flags.py
@@ -1075,39 +1088,114 @@ class NODE_MGL_TRINGLE(BASE.NODE_INTERFACE):
 ========================================
 E:\soon\projects\PBNPR\code\addons\gl_studio\examples\nodes\Node_output.py
 ========================================
+import time
 from gl_studio.examples.nodes import Node_zPattren as BASE
 from gl_studio.util import util_types as t
-from PySide6.QtWidgets import QPushButton
+from gl_studio.util import export_cloud as c
+from PySide6.QtWidgets import QWidget, QVBoxLayout, QPushButton, QCheckBox, QSlider, QLabel
+from PySide6.QtCore import Qt
 
+#PRESISTANT_P = 'should_print' 
+#PRESISTANT_I = 'interval_seconds'
 
-class NODE_PRINTER(BASE.NODE_INTERFACE):
-    NODE_NAME = "Printer"
+class NODE_PULSE(BASE.NODE_INTERFACE):
+    NODE_NAME = "Pulse"
     CATEGORY = "Output"
+
+    is_active = False
+    should_print = True
+    interval_seconds = 1.0
+    last_exec_time = 0.0
 
     def __init__(self):
         super().__init__()
         self.I_input = self.add_input(type=t.ANY)
 
+
     def on_gui(self):
-        self.btn = QPushButton(text="Evaluate Node Tree")
-        self.btn.clicked.connect(self.on_click)
-        return self.btn
+        # Create a layout container
+        self.widget = QWidget()
+        self.widget.setStyleSheet("color: white;")
+        layout = QVBoxLayout()
+        layout.setContentsMargins(0, 0, 0, 0)
+        self.widget.setLayout(layout)
 
-    def on_click(self):
-        if self not in t.GLOBAL_OUTPUT_NODES:
-            t.GLOBAL_OUTPUT_NODES.append(self)
+        # 1. Checkbox for 'Print Output'
+        self.cb_print = QCheckBox("Print Output")
+        self.cb_print.setChecked(self.should_print)
+        self.cb_print.toggled.connect(self.on_print_toggled)
+        layout.addWidget(self.cb_print)
 
-    def reset(self):
-        for i, j in enumerate(t.GLOBAL_OUTPUT_NODES):
-            if j == self:
-                t.GLOBAL_OUTPUT_NODES.pop(i)
+        # 1. Button for Manual Print
+        self.btn_manual = QPushButton("Manual Print")
+        self.btn_manual.setStyleSheet("color: black;")
+        self.btn_manual.clicked.connect(self.on_manual_click)
+        layout.addWidget(self.btn_manual)
 
-    def on_should_stream(self) -> bool:
-        return True
+        # 2. Checkbox for 'Active' (keeps it in GLOBAL_OUTPUT_NODES)
+        self.cb_active = QCheckBox("Active")
+        self.cb_active.setChecked(self.is_active)
+        self.cb_active.toggled.connect(self.on_active_toggled)
+        layout.addWidget(self.cb_active)
+
+        # 3. Intervals Slider
+        self.lbl_slider = QLabel(f"Interval: {self.interval_seconds:.1f}s")
+        layout.addWidget(self.lbl_slider)
+
+        self.slider = QSlider(Qt.Horizontal)
+        self.slider.setMinimum(1)   # 0.1s minimum
+        self.slider.setMaximum(100) # 10.0s maximum
+        self.slider.setValue(int(self.interval_seconds * 10))
+        self.slider.valueChanged.connect(self.on_slider_changed)
+        layout.addWidget(self.slider)
+
+        return self.widget
+
+    # --- UI Callbacks ---
+    def on_print_toggled(self, checked):
+        self.should_print = checked
+
+    def on_active_toggled(self, checked):
+        self.is_active = checked
+        if self.is_active:
+            c.OUTPUT_NODES[self] = True
+        else:
+            self.reset()# Remove from loop
+
+    def on_slider_changed(self, value):
+        self.interval_seconds = value / 10.0
+        self.lbl_slider.setText(f"Interval: {self.interval_seconds:.1f}s")
+
+    def on_manual_click(self):
+        # Force one-time execution by adding it to globals temporarily 
+        c.OUTPUT_NODES[self] = True
+
+    # --- Node Logic ---
+    def reset(self): 
+        if not self.is_active:
+            c.OUTPUT_NODES.pop(self, None)
+
+    def on_should_stream(self):
+        # Manual trigger
+        if not self.is_active:
+            return True
+
+        # Interval check for active streaming
+        current_time = time.time()
+        if current_time - self.last_exec_time >= self.interval_seconds:
+            self.last_exec_time = current_time
+            return True
+
+        return False
 
     def on_stream(self):
         self.on_sync_port_values()
-        print(f"Printer: {self.I_input.val}")
+
+        # Only print if the checkbox is checked
+        if self.should_print:
+            print(f"Pulse: {self.I_input.val}")
+
+        # Cleanup routine (Will keep it in c.OUTPUT_NODES if active, pop if manual trigger)
         self.reset()
 
     def on_sync_port_values(self) -> None:
@@ -1118,13 +1206,100 @@ class NODE_PRINTER(BASE.NODE_INTERFACE):
         self.I_input.val = data
 
 ========================================
+E:\soon\projects\PBNPR\code\addons\gl_studio\examples\nodes\Node_RGBAdisplay.py
+========================================
+import numpy as np
+from gl_studio.examples.nodes import Node_zPattren as BASE
+from gl_studio.util import util_types as t
+from PIL import Image
+from PySide6.QtWidgets import QLabel, QPushButton, QVBoxLayout, QWidget
+from PySide6.QtGui import QImage, QPixmap
+
+
+class NODE_RGBA_DISPLAY(BASE.NODE_INTERFACE):
+    NODE_NAME = "Pixels Display"
+    CATEGORY = "Output"
+
+    _current_qimg = None
+    _current_array = None
+
+    def __init__(self):
+        super().__init__()
+        self.I_rgba = self.add_input("RGBA pixels", type=t.RGBA)
+        self.O_rgba = self.add_output("rgba_data", type=t.RGBA)
+        self.reset()
+
+    def on_gui(self):
+        self.image_label = QLabel()
+        self.pixMap = QPixmap()
+        self.image_label.setPixmap(self.pixMap)
+        return self.image_label
+
+    def on_stream(self):
+        self.on_sync_port_values()
+
+        pisexels = self.I_rgba.val
+        self.set_image(pisexels)
+        self.O_rgba.val = pisexels
+
+    def set_image(self, image_array):
+            """
+            Accepts a numpy array of shape (h, w, c) or (h, w) and updates the widget.
+            """
+            if not isinstance(image_array, np.ndarray):
+                raise TypeError("Input must be a numpy array")
+
+            # QImage requires uint8 data
+            if image_array.dtype != np.uint8:
+                image_array = image_array.astype(np.uint8)
+
+            # Handle dimensions and channels
+            if len(image_array.shape) == 3:
+                h, w, channels = image_array.shape
+            elif len(image_array.shape) == 2:
+                h, w = image_array.shape
+                channels = 1
+            else:
+                raise ValueError("Array must be 2D or 3D")
+
+            bytes_per_line = channels * w
+
+            # Map number of channels to the correct QImage format
+            if channels == 1:
+                fmt = QImage.Format_Grayscale8
+            elif channels == 3:
+                fmt = QImage.Format_RGB888
+            elif channels == 4:
+                fmt = QImage.Format_RGBA8888
+            else:
+                raise ValueError(f"Unsupported number of channels: {channels}")
+
+            # Store a contiguous copy of the array safely in the class
+            self._current_array = np.ascontiguousarray(image_array)
+
+            # Create QImage from the memory buffer
+            self._current_qimg = QImage(
+                self._current_array.data,
+                w,
+                h,
+                bytes_per_line,
+                fmt
+            )
+            self.pixMap.fromImage(self._current_qimg)
+            self.update()
+
+========================================
 E:\soon\projects\PBNPR\code\addons\gl_studio\examples\nodes\Node_RGBAview.py
 ========================================
 import numpy as np
 from gl_studio.examples.nodes import Node_zPattren as BASE
 from gl_studio.util import util_types as t
-from PIL import Image, ImageOps
+from PIL import Image
 from PySide6.QtWidgets import QLabel, QPushButton, QVBoxLayout, QWidget
+from PySide6.QtGui import QImage, QPixmap
+from PySide6.QtGui import QImage, QPixmap
+from PySide6.QtCore import Qt
+
 
 
 class NODE_RGBA_VIEWER(BASE.NODE_INTERFACE):
@@ -1134,11 +1309,11 @@ class NODE_RGBA_VIEWER(BASE.NODE_INTERFACE):
     def __init__(self):
         super().__init__()
 
-        self.I_rgba = self.add_input("RGBA pixels", type=t.ANY)
+        self.I_rgba = self.add_input("RGBA pixels", type=t.RGBA)
         self.I_w = self.add_input("width", type=t.F)
         self.I_h = self.add_input("height", type=t.F)
 
-        self.O_rgba = self.add_output("rgba_data", type=t.ANY)
+        self.O_rgba = self.add_output("rgba_data", type=t.RGBA)
         self.O_mock = self.add_output("Mock output", type=t.NONE)
         self.reset()
 
@@ -1180,34 +1355,32 @@ class NODE_RGBA_VIEWER(BASE.NODE_INTERFACE):
             self.status_label.setStyleSheet(t.GREEN)
         else:
             self.reset()
+            return
+
 
     def on_view_clicked(self):
-        data = self.I_rgba.val
+        data = self.I_rgba.val  # This is now an np.array
 
-        # Safer check: 'not any(data)' can throw errors on large byte arrays or numpy arrays
-        if not data:
+        # 1. Validation check for numpy arrays
+        if data is None or data.size == 0:
             self.reset("No data to view!")
             return
 
         try:
-            w = int(self.I_w.val)
-            h = int(self.I_h.val)
+            # Convert float32 (0.0-1.0) to uint8 (0-255)
+            A_viz = (data * 255).clip(0, 255).astype(np.uint8)
 
-            # 1. Feed the raw fbo.read() bytes directly into PIL.
-            # PIL expects size as a tuple (w, h).
-            # "RGB" matches components=3.
-            image = Image.frombytes("RGB", (w, h), data)
+            # Create the PIL image
+            image = Image.fromarray(A_viz)
 
-            # 2. ModernGL's origin is bottom-left, PIL's is top-left.
-            # We must flip it vertically so it doesn't display upside down.
-            image = image.transpose(Image.FLIP_TOP_BOTTOM)
+            # Properly assign the flipped image to a variable
+            flipped_image = image.transpose(Image.FLIP_TOP_BOTTOM)
 
-            # 3. Show it using the default system image viewer
-            image.show()
+            # 4. Display only the flipped image
+            flipped_image.show()
 
         except Exception as e:
-            print(f"Viewer Error: {e}")
-            self.reset("Error viweing")
+            self.reset(f"Error viewing image: {e}")
 
 
     def on_graph_load(self):
@@ -1359,39 +1532,87 @@ class NODE_TEXT_BLOCK(BASE.NODE_INTERFACE):
         self.reset()
 
 ========================================
-E:\soon\projects\PBNPR\code\addons\gl_studio\examples\nodes\Node_value_format.py
+E:\soon\projects\PBNPR\code\addons\gl_studio\examples\nodes\Node_value_export.py
 ========================================
 from gl_studio.examples.nodes import Node_zPattren as BASE
+from gl_studio.util import export_cloud as c
 from gl_studio.util import util_types as t
-from PySide6 import QtWidgets
 
-STATIC = "Value_format_Key"
-
-
-class NODE_VALUE_FORMAT(BASE.NODE_INTERFACE):
-    NODE_NAME = "Format value"
-    CATEGORY = "Containers"
+class NODE_CLOUD(BASE.NODE_INTERFACE):
+    NODE_NAME = "Cloud (Export value)"
+    CATEGORY = "Global"
 
     def __init__(self):
         super().__init__()
-        self.I_data = self.add_input("Value", type=t.ANY)
-        self.O_frmt = self.add_output("frmt", type=t.ANY)
-        self.reset()
+        self.I_ = self.add_input(type=t.DICT)
+        c.CLOUD_NODES[self]=True
 
-    def on_gui(self):
-        self.line = QtWidgets.QLineEdit()
-        self.line.textChanged.connect(lambda v: self.set(STATIC, v))
-        return self.line
-
-    def reset(self):
-        if not self.has(STATIC):
-            self.add(STATIC, self.line.text())
-        else:
-            self.line.setText(self.get(STATIC))
+    def on_should_stream(self):
+        return True
 
     def on_stream(self):
         self.on_sync_port_values()
-        self.O_frmt.val = t.formated_data(data=self.I_data.val, fmt=self.line.text())
+
+        if isinstance(self.I_.val,dict):
+            c.EXPORT.update(self.I_.val)
+
+    def on_delete(self):
+        c.CLOUD_NODES.pop(self)
+
+========================================
+E:\soon\projects\PBNPR\code\addons\gl_studio\examples\nodes\Node_value_fetich.py
+========================================
+
+from gl_studio.examples.nodes import Node_zPattren as BASE
+from gl_studio.util import util_types as t
+from gl_studio.util import export_cloud as c
+from PySide6.QtWidgets import QLabel, QLineEdit, QVBoxLayout, QWidget
+
+PRESISTANT = "value_name"
+
+
+class NODE_CLOUD_FETCH(BASE.NODE_INTERFACE):
+    NODE_NAME = "Value Exported"
+    CATEGORY = "Global"
+
+    def __init__(self):
+        super().__init__()
+        self.O_ = self.add_output(type=t.ANY)
+        self.reset()
+
+    def on_gui(self):
+        widget = QWidget()
+
+        lay = QVBoxLayout()
+        widget.setLayout(lay)
+
+        self.line = QLineEdit()
+        self.line.textChanged.connect(lambda v: self.set(PRESISTANT, v))
+        lay.addWidget(self.line)
+
+        self.status_label = QLabel()
+        lay.addWidget(self.status_label)
+
+        return widget
+
+    def reset(self, v=None):
+        if self.has(PRESISTANT):
+            self.line.setText(self.get(PRESISTANT))
+        else:
+            self.add(PRESISTANT, self.line.text())
+
+        self.status_label.setText("No Export value")
+        self.status_label.setStyleSheet(t.RED)
+
+    def on_stream(self):
+        name = self.get(PRESISTANT)
+        v = c.EXPORT.get(name,None)
+        if v is None:
+            self.reset()
+        else:
+            self.status_label.setText("Recieved")
+            self.status_label.setStyleSheet(t.GREEN)
+            self.O_.val = v
 
     def on_graph_load(self):
         self.reset()
@@ -1427,13 +1648,14 @@ class NODE_WIDGET(NodeBaseWidget):
         pass  # Satisfies the library requirements
 
 
+
 class NODE_INTERFACE(BaseNode):
     NODE_NAME = "Node"
     CATEGORY = "Misc"
 
     # INTERNALS
     def __init__(self):
-        super(NODE_INTERFACE, self).__init__()
+        super().__init__()
         self.create_property(
             name="null", value=""
         )  # Satisfies the library requirements
@@ -1454,16 +1676,56 @@ class NODE_INTERFACE(BaseNode):
         if UTILITY_WIDGET is not None:
             self.integrate_widget(UTILITY_WIDGET)
 
-    def reset(self):
+    def reset(self) -> None:
         """Utilty empty function."""
+        ...
 
     # GUI WRAPPERS
     def on_gui(self) -> QWidget:
         """This function should Build and Return a Naitive PySide6.QtWidgets.* to be in the node content."""
+        ...
 
-    def integrate_widget(self, qt_widget, label=""):
+    def integrate_widget(self, qt_widget, label="") -> None:
         qt_widget = NODE_WIDGET(qt_widget, label=label, parent=self.view)
         self.add_custom_widget(qt_widget)
+
+    def get_socket_color(self,data_type):
+        """
+        Returns an RGB tuple (0-255)
+        """
+        # BLENDER REFERENCE MAPPING
+        colors = {
+            # Grey: Simple numerical or undefined values
+            t.NONE: (150, 150, 150),
+            t.ANY: (200, 200, 200),
+            # Lime Green: Booleans
+            t.BOOL: (163, 201, 126),
+            # Darker Green: Integers
+            t.INT: (28, 138, 70),
+            # Grey/Light Blue: Floats
+            t.F: (161, 161, 161),
+            t.F2: (119, 143, 168),  # Light Blue-ish
+            t.F3: (63, 126, 252),  # Blue (Vectors)
+            t.F4: (44, 88, 176),  # Deep Blue
+            t.F16: (30, 60, 120),
+            # Blue: Strings
+            t.STR: (111, 190, 240),
+            # Yellow: RGBA / Colors
+            t.RGBA: (199, 199, 41),
+            # Green: Shaders / Materials
+            t.SHADER: (78, 209, 115),
+            # Turquoise/Cyan: Geometry
+            t.GEO: (0, 214, 163),
+            # White: Execution Flow
+            t.EXEC: (255, 255, 255),
+        # Orange/Gold: Dictionaries and Complex Containers
+            t.DICT: (255, 155, 0),
+            t.DICTS: (200, 120, 0),
+            t.ARRAY: (255, 180, 50),
+        }
+
+        # Return the color or a default pink if type is unknown (so you notice the error!)
+        return colors.get(data_type, (255, 0, 255))
 
     def add_input(
         self,
@@ -1478,7 +1740,12 @@ class NODE_INTERFACE(BaseNode):
         painter_func=None,
     ) -> PortType:
         port = super().add_input(
-            name, multi_input, display_name, color if color is not None else t.get_socket_color(type), locked, painter_func
+            name,
+            multi_input,
+            display_name,
+            color if color is not None else self.get_socket_color(type),
+            locked,
+            painter_func,
         )
         port.val = default_value
         port.Type = type
@@ -1498,7 +1765,12 @@ class NODE_INTERFACE(BaseNode):
         painter_func=None,
     ) -> PortType:
         port = super().add_output(
-            name, multi_output, display_name, color if color is not None else t.get_socket_color(type), locked, painter_func
+            name,
+            multi_output,
+            display_name,
+            color if color is not None else self.get_socket_color(type),
+            locked,
+            painter_func,
         )
         port.val = default_value
         port.Type = type
@@ -1513,21 +1785,22 @@ class NODE_INTERFACE(BaseNode):
         Return True if node is at GLOBAL_OUTPUT_NODES
         and its connected branch needs to evaluate each node
         """
+        ...
 
-    def on_stream(self):
+    def on_stream(self) -> None:
         """
         Called by PAG,
 
         when its the node's turn inside ordering of an ACTIVE node branches (stream)
         """
 
-    def on_graph_save(self):
+    def on_graph_save(self) -> None:
         """Called by Qt shortcuts, THis function Runs when we save a seesion"""
 
-    def on_graph_load(self):
+    def on_graph_load(self) -> None:
         """Called by Qt shortcuts, THis function Runs when we Load a seesion"""
 
-    def on_delete(self):
+    def on_delete(self) -> None:
         """Called by Qt shortcuts, when the node is selcted and deleted"""
 
     def on_sync_port_values(self) -> None:
@@ -1538,6 +1811,146 @@ class NODE_INTERFACE(BaseNode):
                 o_p = o_ps[0]
                 if i_p.Type == t.ANY or (i_p.Type == o_p.Type):
                     i_p.val = o_p.val
+
+========================================
+E:\soon\projects\PBNPR\code\addons\gl_studio\examples\opengl\CANDIDATE_RAYMARCHING_EDGE_DETEXTION.txt
+========================================
+// Raymarch Edge Detection by HLorenzi!
+// Detects whether a ray that comes too close to a surface goes away.
+
+#define EDGE_WIDTH 0.5
+#define RAYMARCH_ITERATIONS 40
+
+// The traditional method to finding raymarching edges
+// Of course, mine has a different purpose (to outline in cartoonish style)
+//#define TRADITIONAL
+
+
+
+
+// This should prevent lines from getting thicker when close to the camera
+// But it didn't work. Ugh.
+//#define PERSPECTIVE_FIX
+
+
+
+
+
+// Distance functions by iquilezles.org
+float fSubtraction(float a, float b) {return max(-a,b);}
+float fIntersection(float d1, float d2) {return max(d1,d2);}
+void fUnion(inout float d1, float d2) {d1 = min(d1,d2);}
+float pSphere(vec3 p, float s) {return length(p)-s;}
+float pRoundBox(vec3 p, vec3 b, float r) {return length(max(abs(p)-b,0.0))-r;}
+float pTorus(vec3 p, vec2 t) {vec2 q = vec2(length(p.xz)-t.x,p.y); return length(q)-t.y;}
+float pCapsule(vec3 p, vec3 a, vec3 b, float r) {vec3 pa = p - a, ba = b - a;
+	float h = clamp( dot(pa,ba)/dot(ba,ba), 0.0, 1.0 ); return length( pa - ba*h ) - r;}
+
+float distf(vec3 p)
+{
+	float d = 100000.0;
+	
+	fUnion(d, pRoundBox(vec3(0,0,10) + p, vec3(11,11,1), 1.0));
+	fUnion(d, pRoundBox(vec3(0,0,-2) + p, vec3(5,5,12), 1.0));
+	fUnion(d, pSphere(vec3(10,10,0) + p, 8.0));
+	fUnion(d, pTorus(vec3(-10,-12,0) + p, vec2(9,5)));
+	fUnion(d, pCapsule(p, vec3(-15,15,10), vec3(15,-15,-5), 1.5));
+	fUnion(d, -pSphere(p, 80.0));
+	
+	return d;
+}
+
+
+vec4 raymarch(vec3 from, vec3 increment)
+{
+	const float maxDist = 200.0;
+	const float minDist = 0.001;
+	const int maxIter = RAYMARCH_ITERATIONS;
+	
+	float dist = 0.0;
+	
+	float lastDistEval = 1e10;
+#ifdef TRADITIONAL
+	float edge = 1.0;
+#else
+	float edge = 0.0;
+#endif
+	
+	for(int i = 0; i < maxIter; i++) {
+		vec3 pos = (from + increment * dist);
+		float distEval = distf(pos);
+		
+#ifdef TRADITIONAL
+		if (distEval < minDist) {
+			if (i > RAYMARCH_ITERATIONS - 5) edge = 0.0;
+			// Probably should put a break here, but it's not working with GL ES...
+		}
+#else
+	#ifdef PERSPECTIVE_FIX
+		// Could not figure out the math :P
+		if (lastDistEval < (EDGE_WIDTH / dist) * 20.0 && distEval > lastDistEval + 0.001) {
+			edge = 1.0;
+		}
+	#else
+		if (lastDistEval < EDGE_WIDTH && distEval > lastDistEval + 0.001) {
+			edge = 1.0;
+			// Also should put a break here, but it's not working with GL ES...
+		}
+	#endif
+		if (distEval < minDist) {
+			break;
+		}
+#endif
+		
+		dist += distEval;
+		if (distEval < lastDistEval) lastDistEval = distEval;
+	}
+	
+	return vec4(dist, 0.0, edge, 0);
+}
+
+vec4 getPixel(vec3 from, vec3 increment)
+{
+	vec4 c = raymarch(from, increment);
+	return mix(vec4(1,1,1,1),vec4(0,0,0,1),c.z);
+}
+
+void mainImage( out vec4 fragColor, in vec2 fragCoord )
+{	
+	// pixel position	
+	vec2 q = fragCoord.xy/iResolution.xy;
+    vec2 p = -1.0+2.0*q;
+	p.x *= -iResolution.x/iResolution.y;
+	
+	// mouse
+    vec2 mo = iMouse.xy/iResolution.xy;
+	vec2 m = iMouse.xy / iResolution.xy;
+	if (iMouse.x == 0.0 && iMouse.y == 0.0) {
+		m = vec2(iTime * 0.06 + 2.86, 0.38);	
+	}
+	m = -1.0 + 2.0 * m;
+	m *= vec2(4.0,-1.5);
+
+	// camera position
+	float dist = 50.0;
+	vec3 ta = vec3(0,0,0);
+	vec3 ro = vec3(cos(m.x) * cos(m.y) * dist, sin(m.x) * cos(m.y) * dist, sin(m.y) * dist);
+	
+	// camera direction
+	vec3 cw = normalize( ta-ro );
+	vec3 cp = vec3( 0.0, 0.0, 1.0 );
+	vec3 cu = normalize( cross(cw,cp) );
+	vec3 cv = normalize( cross(cu,cw) );
+	vec3 rd = normalize( p.x*cu + p.y*cv + 2.5*cw );
+
+	// calculate color
+	vec4 col = getPixel(ro, rd);
+	fragColor = col;
+	
+}
+========================================
+E:\soon\projects\PBNPR\code\addons\gl_studio\examples\opengl\CANDIDATE_RAYMARCH_KITS.txt
+========================================
 
 ========================================
 E:\soon\projects\PBNPR\code\addons\gl_studio\examples\opengl\CircleF.glsl
@@ -1783,14 +2196,856 @@ void main() {
 }
 
 ========================================
-E:\soon\projects\PBNPR\code\addons\gl_studio\opengl\mgl.py
+E:\soon\projects\PBNPR\code\addons\gl_studio\opengl\main.py
+========================================
+import moderngl as mgl 
+from gl_studio.util import util_types as t
+from gl_studio.opengl import mgl_class
+from gl_studio.util import export_cloud as c
+
+def _PreProcess():
+    pass
+
+
+def _Create_shortcuts():
+    pass
+
+
+def _Create_GUI():
+    pass
+
+
+def register():
+    pass
+
+
+def unregister():
+    pass
+
+
+def check_state():
+    return True
+
+
+def process_frame():
+    pass
+
+========================================
+E:\soon\projects\PBNPR\code\addons\gl_studio\opengl\mgl_class.py
 ========================================
 import moderngl as gl
-import moderngl as mgl
 import numpy as np
 from gl_studio.util import util_types as t
 
-#---- Defaulted Constants
+class MGL: 
+
+    def __init__(self, ctx=None):
+        # Allow passing an existing context, otherwise create a standalone one
+        self.ctx = ctx or gl.create_context(standalone=True)
+        
+        # Resource caches
+        self.prog = None
+        self.fbo = None
+        self.col = None
+        self.depth = None
+        self.vbos = {}   # Map: name -> (vbo_object, format, shape)
+        
+        self.vao = None
+        self.texs = {}   # Map: name -> texture_object
+
+        self.w = int(t.RES_W)
+        self.h = int(t.RES_H)
+        self.src_v = t.SRC_SCREEN_VERT
+        self.src_f = t.SRC_SCREEN_FRAG
+        self.def_screen_pos = t.SCREEN_VERTS
+        self.def_screen_uv = t.SCREEN_UV
+
+        # Trackers to know when we *actually* need to rebuild
+        self._cached_v = ""
+        self._cached_f = ""
+        self._cached_res = (0, 0)
+
+    def compile(self): 
+        needs_rebuild = False
+
+        # 1. Smart Shader Compilation
+        if self.src_v != self._cached_v or self.src_f != self._cached_f:
+            if self.prog:
+                self.prog.release()
+            self.prog = self.ctx.program(
+                vertex_shader=self.src_v,
+                fragment_shader=self.src_f,
+            )
+            self._cached_v = self.src_v
+            self._cached_f = self.src_f
+            needs_rebuild = True # VAO needs rebuilding if shader changes
+
+        # 2. Smart FBO Allocation
+        if (self.w, self.h) != self._cached_res:
+            if self.fbo:
+                self.fbo.release()
+                self.col.release()
+                self.depth.release()
+            
+            self.col = self.ctx.renderbuffer((self.w, self.h), dtype='f4')
+            self.depth = self.ctx.depth_renderbuffer((self.w, self.h))
+            self.fbo = self.ctx.framebuffer(color_attachments=[self.col], depth_attachment=self.depth)
+            self._cached_res = (self.w, self.h)
+            
+        return needs_rebuild
+
+    def uniforms(self, uniforms_dict):
+        if not self.prog:
+            return
+        
+        uniforms = uniforms_dict if isinstance(uniforms_dict, dict) else {}
+        
+        if t.RES not in uniforms.keys():
+            uniforms[t.RES] = (self.w, self.h)
+
+        for name, data in uniforms.items():
+            if name in self.prog:
+                if isinstance(data, (list, tuple, np.ndarray)) and len(data) == 16:
+                    self.prog[name].write(np.array(data, dtype="f4").tobytes())
+                else:
+                    self.prog[name].value = data
+
+    def uniforms_textures(self, textures_dict):
+        if not self.prog:
+            return
+
+        textures = textures_dict if isinstance(textures_dict, dict) else {}
+        texture_location = 0
+
+        for name, tex_obj in textures.items():
+            if name in self.prog:
+                if isinstance(tex_obj, np.ndarray):
+                    h, w, c = tex_obj.shape
+                    pixels = tex_obj.tobytes()
+                    dtype = 'f4'
+                    
+                    # UPDATE existing texture if shape matches, otherwise RE-CREATE
+                    if name in self.texs and self.texs[name].size == (w, h):
+                        self.texs[name].write(pixels)
+                    else:
+                        if name in self.texs:
+                            self.texs[name].release()
+                        
+                        tex = self.ctx.texture((w, h), c, data=pixels, dtype=dtype)
+                        tex.filter = (gl.NEAREST, gl.NEAREST)
+                        self.texs[name] = tex
+                        
+                    self.texs[name].use(location=texture_location)
+                    self.prog[name].value = texture_location
+                    texture_location += 1
+
+    def vertex_attributes(self, attributes_dict, force_rebuild=False):
+        """Updates existing VBOs with new data. Only rebuilds VAO if topologies change."""
+        if not self.prog:
+            return
+
+        attrs = attributes_dict if isinstance(attributes_dict, dict) else {}
+        if t.POS not in attrs:
+            attrs[t.POS] = self.def_screen_pos
+        if t.UV not in attrs:
+            attrs[t.UV] = self.def_screen_uv
+
+        vao_blueprint = []
+        rebuild_vao = force_rebuild or (self.vao is None)
+
+        for name, obj in attrs.items():
+            if name in self.prog and isinstance(obj, np.ndarray):
+                fmt = t.get_mgl_format(obj)
+                obj_bytes = obj.tobytes()
+                
+                # Check if we can just update the existing VBO
+                if name in self.vbos and self.vbos[name][1] == fmt and self.vbos[name][2] == obj.shape:
+                    vbo = self.vbos[name][0]
+                    vbo.write(obj_bytes) # FAST path: Update existing buffer
+                else:
+                    # SLOW path: Allocate new buffer
+                    if name in self.vbos:
+                        self.vbos[name][0].release()
+                        
+                    vbo = self.ctx.buffer(obj_bytes)
+                    self.vbos[name] = (vbo, fmt, obj.shape)
+                    rebuild_vao = True
+                
+                vao_blueprint.append((vbo, fmt, name))
+
+        if rebuild_vao and vao_blueprint:
+            if self.vao:
+                self.vao.release()
+            self.vao = self.ctx.vertex_array(self.prog, vao_blueprint)
+
+    def render(self, render_flag):
+        if not self.vao or not self.fbo:
+            return None, None
+
+        self.fbo.use()
+        self.ctx.clear()
+        self.vao.render(render_flag)
+
+        raw = self.fbo.read(components=4, dtype='f4')
+        rawD = self.fbo.read(attachment=-1, components=1, dtype='f4')
+
+        return raw, rawD
+
+    def clear(self):
+        """Safely destroys all GPU objects. Call ONLY when deleting the node."""
+        for tex_name, tex in self.texs.items():
+            tex.release()
+        self.texs.clear()
+        
+        if self.vao:
+            self.vao.release()
+            self.vao = None
+
+        for vbo_name, (vbo, fmt, shape) in self.vbos.items():
+            vbo.release()
+        self.vbos.clear()
+
+        if self.prog:
+            self.prog.release()
+            self.prog = None
+
+        if self.fbo:
+            self.fbo.release()
+            self.col.release()
+            self.depth.release()
+            self.fbo = None
+            
+        self.ctx.gc()
+========================================
+E:\soon\projects\PBNPR\code\addons\gl_studio\ui\pyside6\editor_general_template_module_file.py
+========================================
+from gl_studio.ui.pyside6.internals import cfg as CFG
+from PySide6 import QtWidgets
+
+
+def _PreProcess():
+    pass
+
+
+def _Create_shortcuts():
+    pass
+
+
+def _Create_GUI():
+    pass
+
+
+def register():
+    Tab = QtWidgets.QWidget()
+    CFG.tabs.addTab(Tab, "Template")
+
+
+def unregister():
+    pass
+
+
+def check_state():
+    return True
+
+
+def process_frame():
+    pass
+
+========================================
+E:\soon\projects\PBNPR\code\addons\gl_studio\ui\pyside6\editor_nodeGraph.py
+========================================
+import importlib.util
+import inspect
+import os
+import traceback
+from typing import cast
+
+from gl_studio.examples.nodes.Node_zPattren import NODE_INTERFACE as NODE
+from gl_studio.ui.pyside6.internals import cfg as PROG_CFG
+from gl_studio.util import util_types as t
+from gl_studio.util import export_cloud as c
+from OdenGraphQt import BaseNode, NodeGraph, Port
+from PySide6 import QtCore
+from PySide6.QtGui import QKeySequence, QShortcut
+from PySide6.QtWidgets import (
+    QFileDialog,
+    QMenu,
+    QMenuBar,
+    QSizePolicy,
+    QSplitter,
+    QTabWidget,
+    QVBoxLayout,
+    QWidget,
+)
+
+
+class INTERFACE:
+    Tab_main_label = "Node Editor"
+    Tab_settings_label = "Settings"
+    Tab_Inspec_label = "Inspect"
+
+    def __init__(self):
+        self.widget: QWidget
+        self.lay: QVBoxLayout
+
+        self.menu_bar: QMenuBar
+        self.menu_add_node: QMenu
+        self.menu_Graph: QMenu
+
+        self.splitter: QWidget
+        self.graph: NodeGraph
+        self.side_panel: QTabWidget
+        self.tab_sets: QWidget
+        self.tab_inspec: QWidget
+        self.tab_inspec_lay: QVBoxLayout
+
+    def setup_layout(self):
+        PROG_CFG.tabs.addTab(self.widget, self.Tab_main_label)
+
+        self.widget.setLayout(self.lay)
+
+        self.lay.addWidget(self.menu_bar)
+        self.lay.addWidget(self.splitter)
+        # self.widget.setStyleSheet("border: 2px solid red;")
+
+        self.menu_bar.addMenu(self.menu_add_node)
+        self.menu_bar.addMenu(self.menu_Graph)
+        self.menu_bar.setSizePolicy(
+            QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed
+        )
+
+        self.splitter.addWidget(self.graph.widget)
+        self.splitter.addWidget(self.side_panel)
+
+        self.side_panel.addTab(self.tab_sets, self.Tab_settings_label)
+        self.side_panel.addTab(self.tab_inspec, self.Tab_Inspec_label)
+
+        self.tab_inspec.setLayout(self.tab_inspec_lay)
+
+    def toggle_side_panel(self):
+        if self.side_panel.isHidden():
+            self.side_panel.show()
+        else:
+            self.side_panel.hide()
+
+    def save_graph(self):
+        """Opens a dialog to save the current node session to a JSON file."""
+        # The dialog returns a tuple: (file_path, selected_filter)
+        file_path, _ = QFileDialog.getSaveFileName(
+            None,  # Parent widget (can be your main window)
+            "Save Node Session",  # Dialog Title
+            "",  # Default directory (leave blank for current)
+            "JSON Files (*.json);;All Files (*)",  # File filters
+        )
+
+        try:
+            for node in self.graph.all_nodes():
+                if hasattr(node, "CB_ON_SAVE"):
+                    node.CB_ON_SAVE()
+        except Exception as e:
+            print("Load failure: ", e)
+
+        if file_path:
+            self.graph.save_session(file_path)
+            print(f"Graph saved successfully to: {file_path}")
+
+    def load_graph(self):
+        """Opens a dialog to load a node session from a JSON file."""
+        file_path, _ = QFileDialog.getOpenFileName(
+            None, "Load Node Session", "", "JSON Files (*.json);;All Files (*)"
+        )
+
+        if file_path:
+            self.graph.clear_session()
+
+            # Load session - this will trigger property restoration
+            self.graph.load_session(file_path)
+            print(f"Graph loaded successfully from: {file_path}")
+
+            # Now trigger load callbacks on all nodes
+            # Use a slight delay or process events to ensure properties are ready
+            for node in self.graph.all_nodes():
+                node = cast(NODE, node)
+                if hasattr(node, "CB_ON_LOAD"):
+                    try:
+                        node.CB_ON_LOAD()
+                    except Exception as e:
+                        print("Load callback error on {node.NODE_NAME}: ", e)
+
+    def ref_pos(self):
+        for node in self.graph.all_nodes():
+            p = self.graph.widget.pos()
+            node.set_pos(p.x(), p.y())
+
+
+cfg = INTERFACE()
+
+
+class PAG:
+    visited = set()
+    exec_order = []
+
+    def run(self):
+        # 2. Find "Terminal" nodes (Nodes that IS_STREAM)
+        for node in c.OUTPUT_NODES.keys():
+            if hasattr(node, "CB_IS_STREAM") and node.CB_IS_STREAM():
+                self.order(node)
+
+        self.exec()
+        self.reset()
+
+    def order(self, node: NODE):
+        if not node or node.id in self.visited:
+            return
+
+        self.visited.add(node.id)
+
+        for name, input_port in node.inputs().items():
+            if out_ports := input_port.connected_ports():
+                for out_port in out_ports:
+                    out_node = out_port.node()
+                    self.order(out_node)
+
+        # Post-order traversal: add to list after children are visited
+        self.exec_order.append(node)
+
+    def _exec_cloud(self):
+        for node in c.CLOUD_NODES.keys():
+            if hasattr(node, "CB_ON_STREAM"):
+                try:
+                    node.CB_ON_STREAM()
+                except Exception as e:
+                    print(f"[NODE GRAPH NODE REPORT] at {node.type_} : {e}")
+                    traceback.print_exc()
+
+    def exec(self):
+        for node in self.exec_order:
+            self._exec_cloud()
+            node = cast(NODE, node)
+            # 2. Execute the node's logic
+            if hasattr(node, "CACHED"):
+                # FIX: Check if CACHED is False, not None
+                if not node.CACHED:
+                    # FIX: Correct typo 'CB_ON_STERAM' to 'CB_ON_STREAM'
+                    if hasattr(node, "CB_ON_STREAM"):
+                        node.CACHED = True
+                        try:
+                            node.CB_ON_STREAM()
+                        except Exception as e:
+                            print(f"[NODE GRAPH NODE REPORT] at {node.type_} : {e}")
+                            traceback.print_exc()
+
+    def reset(self):
+        for node in self.exec_order:
+            node.CACHED = False
+        self.exec_order.clear()
+        self.visited.clear()
+
+
+pag = PAG()
+
+
+# ============== NODES SPECIFIC ============== #
+def load_nodes_from_directory(directory_path):
+    """Scans directory and returns a list of valid BaseNode subclasses."""
+    discovered_nodes = []
+    if not os.path.exists(directory_path):
+        print(f"Directory '{directory_path}' not found.")
+        return discovered_nodes
+
+    for root, _, files in os.walk(directory_path):
+        for file in files:
+            if file.endswith(".py") and not file.startswith("__"):
+                file_path = os.path.join(root, file)
+                module_name = os.path.splitext(file)[0]
+
+                spec = importlib.util.spec_from_file_location(module_name, file_path)
+                if spec and spec.loader:
+                    module = importlib.util.module_from_spec(spec)
+                    try:
+                        spec.loader.exec_module(module)
+                        for name, obj in inspect.getmembers(module, inspect.isclass):
+                            if issubclass(obj, BaseNode) and obj is not BaseNode:
+                                discovered_nodes.append(obj)
+                    except Exception as e:
+                        print(f"Failed to load {file_path}: {e}")
+    return discovered_nodes
+
+
+def safe_create_node(n_type):
+    # Clear current selection to prevent other nodes from moving with the new one
+    cfg.graph.clear_selection()
+
+    # Calculate position (Disabled code. ... crazy info lmao)
+    # cursor_pos = cfg.graph.viewer().cursor().pos()
+    # scene_pos = cfg.graph.viewer().mapToScene(cursor_pos)
+
+    # Create the node
+    cfg.graph.create_node(n_type.type_)  # , pos=[scene_pos.x(), scene_pos.y()])
+
+
+def delete_selected_nodes():
+    # Get nodes currently selected in the graph
+    selected_nodes = cfg.graph.selected_nodes()
+    if selected_nodes:
+        for node in selected_nodes:
+            if hasattr(node, "CB_ON_DEL"):
+                node.CB_ON_DEL()
+        cfg.graph.delete_nodes(selected_nodes)
+
+
+def duplicate_selected():
+    selections = cfg.graph.selected_nodes()
+    for node in selections:
+        safe_create_node(type(node))
+
+
+def view_pos_to_node_internals():
+    for node in cfg.graph.all_nodes():
+        node = cast(NODE, node)
+        pos = node.view.pos()
+        x = pos.x()
+        y = pos.y()
+        node.set_pos(x, y)
+
+## ========== APPLICATION LAYER LEVEL============== ##
+
+def _PreProcess():
+    """This function monkey-hooks Direct Property acceess functions inside NodeGraphQt.Port class"""
+    Port.val = None
+    Port.Fmt = None
+    Port.Type = None
+
+
+def _Create_shortcuts():
+    shortcut_del = QShortcut(QKeySequence("Delete"), cfg.graph.widget)
+    shortcut_del.activated.connect(delete_selected_nodes)
+
+    shortcut_x = QShortcut(QKeySequence("X"), cfg.graph.widget)
+    shortcut_x.activated.connect(delete_selected_nodes)
+
+    shortcut_save = QShortcut(QKeySequence("Ctrl+S"), cfg.graph.widget)
+    shortcut_save.activated.connect(cfg.save_graph)
+
+    shortcut_load = QShortcut(QKeySequence("Ctrl+L"), cfg.graph.widget)
+    shortcut_load.activated.connect(cfg.load_graph)
+
+    shortcut_dup = QShortcut(QKeySequence("Shift+D"), cfg.graph.widget)
+    shortcut_dup.activated.connect(duplicate_selected)
+
+    short_tog_panel = QShortcut(QKeySequence("N"), cfg.graph.widget)
+    short_tog_panel.activated.connect(cfg.toggle_side_panel)
+
+
+def _Create_GUI():
+    cfg.widget = QWidget()
+
+    cfg.lay = QVBoxLayout()
+
+    cfg.menu_bar = QMenuBar()
+
+    cfg.splitter = QSplitter(QtCore.Qt.Horizontal)
+
+    cfg.graph = NodeGraph()
+
+    cfg.side_panel = QTabWidget()
+
+    cfg.tab_sets = QWidget()
+
+    cfg.tab_inspec = QWidget()
+
+    cfg.tab_inspec_lay = QVBoxLayout()
+
+    cfg.menu_add_node = QMenu(title="Add Node")
+
+    cfg.menu_Graph = QMenu(title="Graph settings")
+
+    cfg.setup_layout()
+
+    (cfg.menu_Graph.addAction("Save")).triggered.connect(cfg.save_graph)
+    (cfg.menu_Graph.addAction("Load")).triggered.connect(cfg.load_graph)
+    (cfg.menu_Graph.addAction("Panel")).triggered.connect(cfg.toggle_side_panel)
+
+    # --- DYNAMIC NODE REGISTRATION ---
+
+    current_dir = os.path.dirname(os.path.abspath(__file__))
+    nodes_directory = os.path.normpath(
+        os.path.join(current_dir, "..", "..", "examples", "nodes")
+    )
+
+    node_classes = load_nodes_from_directory(nodes_directory)
+
+    sub_menus = {}
+    for node_class in node_classes:
+        cfg.graph.register_node(node_class)
+
+        category_name = getattr(node_class, "CATEGORY", "Misc")
+
+        # Create the submenu if it doesn't exist yet
+        if category_name not in sub_menus:
+            new_sub_menu = cfg.menu_add_node.addMenu(category_name)
+            sub_menus[category_name] = new_sub_menu
+
+        target_menu = sub_menus[category_name]
+
+        # Create the action in the specific category submenu
+        display_name = getattr(node_class, "NODE_NAME", node_class.__name__)
+        action = target_menu.addAction(display_name)
+
+        action.triggered.connect(lambda _, n=node_class: safe_create_node(n))
+
+
+def check_state():
+    if cfg.graph:
+        return True
+    else:
+        print("[NODE GRAPH CRITICAL]  cfg.graph is NONE.")
+        return False
+
+
+def process_frame():
+    pag.run()
+    view_pos_to_node_internals()
+
+
+def register():
+    _PreProcess()
+    _Create_GUI()
+    _Create_shortcuts()
+    c.INSPECTOR = cfg.tab_inspec
+
+
+def unregister():
+    global cfg
+    if cfg.graph:
+        cfg.graph.close()
+    del cfg
+
+========================================
+E:\soon\projects\PBNPR\code\addons\gl_studio\ui\pyside6\internals.py
+========================================
+import sys
+
+from PySide6.QtWidgets import QApplication, QMainWindow, QTabWidget
+
+
+class INTERFACE:
+    def __init__(self):
+        self.running = False
+
+        self.app: QApplication = None
+
+        self.window: QMainWindow = None
+        self.tabs: QTabWidget = None
+
+
+class Window(QMainWindow):
+    def __init__(self):
+        super().__init__()
+        self.setWindowTitle("GL Studio Editor")
+        self.resize(1000, 800)
+        self.Tabs = QTabWidget()
+        self.setCentralWidget(self.Tabs)
+
+
+cfg = INTERFACE()
+
+# ========= APPLICATION LAYER LEVEL
+
+
+def _PreProcess():
+    pass
+
+
+def _Create_shortcuts():
+    pass
+
+
+def _Create_GUI():
+    pass
+
+
+def register():
+    # init
+    cfg.app = QApplication(sys.argv)
+
+    if cfg.app is None:
+        print("Failed to create QApplication")
+        return
+
+    # start
+    cfg.running = True
+
+    cfg.window = Window()
+
+    cfg.tabs = cfg.window.Tabs
+
+    cfg.window.show()
+
+
+def unregister():
+    cfg.running = False
+
+
+def check_state():
+    return cfg.running
+
+
+def process_frame():
+    cfg.app.processEvents()
+
+========================================
+E:\soon\projects\PBNPR\code\addons\gl_studio\ui\pyside6\main.py
+========================================
+from gl_studio.ui.pyside6 import (
+    # editor_general_template_module_file,
+    editor_nodeGraph,
+    internals,
+)
+
+
+def register():     
+    internals.register()
+    editor_nodeGraph.register()
+    # editor_general_template_module_file.register()
+
+
+def unregister():
+    internals.unregister()
+    editor_nodeGraph.unregister()
+    # editor_general_template_module_file.unregister()
+
+
+def check_state():
+    a = internals.check_state()
+    b = editor_nodeGraph.check_state()
+    # c = editor_general_template_module_file.check_state()
+    return all([a, b])  # ,c)
+
+
+def process_frame():
+    internals.process_frame()
+    editor_nodeGraph.process_frame()
+    # editor_general_template_module_file.process_frame()
+
+========================================
+E:\soon\projects\PBNPR\code\addons\gl_studio\util\export_cloud.py
+========================================
+from PySide6.QtWidgets import QVBoxLayout
+import moderngl as mgl
+
+INSPECTOR:QVBoxLayout
+# Ouput nodes list,
+# itterated by PAG to evaluate the branches's nodes.
+# lifetime is managed by node itself
+OUTPUT_NODES = {}
+CLOUD_NODES = {}
+EXPORT = {}
+
+# moderngl
+CTX = mgl.create_context(standalone=True)
+CTX.gc_mode = 'context_gc'
+
+
+
+========================================
+E:\soon\projects\PBNPR\code\addons\gl_studio\util\util_types.py
+========================================
+import numpy as np
+import moderngl as mgl
+# --- util Types
+NONE = "NONE"  # flags
+ANY = "ANY"
+BOOL = "bool"  # basic
+STR = "string"
+INT = "int"
+F = "f"
+F2 = "2f"
+F3 = "3f"
+F4 = "4f"
+F16 = "F16"
+DICT = "Dict"   # containers
+DICTS = "Dicts"
+RGBA = "rgba"
+GEO = "geometry"
+ARRAY = "array"
+EXEC = "exec"
+SHADER = "shader"
+
+# --- util constants
+RES_W = 1024
+RES_H = 1024
+LNKED = "Linked."
+LNKED_FAIL = "Not Linked."
+
+# --- PySide6
+WHITE = "color: #ffffff;"
+RED = "color: #ff0000;"
+GREEN = "color: #00ff00;"
+BLUE = "color: #0000ff;"
+
+
+# --- ModernGl
+POS = 'positions'
+UV = 'UVMap'
+RES = 'resolution'
+
+SCREEN_VERTS = np.array([
+     1.0,  1.0,  # Top-Right
+     1.0, -1.0,  # Bottom-Right
+    -1.0,  1.0,  # Top-Left
+    -1.0, -1.0,  # Bottom-Left
+], dtype=np.float32).reshape(4, 2)
+
+SCREEN_UV = np.array([
+    1.0, 1.0,  # Top-Right
+    1.0, 0.0,  # Bottom-Right
+    0.0, 1.0,  # Top-Left
+    0.0, 0.0,  # Bottom-Left
+], dtype=np.float32).reshape(4, 2)
+
+SRC_SCREEN_VERT = f"""
+    #version 330
+    in vec2 {POS};
+
+    void main() {{
+        gl_Position = vec4(vec3({POS},0.0), 1.0);
+    }}
+"""
+
+SRC_SCREEN_FRAG = """
+    #version 330
+
+    out vec4 fragColor;
+
+    void main() {
+        fragColor = vec4(1.0);
+    }
+"""
+# --- Global nukes, fast and unsafe access.
+
+MGL_TYPES = {
+    np.float32: 'f',
+    np.float64: 'd',
+    np.int32:   'i',
+    np.uint8:   'u1'
+}
+
+#@lru_cache(maxsize=128)
+def get_mgl_format(array: np.ndarray) -> str:
+    """Dynamically generates a ModernGL format string from an N-Dimensional Numpy Array."""
+
+    mgl_char = MGL_TYPES.get(array.dtype.type, 'f')
+
+    # If the array is 2D (e.g. Nx3), components = 3.
+    # If the array is 1D (e.g. N), components = 1.
+    components = array.shape[1] if len(array.shape) > 1 else 1
+
+    return f"{components}{mgl_char}"
+
+ #+=====================
+
+ #---- Defaulted Constants
 
 flag_context_enable = {
     "NOTHING": mgl.NOTHING,
@@ -1907,767 +3162,6 @@ class Flags:
     texture = TextureFlags
     blend = BlendFlags
     convention = ConventionFlags
-
-
-class SHADER:
-    """One-shot or temporary testing abtraction class"""
-
-    def __init__(self, Standalone_context=True) -> None:
-        self.ctx = gl.create_context(standalone=Standalone_context)
-        # State trackers for safe cleanup
-        self.prog = None
-        self.fbo = None
-        self.vao = None
-        self.vbos = []  # Keep track of dynamic buffers
-        self.texs = {}
-        self.tex_list = []  # Keep track of textures for safe cleanup
-
-        self.src_v = t.SRC_SCREEN_VERT
-        self.src_f = t.SRC_SCREEN_FRAG
-        self.w = int(t.RES_W)
-        self.h = int(t.RES_H)
-        self.def_screen_pos = t.GLOBAL_DEFAULT_SCREEN_V
-        self.def_screen_uv = t.GLOBAL_DEFAULT_SCREEN_UV
-
-    def compile(self):
-        self.prog = self.ctx.program(
-            vertex_shader=self.src_v,
-            fragment_shader=self.src_f,
-        )
-        self.fbo = self.ctx.simple_framebuffer((self.w, self.h))
-
-    def uniforms(self, uniforms_dict):
-        """Pushes global variables to the shader. (Uniformic data)"""
-        if not self.prog:
-            return
-        uniforms = uniforms_dict if isinstance(uniforms_dict, dict) else {}
-
-        if t.RES not in uniforms.keys():
-            uniforms[t.RES] = (self.w, self.h)
-
-        for name, data in uniforms.items():
-            if name in self.prog:
-                if isinstance(data, (list, tuple)) and len(data) == 16:
-                    self.prog[name].write(np.array(data, dtype="f4").tobytes())
-                else:
-                    # Handle normal values (floats, vectors)
-                    self.prog[name].value = data
-
-    def uniforms_textures(self, textures_dict):
-        if not self.prog:
-            return
-
-        textures = textures_dict if isinstance(textures_dict, dict) else {}
-        texture_location = 0
-
-        for name, tex_obj in textures.items():
-            if name in self.prog:
-                if isinstance(tex_obj, np.ndarray):
-                    # Valid way to get dimensions from a (H, W, C) array
-                    h, w, c = tex_obj.shape
-                    pixels = tex_obj.tobytes()
-                    dtype = 'f4' # Defaulting to float32 as used in your nodes [cite: 108, 112]
-                else:
-                    print(f"[MGL CLASS] invalid texture object type: {type(tex_obj)}")
-                    return
-
-                tex = self.ctx.texture((w, h), c, data=pixels, dtype=dtype)
-                tex.filter = (gl.NEAREST, gl.NEAREST)
-                self.tex_list.append(tex)
-                tex.use(location=texture_location)
-                self.prog[name].value = texture_location
-                texture_location += 1
-
-    def vertex_attributes(self, attributes_dict):
-        """Generates VBOs and creates the VAO layout. Non-Uniformic data (Varying per Vertex)"""
-        if not self.prog:
-            return
-
-        attrs = attributes_dict if isinstance(attributes_dict, dict) else {}
-        keys = attrs.keys()
-
-        if t.POS not in keys:
-            attrs[t.POS] = self.def_screen_pos
-        if t.UV not in keys:
-            attrs[t.UV] = self.def_screen_uv
-
-        vao_blueprint = []
-        self.vbos = []  # Reset VBO tracker
-
-        for name, obj in attrs.items():
-            if name in self.prog:
-                if isinstance(obj,np.ndarray):
-                    vbo = self.ctx.buffer(obj)
-                    fmt = t.get_mgl_format(obj)
-                    vao_blueprint.append((vbo, fmt, name))
-                else:
-                    print(f"[MGL CLASS] invalid: {type(obj)}")
-                    return
-
-        if not vao_blueprint:
-            return
-
-        # Build and store the VAO
-        self.vao = self.ctx.vertex_array(self.prog, vao_blueprint)
-
-    def render(self, render_flag):
-        """Executes the draw call and returns RGB bytes."""
-        if not self.vao or not self.fbo:
-            return None
-
-        # Lock onto the FBO right before rendering
-        self.fbo.use()
-        self.ctx.clear()
-
-        self.vao.render(render_flag)
-
-        return self.fbo.read(components=3)
-
-    def clear(self):
-        """Safely destroys all GPU objects to free VRAM."""
-        # Add this inside clear(self)
-        for tex in self.tex_list:
-            tex.release()
-        self.tex_list.clear()
-        if self.vao:
-            self.vao.release()
-            self.vao = None
-
-        for vbo in self.vbos:
-            vbo.release()
-        self.vbos.clear()
-
-        if self.prog:
-            self.prog.release()
-            self.prog = None
-
-        if self.fbo:
-            self.fbo.release()
-            self.fbo = None
-
-========================================
-E:\soon\projects\PBNPR\code\addons\gl_studio\ui\pyside6\editor_general_template_module_file.py
-========================================
-from gl_studio.ui.pyside6.internals import cfg as CFG
-from PySide6 import QtWidgets
-
-
-def _PreProcess():
-    pass
-
-
-def _Create_shortcuts():
-    pass
-
-
-def _Create_GUI():
-    pass
-
-
-def register():
-    Tab = QtWidgets.QWidget()
-    CFG.tabs.addTab(Tab, "Template")
-
-
-def unregister():
-    pass
-
-
-def check_state():
-    return True
-
-
-def process_frame():
-    pass
-
-========================================
-E:\soon\projects\PBNPR\code\addons\gl_studio\ui\pyside6\editor_nodeGraph.py
-========================================
-import importlib.util
-import inspect
-import os
-import traceback
-from typing import cast
-
-from gl_studio.examples.nodes.Node_zPattren import NODE_INTERFACE as NODE
-from gl_studio.examples.nodes.Node_zPattren import PortType as PORT
-from gl_studio.ui.pyside6.internals import cfg as PROG_CFG
-from gl_studio.util import util_types as t
-from OdenGraphQt import BaseNode, NodeGraph, Port
-from PySide6.QtGui import QKeySequence, QShortcut
-from PySide6.QtWidgets import QSizePolicy,QFileDialog, QMenu, QMenuBar, QVBoxLayout, QWidget, QSplitter,QTabWidget
-from PySide6 import QtCore
-
-class INTERFACE:
-    Tab_main_label = "Node Editor"
-    Tab_settings_label = "Settings"
-    Tab_Inspec_label = "Inspect"
-    nodes = {}
-    active_links = {}  # { Input_socket_id : Output_socket_id }
-    directories = []
-
-    def __init__(self):
-        self.widget:QWidget = None
-        self.lay: QVBoxLayout = None
-
-        self.menu_bar: QMenuBar = None
-        self.menu_add_node: QMenu = None
-        self.menu_Graph: QMenu = None
-
-        self.splitter:QWidget = None
-        self.graph: NodeGraph = None
-        self.side_panel:QTabWidget = None
-        self.tab_sets:QWidget = None
-        self.tab_inspec:QWidget = None
-
-    def setup_layout(self):
-        PROG_CFG.tabs.addTab(self.widget,self.Tab_main_label)
-
-        self.widget.setLayout(self.lay)
-
-        self.lay.addWidget(self.menu_bar)
-        self.lay.addWidget(self.splitter)
-        #self.widget.setStyleSheet("border: 2px solid red;")
-
-
-        self.menu_bar.addMenu(self.menu_add_node)
-        self.menu_bar.addMenu(self.menu_Graph)
-        self.menu_bar.setSizePolicy(QSizePolicy.Policy.Expanding,QSizePolicy.Policy.Fixed)
-
-        self.splitter.addWidget(self.graph.widget)
-        self.splitter.addWidget(self.side_panel)
-
-        self.side_panel.addTab(self.tab_sets,self.Tab_settings_label)
-        self.side_panel.addTab(self.tab_inspec,self.Tab_Inspec_label)
-
-    def toggle_side_panel(self):
-        if self.side_panel.isHidden():
-            self.side_panel.show()
-        else:
-            self.side_panel.hide()
-
-    def save_graph(self):
-        """Opens a dialog to save the current node session to a JSON file."""
-        # The dialog returns a tuple: (file_path, selected_filter)
-        file_path, _ = QFileDialog.getSaveFileName(
-            None,  # Parent widget (can be your main window)
-            "Save Node Session",  # Dialog Title
-            "",  # Default directory (leave blank for current)
-            "JSON Files (*.json);;All Files (*)",  # File filters
-        )
-
-        try:
-            for node in self.graph.all_nodes():
-                if hasattr(node, "CB_ON_SAVE"):
-                    node.CB_ON_SAVE()
-        except Exception as e:
-            print("Load failure: ", e)
-
-        if file_path:
-            self.graph.save_session(file_path)
-            print(f"Graph saved successfully to: {file_path}")
-
-    def load_graph(self):
-        """Opens a dialog to load a node session from a JSON file."""
-        file_path, _ = QFileDialog.getOpenFileName(
-            None, "Load Node Session", "", "JSON Files (*.json);;All Files (*)"
-        )
-
-        if file_path:
-            self.graph.clear_session()
-
-            # Load session - this will trigger property restoration
-            self.graph.load_session(file_path)
-            print(f"Graph loaded successfully from: {file_path}")
-
-            # Now trigger load callbacks on all nodes
-            # Use a slight delay or process events to ensure properties are ready
-            for node in self.graph.all_nodes():
-                node = cast(NODE, node)
-                if hasattr(node, "CB_ON_LOAD"):
-                    try:
-                        node.CB_ON_LOAD()
-                    except Exception as e:
-                        print(f"Load callback error on {node.NODE_NAME}: {e}")
-
-    def ref_pos(self):
-        for node in self.graph.all_nodes():
-            p = self.graph.widget.pos()
-            node.set_pos(p.x(), p.y())
-
-
-cfg = INTERFACE()
-
-
-class PAG:
-    def __init__(self):
-        self.visited = set()
-        self.exec_order = []
-
-    def run(self):
-        # 2. Find "Terminal" nodes (Nodes that SHOULD_CRAWL)
-        for node in t.GLOBAL_OUTPUT_NODES:
-            if hasattr(node, "CB_IS_STREAM") and node.CB_IS_STREAM():
-                self.order(node)
-
-        self.exec()
-        self.reset()
-
-    def order(self, node: NODE):
-        if not node or node.id in self.visited:
-            return
-
-        self.visited.add(node.id)
-
-        for name, input_port in node.inputs().items():
-            if out_ports := input_port.connected_ports():
-                for out_port in out_ports:
-                    out_node = out_port.node()
-                    self.order(out_node)
-
-        # Post-order traversal: add to list after children are visited
-        self.exec_order.append(node)
-
-    def exec(self):
-        for node in self.exec_order:
-            node = cast(NODE, node)
-            # 2. Execute the node's logic
-            if hasattr(node, "CACHED"):
-                # FIX: Check if CACHED is False, not None
-                if not node.CACHED:
-                    # FIX: Correct typo 'CB_ON_STERAM' to 'CB_ON_STREAM'
-                    if hasattr(node, "CB_ON_STREAM"):
-                        node.CACHED = True
-                        try:
-                            node.CB_ON_STREAM()
-                        except Exception as e:
-                            print(f"[NODE GRAPH NODE REPORT] at {node.type_} : {e}")
-                            traceback.print_exc()
-
-    def reset(self):
-        for node in self.exec_order:
-            node.CACHED = False
-        self.exec_order.clear()
-        self.visited.clear()
-
-
-pag = PAG()
-
-
-# ============== NODES SPECIFIC ==============
-def load_nodes_from_directory(directory_path):
-    """Scans directory and returns a list of valid BaseNode subclasses."""
-    discovered_nodes = []
-    if not os.path.exists(directory_path):
-        print(f"Directory '{directory_path}' not found.")
-        return discovered_nodes
-
-    for root, _, files in os.walk(directory_path):
-        for file in files:
-            if file.endswith(".py") and not file.startswith("__"):
-                file_path = os.path.join(root, file)
-                module_name = os.path.splitext(file)[0]
-
-                spec = importlib.util.spec_from_file_location(module_name, file_path)
-                if spec and spec.loader:
-                    module = importlib.util.module_from_spec(spec)
-                    try:
-                        spec.loader.exec_module(module)
-                        for name, obj in inspect.getmembers(module, inspect.isclass):
-                            if issubclass(obj, BaseNode) and obj is not BaseNode:
-                                discovered_nodes.append(obj)
-                    except Exception as e:
-                        print(f"Failed to load {file_path}: {e}")
-    return discovered_nodes
-
-
-def safe_create_node(n_type):
-    # Clear current selection to prevent other nodes from moving with the new one
-    cfg.graph.clear_selection()
-
-    # Calculate position
-    cursor_pos = cfg.graph.viewer().cursor().pos()
-    scene_pos = cfg.graph.viewer().mapToScene(cursor_pos)
-
-    # Create the node
-    cfg.graph.create_node(n_type.type_, pos=[scene_pos.x(), scene_pos.y()])
-
-
-def delete_selected_nodes():
-    # Get nodes currently selected in the graph
-    selected_nodes = cfg.graph.selected_nodes()
-    if selected_nodes:
-        for node in selected_nodes:
-            if hasattr(node, "CB_ON_DEL"):
-                node.CB_ON_DEL()
-        cfg.graph.delete_nodes(selected_nodes)
-
-
-def duplicate_selected():
-    selections = cfg.graph.selected_nodes()
-    for node in selections:
-        safe_create_node(type(node))
-
-
-# ============================
-def check_state():
-    if cfg.graph:
-        return True
-    else:
-        print("[NODE GRAPH CRITICAL]  cfg.graph is NONE.")
-        return False
-
-
-def process_frame():
-    pag.run()
-    for node in cfg.graph.all_nodes():
-        node = cast(NODE, node)
-        pos = node.view.pos()
-        x = pos.x()
-        y = pos.y()
-        node.set_pos(x, y)
-
-
-def _PreProcess():
-    """This function monkey-hooks Direct Property acceess functions inside NodeGraphQt.Port class"""
-    Port.val = None
-    Port.Fmt = None
-    Port.Type = None
-
-
-def _Create_shortcuts():
-    shortcut_del = QShortcut(QKeySequence("Delete"), cfg.graph.widget)
-    shortcut_del.activated.connect(delete_selected_nodes)
-
-    shortcut_x = QShortcut(QKeySequence("X"), cfg.graph.widget)
-    shortcut_x.activated.connect(delete_selected_nodes)
-
-    shortcut_save = QShortcut(QKeySequence("Ctrl+S"), cfg.graph.widget)
-    shortcut_save.activated.connect(cfg.save_graph)
-
-    shortcut_load = QShortcut(QKeySequence("Ctrl+L"), cfg.graph.widget)
-    shortcut_load.activated.connect(cfg.load_graph)
-
-    shortcut_dup = QShortcut(QKeySequence("Shift+D"), cfg.graph.widget)
-    shortcut_dup.activated.connect(duplicate_selected)
-
-    short_tog_panel = QShortcut(QKeySequence("N"), cfg.graph.widget)
-    short_tog_panel.activated.connect(cfg.toggle_side_panel)
-
-def _Create_GUI():
-    cfg.widget = QWidget()
-
-    cfg.lay = QVBoxLayout()
-
-    cfg.menu_bar = QMenuBar()
-
-    cfg.splitter = QSplitter(QtCore.Qt.Horizontal)
-
-    cfg.graph = NodeGraph()
-
-    cfg.side_panel = QTabWidget()
-
-    cfg.tab_sets = QWidget()
-
-    cfg.tab_inspec = QWidget()
-
-    cfg.menu_add_node = QMenu(title="Add Node")
-
-    cfg.menu_Graph = QMenu(title="Graph settings")
-
-    cfg.setup_layout()
-
-    (cfg.menu_Graph.addAction("Save")).triggered.connect(cfg.save_graph)
-    (cfg.menu_Graph.addAction("Load")).triggered.connect(cfg.load_graph)
-    (cfg.menu_Graph.addAction("Panel")).triggered.connect(cfg.toggle_side_panel)
-
-    # --- DYNAMIC NODE REGISTRATION ---
-
-    current_dir = os.path.dirname(os.path.abspath(__file__))
-    nodes_directory = os.path.normpath(
-        os.path.join(current_dir, "..", "..", "examples", "nodes")
-    )
-
-    node_classes = load_nodes_from_directory(nodes_directory)
-
-    sub_menus = {}
-    for node_class in node_classes:
-        cfg.graph.register_node(node_class)
-
-        category_name = getattr(node_class, "CATEGORY", "Misc")
-
-        # Create the submenu if it doesn't exist yet
-        if category_name not in sub_menus:
-            new_sub_menu = cfg.menu_add_node.addMenu(category_name)
-            sub_menus[category_name] = new_sub_menu
-
-        target_menu = sub_menus[category_name]
-
-        # Create the action in the specific category submenu
-        display_name = getattr(node_class, "NODE_NAME", node_class.__name__)
-        action = target_menu.addAction(display_name)
-
-        action.triggered.connect(lambda _, n=node_class: safe_create_node(n))
-
-
-def register():
-    _PreProcess()
-    _Create_GUI()
-    _Create_shortcuts()
-    t.GLOB_INSPECTOR_WIDGET = cfg.tab_inspec
-
-
-def unregister():
-    global cfg
-    if cfg.graph:
-        cfg.graph.close()
-    del cfg
-
-========================================
-E:\soon\projects\PBNPR\code\addons\gl_studio\ui\pyside6\internals.py
-========================================
-import sys
-
-from PySide6.QtWidgets import QApplication, QMainWindow, QTabWidget
-
-
-class INTERFACE:
-    def __init__(self):
-        self.running = False
-
-        self.app: QApplication = None
-
-        self.window: QMainWindow = None
-        self.tabs: QTabWidget = None
-
-
-class Window(QMainWindow):
-    def __init__(self):
-        super().__init__()
-        self.setWindowTitle("GL Studio Editor")
-        self.resize(1000, 800)
-        self.Tabs = QTabWidget()
-        self.setCentralWidget(self.Tabs)
-
-
-cfg = INTERFACE()
-
-
-def _PreProcess():
-    pass
-
-
-def _Create_shortcuts():
-    pass
-
-
-def _Create_GUI():
-    pass
-
-
-def register():
-    # init
-    cfg.app = QApplication(sys.argv)
-
-    if cfg.app == None:
-        print("Failed to create QApplication")
-        return
-
-    # start
-    cfg.running = True
-
-    cfg.window = Window()
-
-    cfg.tabs = cfg.window.Tabs
-
-    cfg.window.show()
-
-
-def unregister():
-    cfg.running = False
-
-
-def check_state():
-    return cfg.running
-
-
-def process_frame():
-    cfg.app.processEvents()
-
-========================================
-E:\soon\projects\PBNPR\code\addons\gl_studio\ui\pyside6\main.py
-========================================
-from gl_studio.ui.pyside6 import (
-    # editor_general_template_module_file,
-    editor_nodeGraph,
-    internals,
-)
-
-
-def register():
-    internals.register()
-    editor_nodeGraph.register()
-    # editor_general_template_module_file.register()
-
-
-def unregister():
-    internals.unregister()
-    editor_nodeGraph.unregister()
-    # editor_general_template_module_file.unregister()
-
-
-def check_state():
-    a = internals.check_state()
-    b = editor_nodeGraph.check_state()
-    # c = editor_general_template_module_file.check_state()
-    return a and b  # and c
-
-
-def process_frame():
-    internals.process_frame()
-    editor_nodeGraph.process_frame()
-    # editor_general_template_module_file.process_frame()
-
-========================================
-E:\soon\projects\PBNPR\code\addons\gl_studio\util\util_types.py
-========================================
-from dataclasses import dataclass
-from functools import lru_cache
-from typing import Any
-from PySide6.QtWidgets import QWidget
-import numpy as np
-
-@dataclass(slots=True)
-class formated_data:
-    data: Any
-    fmt: str
-
-MGL_TYPES = {
-    np.float32: 'f',
-    np.float64: 'd',
-    np.int32:   'i',
-    np.uint8:   'u1'
-}
-
-#@lru_cache(maxsize=128)
-def get_mgl_format(array: np.ndarray) -> str:
-    """Dynamically generates a ModernGL format string from an N-Dimensional Numpy Array."""
-
-    mgl_char = MGL_TYPES.get(array.dtype.type, 'f')
-
-    # If the array is 2D (e.g. Nx3), components = 3.
-    # If the array is 1D (e.g. N), components = 1.
-    components = array.shape[1] if len(array.shape) > 1 else 1
-
-    return f"{components}{mgl_char}"
-
-# Ouput nodes list,
-# itterated by PAG to evaluate the branches's nodes.
-# lifetime is managed by node itself
-GLOBAL_OUTPUT_NODES = []
-# --- util Types
-NONE = "NONE"  # flags
-ANY = "ANY"
-BOOL = "bool"  # basic
-STR = "string"
-INT = "int"
-F = "f"
-F2 = "2f"
-F3 = "3f"
-F4 = "4f"
-F16 = "F16"
-DICT = "Dict"   # containers
-DICTS = "Dicts"
-RGBA = "rgba"
-GEO = "geometry"
-ARRAY = "array"
-EXEC = "exec"
-SHADER = "shader"
-def get_socket_color(data_type):
-    """
-    Returns an RGB tuple (0-255)
-    """
-    # BLENDER REFERENCE MAPPING
-    colors = {
-        # Grey: Simple numerical or undefined values
-        NONE: (150, 150, 150),
-        ANY: (200, 200, 200),
-        # Lime Green: Booleans
-        BOOL: (163, 201, 126),
-        # Darker Green: Integers
-        INT: (28, 138, 70),
-        # Grey/Light Blue: Floats
-        F: (161, 161, 161),
-        F2: (119, 143, 168),  # Light Blue-ish
-        F3: (63, 126, 252),  # Blue (Vectors)
-        F4: (44, 88, 176),  # Deep Blue
-        F16: (30, 60, 120),
-        # Blue: Strings
-        STR: (111, 190, 240),
-        # Yellow: RGBA / Colors
-        RGBA: (199, 199, 41),
-        # Green: Shaders / Materials
-        SHADER: (78, 209, 115),
-        # Turquoise/Cyan: Geometry
-        GEO: (0, 214, 163),
-        # White: Execution Flow
-        EXEC: (255, 255, 255),
-        # Orange/Gold: Dictionaries and Complex Containers
-        DICT: (255, 155, 0),
-        DICTS: (200, 120, 0),
-        ARRAY: (255, 180, 50),
-    }
-
-    # Return the color or a default pink if type is unknown (so you notice the error!)
-    return colors.get(data_type, (255, 0, 255))
-
-    #
-# --- util constants
-RES_W = 1024
-RES_H = 1024
-LNKED = "Linked."
-LNKED_FAIL = "Not Linked."
-# --- PySide6
-WHITE = "color: #ffffff;"
-RED = "color: #ff0000;"
-GREEN = "color: #00ff00;"
-BLUE = "color: #0000ff;"
-# --- ModernGl
-POS = 'positions'
-UV = 'UVMap'
-RES = 'resolution'
-GLOBAL_DEFAULT_SCREEN_V = np.array([
-     1.0,  1.0,  # Top-Right
-     1.0, -1.0,  # Bottom-Right
-    -1.0,  1.0,  # Top-Left
-    -1.0, -1.0,  # Bottom-Left
-], dtype=np.float32).reshape(4, 2)
-
-GLOBAL_DEFAULT_SCREEN_UV = np.array([
-    1.0, 1.0,  # Top-Right
-    1.0, 0.0,  # Bottom-Right
-    0.0, 1.0,  # Top-Left
-    0.0, 0.0,  # Bottom-Left
-], dtype=np.float32).reshape(4, 2)
-SRC_SCREEN_VERT = f"""
-    #version 330
-    in vec2 {POS};
-
-    void main() {{
-        gl_Position = vec4(vec3({POS},0.0), 1.0);
-    }}
-"""
-SRC_SCREEN_FRAG = """
-    #version 330
-
-    out vec4 fragColor;
-
-    void main() {
-        fragColor = vec4(1.0);
-    }
-"""
-# --- Global nukes, fast and unsafe access.
-GLOB_INSPECTOR_WIDGET : QWidget = None
 
 ========================================
 E:\soon\projects\PBNPR\code\util\blender_headless.py

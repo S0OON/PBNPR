@@ -24,6 +24,8 @@ class Window(QMainWindow):
 
 cfg = INTERFACE()
 
+# ========= APPLICATION LAYER LEVEL
+
 
 def _PreProcess():
     pass
@@ -41,7 +43,7 @@ def register():
     # init
     cfg.app = QApplication(sys.argv)
 
-    if cfg.app == None:
+    if cfg.app is None:
         print("Failed to create QApplication")
         return
 

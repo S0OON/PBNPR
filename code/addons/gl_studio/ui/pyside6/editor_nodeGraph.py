@@ -5,55 +5,66 @@ import traceback
 from typing import cast
 
 from gl_studio.examples.nodes.Node_zPattren import NODE_INTERFACE as NODE
-from gl_studio.examples.nodes.Node_zPattren import PortType as PORT
 from gl_studio.ui.pyside6.internals import cfg as PROG_CFG
 from gl_studio.util import util_types as t
+from gl_studio.util import export_cloud as c
 from OdenGraphQt import BaseNode, NodeGraph, Port
-from PySide6.QtGui import QKeySequence, QShortcut
-from PySide6.QtWidgets import QSizePolicy,QFileDialog, QMenu, QMenuBar, QVBoxLayout, QWidget, QSplitter,QTabWidget
 from PySide6 import QtCore
+from PySide6.QtGui import QKeySequence, QShortcut
+from PySide6.QtWidgets import (
+    QFileDialog,
+    QMenu,
+    QMenuBar,
+    QSizePolicy,
+    QSplitter,
+    QTabWidget,
+    QVBoxLayout,
+    QWidget,
+)
+
 
 class INTERFACE:
     Tab_main_label = "Node Editor"
     Tab_settings_label = "Settings"
     Tab_Inspec_label = "Inspect"
-    nodes = {}
-    active_links = {}  # { Input_socket_id : Output_socket_id }
-    directories = []
 
     def __init__(self):
-        self.widget:QWidget = None
-        self.lay: QVBoxLayout = None
+        self.widget: QWidget
+        self.lay: QVBoxLayout
 
-        self.menu_bar: QMenuBar = None
-        self.menu_add_node: QMenu = None
-        self.menu_Graph: QMenu = None
+        self.menu_bar: QMenuBar
+        self.menu_add_node: QMenu
+        self.menu_Graph: QMenu
 
-        self.splitter:QWidget = None
-        self.graph: NodeGraph = None
-        self.side_panel:QTabWidget = None
-        self.tab_sets:QWidget = None
-        self.tab_inspec:QWidget = None
+        self.splitter: QWidget
+        self.graph: NodeGraph
+        self.side_panel: QTabWidget
+        self.tab_sets: QWidget
+        self.tab_inspec: QWidget
+        self.tab_inspec_lay: QVBoxLayout
 
     def setup_layout(self):
-        PROG_CFG.tabs.addTab(self.widget,self.Tab_main_label)
+        PROG_CFG.tabs.addTab(self.widget, self.Tab_main_label)
 
         self.widget.setLayout(self.lay)
 
         self.lay.addWidget(self.menu_bar)
         self.lay.addWidget(self.splitter)
-        #self.widget.setStyleSheet("border: 2px solid red;")
-
+        # self.widget.setStyleSheet("border: 2px solid red;")
 
         self.menu_bar.addMenu(self.menu_add_node)
         self.menu_bar.addMenu(self.menu_Graph)
-        self.menu_bar.setSizePolicy(QSizePolicy.Policy.Expanding,QSizePolicy.Policy.Fixed)
+        self.menu_bar.setSizePolicy(
+            QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed
+        )
 
         self.splitter.addWidget(self.graph.widget)
         self.splitter.addWidget(self.side_panel)
 
-        self.side_panel.addTab(self.tab_sets,self.Tab_settings_label)
-        self.side_panel.addTab(self.tab_inspec,self.Tab_Inspec_label)
+        self.side_panel.addTab(self.tab_sets, self.Tab_settings_label)
+        self.side_panel.addTab(self.tab_inspec, self.Tab_Inspec_label)
+
+        self.tab_inspec.setLayout(self.tab_inspec_lay)
 
     def toggle_side_panel(self):
         if self.side_panel.isHidden():
@@ -103,7 +114,7 @@ class INTERFACE:
                     try:
                         node.CB_ON_LOAD()
                     except Exception as e:
-                        print(f"Load callback error on {node.NODE_NAME}: {e}")
+                        print("Load callback error on {node.NODE_NAME}: ", e)
 
     def ref_pos(self):
         for node in self.graph.all_nodes():
@@ -115,13 +126,12 @@ cfg = INTERFACE()
 
 
 class PAG:
-    def __init__(self):
-        self.visited = set()
-        self.exec_order = []
+    visited = set()
+    exec_order = []
 
     def run(self):
-        # 2. Find "Terminal" nodes (Nodes that SHOULD_CRAWL)
-        for node in t.GLOBAL_OUTPUT_NODES:
+        # 2. Find "Terminal" nodes (Nodes that IS_STREAM)
+        for node in c.OUTPUT_NODES.keys():
             if hasattr(node, "CB_IS_STREAM") and node.CB_IS_STREAM():
                 self.order(node)
 
@@ -143,8 +153,18 @@ class PAG:
         # Post-order traversal: add to list after children are visited
         self.exec_order.append(node)
 
+    def _exec_cloud(self):
+        for node in c.CLOUD_NODES.keys():
+            if hasattr(node, "CB_ON_STREAM"):
+                try:
+                    node.CB_ON_STREAM()
+                except Exception as e:
+                    print(f"[NODE GRAPH NODE REPORT] at {node.type_} : {e}")
+                    traceback.print_exc()
+
     def exec(self):
         for node in self.exec_order:
+            self._exec_cloud()
             node = cast(NODE, node)
             # 2. Execute the node's logic
             if hasattr(node, "CACHED"):
@@ -169,7 +189,7 @@ class PAG:
 pag = PAG()
 
 
-# ============== NODES SPECIFIC ==============
+# ============== NODES SPECIFIC ============== #
 def load_nodes_from_directory(directory_path):
     """Scans directory and returns a list of valid BaseNode subclasses."""
     discovered_nodes = []
@@ -200,12 +220,12 @@ def safe_create_node(n_type):
     # Clear current selection to prevent other nodes from moving with the new one
     cfg.graph.clear_selection()
 
-    # Calculate position
-    cursor_pos = cfg.graph.viewer().cursor().pos()
-    scene_pos = cfg.graph.viewer().mapToScene(cursor_pos)
+    # Calculate position (Disabled code. ... crazy info lmao)
+    # cursor_pos = cfg.graph.viewer().cursor().pos()
+    # scene_pos = cfg.graph.viewer().mapToScene(cursor_pos)
 
     # Create the node
-    cfg.graph.create_node(n_type.type_, pos=[scene_pos.x(), scene_pos.y()])
+    cfg.graph.create_node(n_type.type_)  # , pos=[scene_pos.x(), scene_pos.y()])
 
 
 def delete_selected_nodes():
@@ -224,17 +244,7 @@ def duplicate_selected():
         safe_create_node(type(node))
 
 
-# ============================
-def check_state():
-    if cfg.graph:
-        return True
-    else:
-        print("[NODE GRAPH CRITICAL]  cfg.graph is NONE.")
-        return False
-
-
-def process_frame():
-    pag.run()
+def view_pos_to_node_internals():
     for node in cfg.graph.all_nodes():
         node = cast(NODE, node)
         pos = node.view.pos()
@@ -242,6 +252,7 @@ def process_frame():
         y = pos.y()
         node.set_pos(x, y)
 
+## ========== APPLICATION LAYER LEVEL============== ##
 
 def _PreProcess():
     """This function monkey-hooks Direct Property acceess functions inside NodeGraphQt.Port class"""
@@ -269,6 +280,7 @@ def _Create_shortcuts():
     short_tog_panel = QShortcut(QKeySequence("N"), cfg.graph.widget)
     short_tog_panel.activated.connect(cfg.toggle_side_panel)
 
+
 def _Create_GUI():
     cfg.widget = QWidget()
 
@@ -285,6 +297,8 @@ def _Create_GUI():
     cfg.tab_sets = QWidget()
 
     cfg.tab_inspec = QWidget()
+
+    cfg.tab_inspec_lay = QVBoxLayout()
 
     cfg.menu_add_node = QMenu(title="Add Node")
 
@@ -325,11 +339,24 @@ def _Create_GUI():
         action.triggered.connect(lambda _, n=node_class: safe_create_node(n))
 
 
+def check_state():
+    if cfg.graph:
+        return True
+    else:
+        print("[NODE GRAPH CRITICAL]  cfg.graph is NONE.")
+        return False
+
+
+def process_frame():
+    pag.run()
+    view_pos_to_node_internals()
+
+
 def register():
     _PreProcess()
     _Create_GUI()
     _Create_shortcuts()
-    t.GLOB_INSPECTOR_WIDGET = cfg.tab_inspec
+    c.INSPECTOR = cfg.tab_inspec
 
 
 def unregister():

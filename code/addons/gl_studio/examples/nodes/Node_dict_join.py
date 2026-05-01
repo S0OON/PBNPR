@@ -1,6 +1,5 @@
 from gl_studio.examples.nodes import Node_zPattren as BASE
 from gl_studio.util import util_types as t
-from PySide6 import QtWidgets
 
 STATIC = "Value_Dict_Key"
 

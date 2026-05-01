@@ -5,7 +5,7 @@ from gl_studio.ui.pyside6 import (
 )
 
 
-def register():
+def register():     
     internals.register()
     editor_nodeGraph.register()
     # editor_general_template_module_file.register()
@@ -21,7 +21,7 @@ def check_state():
     a = internals.check_state()
     b = editor_nodeGraph.check_state()
     # c = editor_general_template_module_file.check_state()
-    return a and b  # and c
+    return all([a, b])  # ,c)
 
 
 def process_frame():

@@ -40,7 +40,7 @@ class NODE_CAMERA_EVAL(BASE.NODE_INTERFACE):
 
         name_val = str(self.I_name.val)
         if not name_val or name_val.lower() == "active":
-            cam = bpy.context.scene.camera
+            cam = bpy.context.scene.camera # pyright: ignore
         else:
             cam = bpy.data.objects.get(name_val)
 
