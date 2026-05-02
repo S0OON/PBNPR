@@ -59,7 +59,7 @@ class NODE_INTERFACE(BaseNode):
         ...
 
     # GUI WRAPPERS
-    def on_gui(self) -> QWidget:
+    def on_gui(self) -> QWidget | None:
         """This function should Build and Return a Naitive PySide6.QtWidgets.* to be in the node content."""
         ...
 

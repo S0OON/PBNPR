@@ -1,5 +1,8 @@
 import numpy as np
 import moderngl as mgl
+from PySide6.QtCore import QRectF
+from PySide6.QtWidgets import QGraphicsItem
+from PySide6.QtGui import QImage, QPainter
 # --- util Types
 NONE = "NONE"  # flags
 ANY = "ANY"
@@ -30,6 +33,66 @@ WHITE = "color: #ffffff;"
 RED = "color: #ff0000;"
 GREEN = "color: #00ff00;"
 BLUE = "color: #0000ff;"
+
+
+class NativeNumpyOverlay(QGraphicsItem):
+    def __init__(self, parent=None, width=200, height=200):
+        # Passing 'parent' attaches it permanently to the Node's graphics item
+        super().__init__(parent)
+        self._image = None
+        self._rect = QRectF(0, 0, width, height)
+        self.setFlag(QGraphicsItem.GraphicsItemFlag.ItemIsMovable, True)
+
+    def boundingRect(self):
+        # PySide6 needs to know how big the overlay is
+        # so it wont be redrawn if out of boundry of a QGraphics scene (idk maybe)
+        return self._rect
+
+    def set_image(self, array):
+        if array is None or not isinstance(array, np.ndarray):
+            return
+
+        # 1. Convert to uint8
+        if array.dtype in [np.float32, np.float64]:
+            array = (np.clip(array, 0.0, 1.0) * 255.0).astype(np.uint8)
+        else:
+            array = array.astype(np.uint8)
+
+        # 2. Keep array continuously in memory
+        self._array = np.ascontiguousarray(array)
+
+        if len(self._array.shape) == 3:
+            h, w, channels = self._array.shape
+        else:
+            h, w = self._array.shape
+            channels = 1
+
+        bytes_per_line = channels * w
+
+        if channels == 1:
+            fmt = QImage.Format_Grayscale8
+        elif channels == 3:
+            fmt = QImage.Format_RGB888
+        elif channels == 4:
+            fmt = QImage.Format_RGBA8888
+        else:
+            return
+
+        #  Create QImage
+        self._image = QImage(self._array.data, w, h, bytes_per_line, fmt)
+        self.update()
+
+    def paint(self, painter:QPainter, option, widget):
+        if self._image and not self._image.isNull():
+            painter.setRenderHint(QPainter.SmoothPixmapTransform)
+            painter.save()
+
+            painter.translate(0,self._image.height())
+            painter.scale(1, -1)
+            painter.drawImage(self._rect, self._image)
+
+            painter.restore()
+
 
 
 # --- ModernGl
@@ -90,9 +153,6 @@ def get_mgl_format(array: np.ndarray) -> str:
 
     return f"{components}{mgl_char}"
 
- #+=====================
-
- #---- Defaulted Constants
 
 flag_context_enable = {
     "NOTHING": mgl.NOTHING,

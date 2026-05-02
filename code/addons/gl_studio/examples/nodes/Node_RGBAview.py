@@ -3,10 +3,6 @@ from gl_studio.examples.nodes import Node_zPattren as BASE
 from gl_studio.util import util_types as t
 from PIL import Image
 from PySide6.QtWidgets import QLabel, QPushButton, QVBoxLayout, QWidget
-from PySide6.QtGui import QImage, QPixmap
-from PySide6.QtGui import QImage, QPixmap
-from PySide6.QtCore import Qt
-
 
 
 class NODE_RGBA_VIEWER(BASE.NODE_INTERFACE):
