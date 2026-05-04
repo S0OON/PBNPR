@@ -1,4 +1,5 @@
- 
+
+
 from gl_studio.ui.pyside6 import main
 
 main.register()

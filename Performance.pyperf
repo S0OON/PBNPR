@@ -1,0 +1,8 @@
+<?xml version="1.0"?>
+<ProfilingTarget xmlns:xsd="http://www.w3.org/2001/XMLSchema" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+  <ProjectTarget>
+    <TargetProject>6fa7da15-2a50-4214-b660-d2f9b1730e7d</TargetProject>
+    <FriendlyName>PBNPR</FriendlyName>
+  </ProjectTarget>
+  <UseVTune>false</UseVTune>
+</ProfilingTarget>

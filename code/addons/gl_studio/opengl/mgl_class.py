@@ -2,19 +2,19 @@ import moderngl as gl
 import numpy as np
 from gl_studio.util import util_types as t
 
-class MGL: 
+class MGL:
 
     def __init__(self, ctx=None):
         # Allow passing an existing context, otherwise create a standalone one
-        self.ctx = ctx or gl.create_context(standalone=True)
-        
+        self.ctx = ctx
+
         # Resource caches
         self.prog = None
         self.fbo = None
         self.col = None
         self.depth = None
         self.vbos = {}   # Map: name -> (vbo_object, format, shape)
-        
+
         self.vao = None
         self.texs = {}   # Map: name -> texture_object
 
@@ -30,7 +30,7 @@ class MGL:
         self._cached_f = ""
         self._cached_res = (0, 0)
 
-    def compile(self): 
+    def compile(self):
         needs_rebuild = False
 
         # 1. Smart Shader Compilation
@@ -51,20 +51,20 @@ class MGL:
                 self.fbo.release()
                 self.col.release()
                 self.depth.release()
-            
+
             self.col = self.ctx.renderbuffer((self.w, self.h), dtype='f4')
             self.depth = self.ctx.depth_renderbuffer((self.w, self.h))
             self.fbo = self.ctx.framebuffer(color_attachments=[self.col], depth_attachment=self.depth)
             self._cached_res = (self.w, self.h)
-            
+
         return needs_rebuild
 
     def uniforms(self, uniforms_dict):
         if not self.prog:
             return
-        
+
         uniforms = uniforms_dict if isinstance(uniforms_dict, dict) else {}
-        
+
         if t.RES not in uniforms.keys():
             uniforms[t.RES] = (self.w, self.h)
 
@@ -88,18 +88,18 @@ class MGL:
                     h, w, c = tex_obj.shape
                     pixels = tex_obj.tobytes()
                     dtype = 'f4'
-                    
+
                     # UPDATE existing texture if shape matches, otherwise RE-CREATE
                     if name in self.texs and self.texs[name].size == (w, h):
                         self.texs[name].write(pixels)
                     else:
                         if name in self.texs:
                             self.texs[name].release()
-                        
+
                         tex = self.ctx.texture((w, h), c, data=pixels, dtype=dtype)
                         tex.filter = (gl.NEAREST, gl.NEAREST)
                         self.texs[name] = tex
-                        
+
                     self.texs[name].use(location=texture_location)
                     self.prog[name].value = texture_location
                     texture_location += 1
@@ -122,7 +122,7 @@ class MGL:
             if name in self.prog and isinstance(obj, np.ndarray):
                 fmt = t.get_mgl_format(obj)
                 obj_bytes = obj.tobytes()
-                
+
                 # Check if we can just update the existing VBO
                 if name in self.vbos and self.vbos[name][1] == fmt and self.vbos[name][2] == obj.shape:
                     vbo = self.vbos[name][0]
@@ -131,11 +131,11 @@ class MGL:
                     # SLOW path: Allocate new buffer
                     if name in self.vbos:
                         self.vbos[name][0].release()
-                        
+
                     vbo = self.ctx.buffer(obj_bytes)
                     self.vbos[name] = (vbo, fmt, obj.shape)
                     rebuild_vao = True
-                
+
                 vao_blueprint.append((vbo, fmt, name))
 
         if rebuild_vao and vao_blueprint:
@@ -161,7 +161,7 @@ class MGL:
         for tex_name, tex in self.texs.items():
             tex.release()
         self.texs.clear()
-        
+
         if self.vao:
             self.vao.release()
             self.vao = None
@@ -179,5 +179,5 @@ class MGL:
             self.col.release()
             self.depth.release()
             self.fbo = None
-            
+
         self.ctx.gc()

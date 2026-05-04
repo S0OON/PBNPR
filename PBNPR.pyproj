@@ -1,0 +1,136 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="4.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003" DefaultTargets="Build">
+  <PropertyGroup>
+    <Configuration Condition=" '$(Configuration)' == '' ">Debug</Configuration>
+    <SchemaVersion>2.0</SchemaVersion>
+    <ProjectGuid>{6fa7da15-2a50-4214-b660-d2f9b1730e7d}</ProjectGuid>
+    <ProjectHome />
+    <StartupFile>E:\soon\projects\PBNPR\code\util\run.py</StartupFile>
+    <SearchPath />
+    <WorkingDirectory>E:\soon\projects\PBNPR\code\addons\</WorkingDirectory>
+    <OutputPath>.</OutputPath>
+    <ProjectTypeGuids>{888888a0-9f3d-457c-b088-3a5042f75d52}</ProjectTypeGuids>
+    <LaunchProvider>Standard Python launcher</LaunchProvider>
+    <InterpreterId>Global|PythonCore|3.13</InterpreterId>
+    <IsWindowsApplication>False</IsWindowsApplication>
+    <InterpreterPath>
+    </InterpreterPath>
+    <InterpreterArguments>
+    </InterpreterArguments>
+    <EnableNativeCodeDebugging>False</EnableNativeCodeDebugging>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)' == 'Debug'" />
+  <PropertyGroup Condition="'$(Configuration)' == 'Release'" />
+  <PropertyGroup>
+    <VisualStudioVersion Condition=" '$(VisualStudioVersion)' == '' ">10.0</VisualStudioVersion>
+  </PropertyGroup>
+  <ItemGroup>
+    <Content Include="code\addons\gl_studio\examples\opengl\CANDIDATE_RAYMARCH_KITS.txt" />
+    <Content Include="code\addons\gl_studio\examples\opengl\CircleF.glsl" />
+    <Content Include="code\addons\gl_studio\examples\opengl\CircleV.glsl" />
+    <Content Include="code\addons\gl_studio\examples\opengl\defaultF.glsl" />
+    <Content Include="code\addons\gl_studio\examples\opengl\defaultV.glsl" />
+    <Content Include="code\addons\gl_studio\examples\opengl\dotF.glsl" />
+    <Content Include="code\addons\gl_studio\examples\opengl\dotV.glsl" />
+    <Content Include="code\addons\gl_studio\examples\opengl\EdgeDetect_raymarch_F.glsl" />
+    <Content Include="code\addons\gl_studio\examples\opengl\GlitchF.glsl" />
+    <Content Include="code\addons\gl_studio\examples\opengl\GlitchV.glsl" />
+    <Content Include="code\addons\gl_studio\examples\opengl\outlineF.glsl" />
+    <Content Include="code\addons\gl_studio\examples\opengl\outlineV.glsl" />
+    <Content Include="code\addons\gl_studio\examples\opengl\screenF.glsl" />
+    <Content Include="code\addons\gl_studio\examples\opengl\screenV.glsl" />
+    <Content Include="code\addons\gl_studio\examples\opengl\texF.glsl" />
+    <Content Include="code\addons\gl_studio\examples\opengl\texV.glsl" />
+    <Content Include="code\combined_output.txt" />
+    <Content Include="code\util\blender_headless.bat" />
+    <Content Include="resource\examples\blend_cubic_relation\img\145e8ef375958314252e34d38dcbcf8f.jpg" />
+    <Content Include="resource\examples\blend_cubic_relation\img\2cb9634c85cff40742a3e5b203d48270.jpg" />
+    <Content Include="resource\examples\blend_cubic_relation\img\2def7071cf45575ed85072b54f361517.jpg" />
+    <Content Include="resource\examples\blend_cubic_relation\img\38df8e9a08a36892149a22c57b32a908.jpg" />
+    <Content Include="resource\examples\blend_cubic_relation\img\57cbd7bdd778d87b337dc1120769decb.jpg" />
+    <Content Include="resource\examples\blend_cubic_relation\img\90984e5b5f1d14462a942260f80d2342.jpg" />
+    <Content Include="resource\examples\blend_cubic_relation\img\9556b4caa91a64c99a1ebfbd1924e752.jpg" />
+    <Content Include="resource\examples\blend_cubic_relation\img\9958990cc6b538c6227afd402497ccee.jpg" />
+    <Content Include="resource\examples\blend_cubic_relation\img\aff7128b28483f13c44e975ea8ad65e7.jpg" />
+    <Content Include="resource\examples\blend_cubic_relation\img\e4fedd34c696d506adb6caeb0145a641.jpg" />
+    <Content Include="resource\examples\blend_cubic_relation\img\f2ef0b5138b4a3cc993179802c3ab2e0.jpg" />
+    <Content Include="resource\examples\blend_mc\tex\CH_0_Steve.png" />
+    <Content Include="resource\examples\blend_mc\tex\ch_0_STEVE_F.png" />
+    <Content Include="resource\img\Label_img.jpg" />
+    <Content Include="resource\img\plain_ui_new.png" />
+    <Content Include="resource\img\proffesional_planning.png" />
+    <Content Include="resource\img\proffesional_planning_forMGL.png" />
+    <Content Include="resource\img\UI_guide.png" />
+    <Content Include="resource\img\UI_Guide_New.jpg" />
+    <Content Include="resource\img\Untitled.png" />
+  </ItemGroup>
+  <ItemGroup>
+    <Compile Include="code\addons\gl_studio\examples\nodes\Node_bpy_camData.py" />
+    <Compile Include="code\addons\gl_studio\examples\nodes\Node_bpy_imgData.py" />
+    <Compile Include="code\addons\gl_studio\examples\nodes\Node_bpy_imgWrite.py" />
+    <Compile Include="code\addons\gl_studio\examples\nodes\Node_bpy_objData.py" />
+    <Compile Include="code\addons\gl_studio\examples\nodes\Node_dict_dynamic.py" />
+    <Compile Include="code\addons\gl_studio\examples\nodes\Node_dict_index.py" />
+    <Compile Include="code\addons\gl_studio\examples\nodes\Node_dict_join.py" />
+    <Compile Include="code\addons\gl_studio\examples\nodes\Node_dict_value.py" />
+    <Compile Include="code\addons\gl_studio\examples\nodes\Node_empty.py" />
+    <Compile Include="code\addons\gl_studio\examples\nodes\Node_float.py" />
+    <Compile Include="code\addons\gl_studio\examples\nodes\Node_float_math.py" />
+    <Compile Include="code\addons\gl_studio\examples\nodes\Node_mgl_class.py" />
+    <Compile Include="code\addons\gl_studio\examples\nodes\Node_mgl_flags.py" />
+    <Compile Include="code\addons\gl_studio\examples\nodes\Node_mgl_template.py" />
+    <Compile Include="code\addons\gl_studio\examples\nodes\Node_output.py" />
+    <Compile Include="code\addons\gl_studio\examples\nodes\Node_RGBAdisplay.py" />
+    <Compile Include="code\addons\gl_studio\examples\nodes\Node_RGBAview.py" />
+    <Compile Include="code\addons\gl_studio\examples\nodes\Node_str.py" />
+    <Compile Include="code\addons\gl_studio\examples\nodes\Node_str_block.py" />
+    <Compile Include="code\addons\gl_studio\examples\nodes\Node_value_export.py" />
+    <Compile Include="code\addons\gl_studio\examples\nodes\Node_value_fetich.py" />
+    <Compile Include="code\addons\gl_studio\examples\nodes\Node_zPattren.py" />
+    <Compile Include="code\addons\gl_studio\opengl\main.py" />
+    <Compile Include="code\addons\gl_studio\opengl\mgl_class.py" />
+    <Compile Include="code\addons\gl_studio\ui\bpy\ui_bpy.py" />
+    <Compile Include="code\addons\gl_studio\ui\pyside6\editor_general_template_module_file.py" />
+    <Compile Include="code\addons\gl_studio\ui\pyside6\editor_nodeGraph.py" />
+    <Compile Include="code\addons\gl_studio\ui\pyside6\internals.py" />
+    <Compile Include="code\addons\gl_studio\ui\pyside6\main.py" />
+    <Compile Include="code\addons\gl_studio\util\export_cloud.py" />
+    <Compile Include="code\addons\gl_studio\util\util_types.py" />
+    <Compile Include="code\addons\gl_studio\__init__.py" />
+    <Compile Include="code\export_to_txt.py" />
+    <Compile Include="code\util\blender_headless.py" />
+    <Compile Include="code\util\run.py" />
+    <Compile Include="code\util\sync_to_blender.py" />
+    <Compile Include="resource\export_to_txt.py" />
+    <Compile Include="resource\shader_example\glsl_manager_examples\gl_shader_dot.py" />
+    <Compile Include="resource\shader_example\glsl_manager_examples\gl_shader_outline.py" />
+    <Compile Include="resource\shader_example\gl_shader3D_Tex.py" />
+  </ItemGroup>
+  <ItemGroup>
+    <Folder Include="code" />
+    <Folder Include="code\addons\" />
+    <Folder Include="code\addons\gl_studio" />
+    <Folder Include="code\addons\gl_studio\examples\" />
+    <Folder Include="code\addons\gl_studio\examples\nodes" />
+    <Folder Include="code\addons\gl_studio\examples\opengl" />
+    <Folder Include="code\addons\gl_studio\opengl" />
+    <Folder Include="code\addons\gl_studio\ui\" />
+    <Folder Include="code\addons\gl_studio\ui\bpy" />
+    <Folder Include="code\addons\gl_studio\ui\pyside6" />
+    <Folder Include="code\addons\gl_studio\util" />
+    <Folder Include="code\util" />
+    <Folder Include="resource" />
+    <Folder Include="resource\examples\" />
+    <Folder Include="resource\examples\blend_cubic_relation\" />
+    <Folder Include="resource\examples\blend_cubic_relation\img" />
+    <Folder Include="resource\examples\blend_mc\" />
+    <Folder Include="resource\examples\blend_mc\tex" />
+    <Folder Include="resource\img" />
+    <Folder Include="resource\shader_example" />
+    <Folder Include="resource\shader_example\glsl_manager_examples" />
+  </ItemGroup>
+  <ItemGroup>
+    <InterpreterReference Include="Global|PythonCore|3.13" />
+  </ItemGroup>
+  <Import Project="$(MSBuildExtensionsPath32)\Microsoft\VisualStudio\v$(VisualStudioVersion)\Python Tools\Microsoft.PythonTools.targets" />
+</Project>

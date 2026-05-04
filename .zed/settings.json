@@ -1,17 +1,8 @@
 {
   "languages": {
     "Python": {
-      "language_servers": ["pyright", "ruff"],
+      "language_servers": ["basedpyright","ruff"],
       "format_on_save": "off",
-    },
-  },
-  "lsp": {
-    "ruff": {
-      "initialization_options": {
-        "settings": {
-          "configuration": "ruff.toml",
-        },
-      },
     },
   },
 }

@@ -1,0 +1,23 @@
+﻿
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio Version 18
+VisualStudioVersion = 18.5.11709.299 stable
+MinimumVisualStudioVersion = 10.0.40219.1
+Project("{888888A0-9F3D-457C-B088-3A5042F75D52}") = "PBNPR", "PBNPR.pyproj", "{6FA7DA15-2A50-4214-B660-D2F9B1730E7D}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Any CPU = Debug|Any CPU
+		Release|Any CPU = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{6FA7DA15-2A50-4214-B660-D2F9B1730E7D}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{6FA7DA15-2A50-4214-B660-D2F9B1730E7D}.Release|Any CPU.ActiveCfg = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
+	EndGlobalSection
+	GlobalSection(ExtensibilityGlobals) = postSolution
+		SolutionGuid = {57613306-3DCA-442D-9B5E-8D329326E484}
+	EndGlobalSection
+EndGlobal

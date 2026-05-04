@@ -1,5 +1,5 @@
-from PySide6.QtWidgets import QVBoxLayout
-import moderngl as mgl
+from PySide6.QtWidgets import QVBoxLayout 
+
 
 INSPECTOR:QVBoxLayout
 # Ouput nodes list,
@@ -10,7 +10,4 @@ CLOUD_NODES = {}
 EXPORT = {}
 
 # moderngl
-CTX = mgl.create_context(standalone=True)
-CTX.gc_mode = 'context_gc'
-
-
+CTX = None

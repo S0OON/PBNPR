@@ -43,128 +43,22 @@ E:\soon\projects\PBNPR\code\addons\gl_studio\__init__.py
 # This file belongs to S00N's PBNPR Blender Add-on
 # all rights reserved (C) 2026 S00N
 
-from typing import cast
-
-import bpy
-
-from gl_studio.ui.pyside6 import main
-
 bl_info = {
     "name": "PBNPR: GL studio",
     "author": "S00N",
     "version": (0, 5),
     "blender": (5, 0, 1),
     "location": "View3D > N-Panel > PBNPR",
-    "description": "High-performance GLSL viewport manager and baker",
+    "description": "PySide6 framework for better Rapid Prototyping",
     "category": "Render",
 }
-
-
-# ---------------------------------------
-ID_OP_EXEC_WINDOW = "wm.gl_open_gl_studio"
-
-
-# ---------------------------------------
-class gl_PT_main_settings(bpy.types.PropertyGroup):
-    fps: bpy.props.FloatProperty(
-        name="FPS",
-        description="Frames per second for PySide6 rendering",
-        default=15.0,
-        min=12.0,
-        max=120.0,
-    )  # pyright: ignore[reportInvalidTypeForm]
-    is_running: bpy.props.BoolProperty(name="Running State", default=False)  # pyright: ignore[reportInvalidTypeForm]
-
-
-class gl_OT_dpg(bpy.types.Operator):
-    bl_idname = ID_OP_EXEC_WINDOW
-    bl_label = "Open Window"
-    _timer = None
-
-    def modal(self, context, event):
-        settings = cast(gl_PT_main_settings, context.scene.gl_studio_settings)
-
-        if not settings.is_running:
-            self.cancel(context)
-            return {"FINISHED"}
-
-        if event.type == "TIMER":
-            if main.check_state():
-                main.process_frame()
-            else:
-                self.cancel(context)
-                return {"FINISHED"}
-        return {"PASS_THROUGH"}
-
-    def execute(self, context):
-        settings = cast(gl_PT_main_settings, context.scene.gl_studio_settings)
-
-        if settings.is_running:
-            self.report({"INFO"}, "PySide6 is already running")
-            return {"CANCELLED"}
-
-        main.register()
-
-        settings.is_running = True
-
-        self._timer = context.window_manager.event_timer_add(
-            time_step=1.0 / settings.fps, window=context.window
-        )
-        context.window_manager.modal_handler_add(self)
-
-        return {"RUNNING_MODAL"}
-
-    def cancel(self, context):
-        if self._timer:
-            context.window_manager.event_timer_remove(self._timer)
-        settings = cast(gl_PT_main_settings, context.scene.gl_studio_settings)
-
-        settings.is_running = False
-
-        main.unregister()
-
-
-class gl_PT_main(bpy.types.Panel):
-    bl_label = "gl manager"
-    bl_idname = "gl_PT_main_panel"
-    bl_space_type = "VIEW_3D"
-    bl_region_type = "UI"
-    bl_category = "PBNPR"
-
-    def draw(self, context):
-        layout = self.layout
-        settings = cast(gl_PT_main_settings, context.scene.gl_studio_settings)
-
-        col = layout.column(align=True)
-        col.prop(settings, "fps", slider=True)
-
-        if not settings.is_running:
-            col.operator(ID_OP_EXEC_WINDOW, text="Start PySide6", icon="PLAY")
-        else:
-            # Shutdown button (Toggles the bool which the modal watches)
-            col.prop(
-                settings, "is_running", text="Shutdown DPG", icon="QUIT", toggle=True
-            )
-            col.label(text="DONT CLICK!")
-
-
-# ---------------------------------------
-cls = (gl_PT_main_settings, gl_OT_dpg, gl_PT_main)
-
+from .ui.bpy import ui_bpy
 
 def register():
-    for cl in cls:
-        bpy.utils.register_class(cl)
-    bpy.types.Scene.gl_studio_settings = bpy.props.PointerProperty(
-        type=gl_PT_main_settings
-    )
-
+    ui_bpy.register()
 
 def unregister():
-    del bpy.types.Scene.gl_studio_settings
-    for cl in reversed(cls):
-        bpy.utils.unregister_class(cl)
-    main.unregister()
+    ui_bpy.unregister()
 
 ========================================
 E:\soon\projects\PBNPR\code\addons\gl_studio\examples\nodes\Node_bpy_camData.py
@@ -928,8 +822,9 @@ from gl_studio.examples.nodes import Node_zPattren as BASE
 from gl_studio.opengl import mgl_class
 from gl_studio.util import util_types as t
 from gl_studio.util import export_cloud as c
-from PySide6.QtWidgets import QComboBox
+from PySide6.QtWidgets import QComboBox, QCheckBox, QWidget, QVBoxLayout
 import numpy as np
+
 STATICc = 'Combo_vertex_array_primitive'
 
 class NODE_MGL_BASIC(BASE.NODE_INTERFACE):
@@ -957,12 +852,20 @@ class NODE_MGL_BASIC(BASE.NODE_INTERFACE):
         self.reset()
 
     def on_gui(self):
+        w = QWidget()
+        l = QVBoxLayout()
+        w.setLayout(l)
+
+        self.chBox = QCheckBox()
+        l.addWidget(self.chBox)
+
         self.combo = QComboBox()
         self.combo.addItems(t.flag_primitive_modes.keys())
         self.combo.currentTextChanged.connect(
             lambda x: self.set(STATICc,self.combo.currentText()))
+        l.addWidget(self.combo)
 
-        return self.combo
+        return w
 
     def reset(self):
         if self.has(STATICc):
@@ -981,7 +884,13 @@ class NODE_MGL_BASIC(BASE.NODE_INTERFACE):
 
     def on_stream(self):
         self.on_sync_port_values()
+
+        if c.CTX is None:
+            c.CTX = mgl_class.gl.create_context(standalone=self.chBox.isChecked())
+            c.CTX.gc_mode = 'context_gc'
+
         shader = self.shader
+        shader.ctx = c.CTX
 
         shader.w = self.I_w.val
         shader.h = self.I_h.val
@@ -1791,10 +1700,6 @@ class NODE_INTERFACE(BaseNode):
                     i_p.val = o_p.val
 
 ========================================
-E:\soon\projects\PBNPR\code\addons\gl_studio\examples\opengl\CANDIDATE_RAYMARCH_KITS.txt
-========================================
-
-========================================
 E:\soon\projects\PBNPR\code\addons\gl_studio\examples\opengl\CircleF.glsl
 ========================================
 #version 330
@@ -2109,6 +2014,97 @@ void main() {
 }
 
 ========================================
+E:\soon\projects\PBNPR\code\addons\gl_studio\examples\opengl\RayMarchF.glsl
+========================================
+#version 330
+
+in vec3 position;
+
+out vec4 fragColor;
+
+uniform mat4 view_matrix;
+uniform vec3 camera_pos;
+uniform float time;
+
+/*
+// Mesh data (e.g., spheres/primitives) provided via buffer
+// This allows you to update "mesh" positions every frame from the CPU
+layout(set = 0, binding = 1) readonly buffer MeshData {
+    vec4 primitives[]; // xyz = position, w = radius/scale
+};]
+*/
+
+const int MAX_STEPS = 100;
+const float MAX_DIST = 100.0;
+const float SURF_DIST = 0.001;
+
+// Signed Distance Function for a sphere
+float sdSphere(vec3 p, vec3 center, float s) {
+    return length(p - center) - s;
+}
+
+// Global Scene Distance function
+float GetDist(vec3 p) {
+    float d = p.y + 1.0; // Infinite floor plane
+
+    // Loop through mesh data provided via uniforms/buffers
+    for (int i = 0; i < primitives.length(); i++) {
+        float primitiveDist = sdSphere(p, primitives[i].xyz, primitives[i].w);
+        d = min(d, primitiveDist); // Union of all objects
+    }
+
+    return d;
+}
+
+// Primary Raymarching Loop
+float RayMarch(vec3 ro, vec3 rd) {
+    float dO = 0.0;
+    for (int i = 0; i < MAX_STEPS; i++) {
+        vec3 p = ro + rd * dO;
+        float dS = GetDist(p);
+        dO += dS;
+        if (dO > MAX_DIST || abs(dS) < SURF_DIST) break;
+    }
+    return dO;
+}
+
+// Calculate Surface Normals via Gradient Estimation
+vec3 GetNormal(vec3 p) {
+    float d = GetDist(p);
+    vec2 e = vec2(0.01, 0);
+    vec3 n = d - vec3(
+                GetDist(p - e.xyy),
+                GetDist(p - e.yxy),
+                GetDist(p - e.yyx)
+            );
+    return normalize(n);
+}
+
+void main() {
+    // Screen coordinates (normalized -0.5 to 0.5)
+    vec2 uv = (gl_FragCoord.xy - 0.5 * vec2(800, 600)) / 600.0;
+
+    // Ray Origin and Direction
+    vec3 ro = camPos;
+    vec3 rd = normalize(vec3(uv.x, uv.y, 1.0));
+
+    float d = RayMarch(ro, rd);
+
+    if (d < MAX_DIST) {
+        vec3 p = ro + rd * d;
+        vec3 n = GetNormal(p);
+
+        // Basic Diffuse Lighting
+        float diff = dot(n, normalize(vec3(1, 2, 3))) * 0.5 + 0.5;
+        fragColor = vec4(vec3(diff), 1.0);
+    }
+    else {
+        // Background color
+        fragColor = vec4(0.1, 0.1, 0.1, 1.0);
+    }
+}
+
+========================================
 E:\soon\projects\PBNPR\code\addons\gl_studio\examples\opengl\screenF.glsl
 ========================================
 #version 330
@@ -2174,6 +2170,51 @@ void main() {
 }
 
 ========================================
+E:\soon\projects\PBNPR\code\addons\gl_studio\examples\PySide6\Application_layer.py
+========================================
+from PySide6.QtWidgets import QWidget
+
+# ========== SELF LEVEL
+from gl_studio.ui.pyside6.internals import cfg as CFG
+
+class INTERFACE:
+    Tab:QWidget = None
+
+cfg = INTERFACE()
+# ========== APPLICATION LAYER LEVEL
+
+def _PreProcess():
+    pass
+
+
+def _Create_shortcuts():
+    pass
+
+
+def _Create_GUI():
+    cfg.Tab = QWidget()
+
+
+def register():
+    _PreProcess()
+    _Create_GUI()
+    _Create_shortcuts()
+    # crete own tab
+    CFG.tabs.addTab(cfg.Tab, "Template")
+
+
+def unregister():
+    pass
+
+
+def check_state():
+    return True
+
+
+def process_frame():
+    pass
+
+========================================
 E:\soon\projects\PBNPR\code\addons\gl_studio\opengl\main.py
 ========================================
 import moderngl as mgl 
@@ -2215,19 +2256,19 @@ import moderngl as gl
 import numpy as np
 from gl_studio.util import util_types as t
 
-class MGL: 
+class MGL:
 
     def __init__(self, ctx=None):
         # Allow passing an existing context, otherwise create a standalone one
-        self.ctx = ctx or gl.create_context(standalone=True)
-        
+        self.ctx = ctx
+
         # Resource caches
         self.prog = None
         self.fbo = None
         self.col = None
         self.depth = None
         self.vbos = {}   # Map: name -> (vbo_object, format, shape)
-        
+
         self.vao = None
         self.texs = {}   # Map: name -> texture_object
 
@@ -2243,7 +2284,7 @@ class MGL:
         self._cached_f = ""
         self._cached_res = (0, 0)
 
-    def compile(self): 
+    def compile(self):
         needs_rebuild = False
 
         # 1. Smart Shader Compilation
@@ -2264,20 +2305,20 @@ class MGL:
                 self.fbo.release()
                 self.col.release()
                 self.depth.release()
-            
+
             self.col = self.ctx.renderbuffer((self.w, self.h), dtype='f4')
             self.depth = self.ctx.depth_renderbuffer((self.w, self.h))
             self.fbo = self.ctx.framebuffer(color_attachments=[self.col], depth_attachment=self.depth)
             self._cached_res = (self.w, self.h)
-            
+
         return needs_rebuild
 
     def uniforms(self, uniforms_dict):
         if not self.prog:
             return
-        
+
         uniforms = uniforms_dict if isinstance(uniforms_dict, dict) else {}
-        
+
         if t.RES not in uniforms.keys():
             uniforms[t.RES] = (self.w, self.h)
 
@@ -2301,18 +2342,18 @@ class MGL:
                     h, w, c = tex_obj.shape
                     pixels = tex_obj.tobytes()
                     dtype = 'f4'
-                    
+
                     # UPDATE existing texture if shape matches, otherwise RE-CREATE
                     if name in self.texs and self.texs[name].size == (w, h):
                         self.texs[name].write(pixels)
                     else:
                         if name in self.texs:
                             self.texs[name].release()
-                        
+
                         tex = self.ctx.texture((w, h), c, data=pixels, dtype=dtype)
                         tex.filter = (gl.NEAREST, gl.NEAREST)
                         self.texs[name] = tex
-                        
+
                     self.texs[name].use(location=texture_location)
                     self.prog[name].value = texture_location
                     texture_location += 1
@@ -2335,7 +2376,7 @@ class MGL:
             if name in self.prog and isinstance(obj, np.ndarray):
                 fmt = t.get_mgl_format(obj)
                 obj_bytes = obj.tobytes()
-                
+
                 # Check if we can just update the existing VBO
                 if name in self.vbos and self.vbos[name][1] == fmt and self.vbos[name][2] == obj.shape:
                     vbo = self.vbos[name][0]
@@ -2344,11 +2385,11 @@ class MGL:
                     # SLOW path: Allocate new buffer
                     if name in self.vbos:
                         self.vbos[name][0].release()
-                        
+
                     vbo = self.ctx.buffer(obj_bytes)
                     self.vbos[name] = (vbo, fmt, obj.shape)
                     rebuild_vao = True
-                
+
                 vao_blueprint.append((vbo, fmt, name))
 
         if rebuild_vao and vao_blueprint:
@@ -2374,7 +2415,7 @@ class MGL:
         for tex_name, tex in self.texs.items():
             tex.release()
         self.texs.clear()
-        
+
         if self.vao:
             self.vao.release()
             self.vao = None
@@ -2392,42 +2433,129 @@ class MGL:
             self.col.release()
             self.depth.release()
             self.fbo = None
-            
+
         self.ctx.gc()
+
 ========================================
-E:\soon\projects\PBNPR\code\addons\gl_studio\ui\pyside6\editor_general_template_module_file.py
+E:\soon\projects\PBNPR\code\addons\gl_studio\ui\bpy\ui_bpy.py
 ========================================
-from gl_studio.ui.pyside6.internals import cfg as CFG
-from PySide6 import QtWidgets
+# This file belongs to S00N's PBNPR Blender Add-on
+# all rights reserved (C) 2026 S00N
+
+from typing import cast
+
+import bpy
+
+from gl_studio.ui.pyside6 import main
 
 
-def _PreProcess():
-    pass
+# ---------------------------------------
+ID_OP_EXEC_WINDOW = "wm.gl_open_gl_studio"
 
 
-def _Create_shortcuts():
-    pass
+# ---------------------------------------
+class gl_PT_main_settings(bpy.types.PropertyGroup):
+    fps: bpy.props.FloatProperty(
+        name="FPS",
+        description="Frames per second for PySide6 rendering",
+        default=15.0,
+        min=12.0,
+        max=120.0,
+    )  # pyright: ignore[reportInvalidTypeForm]
+    is_running: bpy.props.BoolProperty(name="Running State", default=False)  # pyright: ignore[reportInvalidTypeForm]
 
 
-def _Create_GUI():
-    pass
+class gl_OT_dpg(bpy.types.Operator):
+    bl_idname = ID_OP_EXEC_WINDOW
+    bl_label = "Open Window"
+    _timer = None
+
+    def modal(self, context, event):
+        settings = cast(gl_PT_main_settings, context.scene.gl_studio_settings)
+
+        if not settings.is_running:
+            self.report({"INFO"}, "settings.is_running is False!")
+            self.cancel(context)
+            return {"FINISHED"}
+
+        if event.type == "TIMER":
+            if main.check_state():
+                main.process_frame()
+            else:
+                self.report({"INFO"}, "Timer event isnt 'TIMER', Canceled.")
+                self.cancel(context)
+                return {"FINISHED"}
+        return {"PASS_THROUGH"}
+
+    def execute(self, context):
+        settings = cast(gl_PT_main_settings, context.scene.gl_studio_settings)
+
+        if settings.is_running:
+            self.report({"INFO"}, "PySide6 is already running")
+            return {"CANCELLED"}
+
+        main.register()
+
+        settings.is_running = True
+
+        self._timer = context.window_manager.event_timer_add(
+            time_step=1.0 / settings.fps, window=context.window
+        )
+        context.window_manager.modal_handler_add(self)
+
+        return {"RUNNING_MODAL"}
+
+    def cancel(self, context):
+        if self._timer:
+            context.window_manager.event_timer_remove(self._timer)
+        settings = cast(gl_PT_main_settings, context.scene.gl_studio_settings)
+
+        settings.is_running = False
+
+        main.unregister()
+
+
+class gl_PT_main(bpy.types.Panel):
+    bl_label = "gl manager"
+    bl_idname = "gl_PT_main_panel"
+    bl_space_type = "VIEW_3D"
+    bl_region_type = "UI"
+    bl_category = "PBNPR"
+
+    def draw(self, context):
+        layout = self.layout
+        settings = cast(gl_PT_main_settings, context.scene.gl_studio_settings)
+
+        col = layout.column(align=True)
+        col.prop(settings, "fps", slider=True)
+
+        if not settings.is_running:
+            col.operator(ID_OP_EXEC_WINDOW, text="Start PySide6", icon="PLAY")
+        else:
+            # Shutdown button (Toggles the bool which the modal watches)
+            col.prop(
+                settings, "is_running", text="Running...", icon="QUIT", toggle=True
+            )
+            col.label(text="DONT CLICK!")
+
+
+# ---------------------------------------
+cls = (gl_PT_main_settings, gl_OT_dpg, gl_PT_main)
 
 
 def register():
-    Tab = QtWidgets.QWidget()
-    CFG.tabs.addTab(Tab, "Template")
+    for cl in cls:
+        bpy.utils.register_class(cl)
+    bpy.types.Scene.gl_studio_settings = bpy.props.PointerProperty(
+        type=gl_PT_main_settings
+    )
 
 
 def unregister():
-    pass
-
-
-def check_state():
-    return True
-
-
-def process_frame():
-    pass
+    del bpy.types.Scene.gl_studio_settings
+    for cl in reversed(cls):
+        bpy.utils.unregister_class(cl)
+    main.unregister()
 
 ========================================
 E:\soon\projects\PBNPR\code\addons\gl_studio\ui\pyside6\editor_nodeGraph.py
@@ -2797,7 +2925,52 @@ def unregister():
     global cfg
     if cfg.graph:
         cfg.graph.close()
-    del cfg
+
+========================================
+E:\soon\projects\PBNPR\code\addons\gl_studio\ui\pyside6\editor_runtimeInfo.py
+========================================
+from PySide6.QtWidgets import QWidget
+
+# ========== SELF LEVEL
+from gl_studio.ui.pyside6.internals import cfg as CFG
+
+class INTERFACE:
+    Tab_label = "Runtime Info"
+    Tab:QWidget = None
+
+cfg = INTERFACE()
+# ========== APPLICATION LAYER LEVEL
+
+def _PreProcess():
+    pass
+
+
+def _Create_shortcuts():
+    pass
+
+
+def _Create_GUI():
+    cfg.Tab = QWidget()
+
+
+def register():
+    _PreProcess()
+    _Create_GUI()
+    _Create_shortcuts()
+    # crete own tab
+    CFG.tabs.addTab(cfg.Tab, cfg.Tab_label)
+
+
+def unregister():
+    pass
+
+
+def check_state():
+    return True
+
+
+def process_frame():
+    pass
 
 ========================================
 E:\soon\projects\PBNPR\code\addons\gl_studio\ui\pyside6\internals.py
@@ -2808,13 +2981,10 @@ from PySide6.QtWidgets import QApplication, QMainWindow, QTabWidget
 
 
 class INTERFACE:
-    def __init__(self):
-        self.running = False
-
-        self.app: QApplication = None
-
-        self.window: QMainWindow = None
-        self.tabs: QTabWidget = None
+    running = False
+    app: QApplication = None
+    window: QMainWindow = None
+    tabs: QTabWidget = None
 
 
 class Window(QMainWindow):
@@ -2863,6 +3033,7 @@ def register():
 
 def unregister():
     cfg.running = False
+    cfg.app.shutdown()
 
 
 def check_state():
@@ -2876,41 +3047,41 @@ def process_frame():
 E:\soon\projects\PBNPR\code\addons\gl_studio\ui\pyside6\main.py
 ========================================
 from gl_studio.ui.pyside6 import (
-    # editor_general_template_module_file,
+    editor_runtimeInfo,
     editor_nodeGraph,
     internals,
 )
 
 
-def register():     
+def register():
     internals.register()
     editor_nodeGraph.register()
-    # editor_general_template_module_file.register()
+    editor_runtimeInfo.register()
 
 
 def unregister():
-    internals.unregister()
     editor_nodeGraph.unregister()
-    # editor_general_template_module_file.unregister()
+    editor_runtimeInfo.unregister()
+    internals.unregister()
 
 
 def check_state():
     a = internals.check_state()
     b = editor_nodeGraph.check_state()
-    # c = editor_general_template_module_file.check_state()
-    return all([a, b])  # ,c)
+    c = editor_runtimeInfo.check_state()
+    return all([a, b ,c])
 
 
 def process_frame():
     internals.process_frame()
     editor_nodeGraph.process_frame()
-    # editor_general_template_module_file.process_frame()
+    editor_runtimeInfo.process_frame()
 
 ========================================
 E:\soon\projects\PBNPR\code\addons\gl_studio\util\export_cloud.py
 ========================================
-from PySide6.QtWidgets import QVBoxLayout
-import moderngl as mgl
+from PySide6.QtWidgets import QVBoxLayout 
+
 
 INSPECTOR:QVBoxLayout
 # Ouput nodes list,
@@ -2921,10 +3092,7 @@ CLOUD_NODES = {}
 EXPORT = {}
 
 # moderngl
-CTX = mgl.create_context(standalone=True)
-CTX.gc_mode = 'context_gc'
-
-
+CTX = None
 
 ========================================
 E:\soon\projects\PBNPR\code\addons\gl_studio\util\util_types.py
@@ -3204,7 +3372,8 @@ class Flags:
 ========================================
 E:\soon\projects\PBNPR\code\util\blender_headless.py
 ========================================
- 
+
+
 from gl_studio.ui.pyside6 import main
 
 main.register()
@@ -3212,6 +3381,35 @@ while main.check_state():
     main.process_frame()
 main.unregister()
 
+========================================
+E:\soon\projects\PBNPR\code\util\run.py
+========================================
+import os
+import subprocess
+
+# Mutes the debugpy frozen modules warning
+os.environ["PYDEVD_DISABLE_FILE_VALIDATION"] = "1"
+
+# 1. Change directory
+util_dir = r"E:\soon\projects\PBNPR\code\util"
+os.chdir(util_dir)
+
+# 2. Run sync_to_blender.py
+print("Running sync_to_blender.py...")
+subprocess.run(["python", "sync_to_blender.py"], check=True)
+
+# 3. Set environment variables
+os.environ["A"] = "file.blend"
+b_path = r"E:\soon\projects\PBNPR\resource\examples\blend_mc\scene.blend"
+os.environ["B"] = b_path
+
+# 4. Run Blender headless
+blender_exe = r"E:\soon\programs\Blender-5.1\blender.exe"
+print("Launching Blender headless...")
+
+
+# We use b_path directly instead of querying the OS environment variable string
+subprocess.run([blender_exe, "-b", b_path, "--python", "blender_headless.py"], check=True)
 ========================================
 E:\soon\projects\PBNPR\code\util\sync_to_blender.py
 ========================================

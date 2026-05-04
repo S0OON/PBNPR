@@ -1,26 +1,30 @@
 import sys
 
-from PySide6.QtWidgets import QApplication, QMainWindow, QTabWidget
-
-
-class INTERFACE:
-    def __init__(self):
-        self.running = False
-
-        self.app: QApplication = None
-
-        self.window: QMainWindow = None
-        self.tabs: QTabWidget = None
-
+from PySide6.QtWidgets import QApplication, QMainWindow, QWidget, QMenuBar, QMenu , QDockWidget
+from PySide6.QtCore import Qt
 
 class Window(QMainWindow):
+    menu_bar : QMenuBar
+    menu_docks : QMenu
+
     def __init__(self):
         super().__init__()
         self.setWindowTitle("GL Studio Editor")
         self.resize(1000, 800)
-        self.Tabs = QTabWidget()
-        self.setCentralWidget(self.Tabs)
 
+        self.menu_bar = self.menuBar()
+
+        self.menu_docks = self.menu_bar.addMenu("&View")
+
+        self.CentralW = QWidget()
+        self.setCentralWidget(self.CentralW)
+
+class INTERFACE:
+
+    app: QApplication
+    window: Window
+
+    running = False
 
 cfg = INTERFACE()
 
@@ -51,14 +55,12 @@ def register():
     cfg.running = True
 
     cfg.window = Window()
-
-    cfg.tabs = cfg.window.Tabs
-
     cfg.window.show()
 
 
 def unregister():
     cfg.running = False
+    cfg.app.shutdown()
 
 
 def check_state():

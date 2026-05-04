@@ -2,8 +2,9 @@ from gl_studio.examples.nodes import Node_zPattren as BASE
 from gl_studio.opengl import mgl_class
 from gl_studio.util import util_types as t
 from gl_studio.util import export_cloud as c
-from PySide6.QtWidgets import QComboBox
+from PySide6.QtWidgets import QComboBox, QCheckBox, QWidget, QVBoxLayout
 import numpy as np
+
 STATICc = 'Combo_vertex_array_primitive'
 
 class NODE_MGL_BASIC(BASE.NODE_INTERFACE):
@@ -31,12 +32,20 @@ class NODE_MGL_BASIC(BASE.NODE_INTERFACE):
         self.reset()
 
     def on_gui(self):
+        w = QWidget()
+        l = QVBoxLayout()
+        w.setLayout(l)
+
+        self.chBox = QCheckBox()
+        l.addWidget(self.chBox)
+
         self.combo = QComboBox()
         self.combo.addItems(t.flag_primitive_modes.keys())
         self.combo.currentTextChanged.connect(
             lambda x: self.set(STATICc,self.combo.currentText()))
+        l.addWidget(self.combo)
 
-        return self.combo
+        return w
 
     def reset(self):
         if self.has(STATICc):
@@ -55,7 +64,13 @@ class NODE_MGL_BASIC(BASE.NODE_INTERFACE):
 
     def on_stream(self):
         self.on_sync_port_values()
+
+        if c.CTX is None:
+            c.CTX = mgl_class.gl.create_context(standalone=self.chBox.isChecked())
+            c.CTX.gc_mode = 'context_gc'
+
         shader = self.shader
+        shader.ctx = c.CTX
 
         shader.w = self.I_w.val
         shader.h = self.I_h.val

@@ -3,48 +3,60 @@ import inspect
 import os
 import traceback
 from typing import cast
-
-from gl_studio.examples.nodes.Node_zPattren import NODE_INTERFACE as NODE
-from gl_studio.ui.pyside6.internals import cfg as PROG_CFG
-from gl_studio.util import util_types as t
-from gl_studio.util import export_cloud as c
-from OdenGraphQt import BaseNode, NodeGraph, Port
-from PySide6 import QtCore
-from PySide6.QtGui import QKeySequence, QShortcut
 from PySide6.QtWidgets import (
     QFileDialog,
     QMenu,
     QMenuBar,
     QSizePolicy,
     QSplitter,
+    QDockWidget,
     QTabWidget,
     QVBoxLayout,
     QWidget,
 )
+from PySide6.QtCore import Qt
+from PySide6 import QtCore
+from PySide6.QtGui import QKeySequence, QShortcut
+from OdenGraphQt import BaseNode, NodeGraph, Port
+
+from gl_studio.examples.nodes.Node_zPattren import NODE_INTERFACE as NODE
+from gl_studio.ui.pyside6.internals import cfg as PROG_CFG
+from gl_studio.util import export_cloud as c
 
 
 class INTERFACE:
-    Tab_main_label = "Node Editor"
+    label = "Node Editor"
     Tab_settings_label = "Settings"
     Tab_Inspec_label = "Inspect"
 
-    def __init__(self):
-        self.widget: QWidget
-        self.lay: QVBoxLayout
+    dock:QDockWidget
+    widget: QWidget
+    lay: QVBoxLayout
 
-        self.menu_bar: QMenuBar
-        self.menu_add_node: QMenu
-        self.menu_Graph: QMenu
+    menu_bar: QMenuBar
+    menu_add_node: QMenu
+    menu_Graph: QMenu
 
-        self.splitter: QWidget
-        self.graph: NodeGraph
-        self.side_panel: QTabWidget
-        self.tab_sets: QWidget
-        self.tab_inspec: QWidget
-        self.tab_inspec_lay: QVBoxLayout
+    splitter: QWidget
+    graph: NodeGraph
+    side_panel: QTabWidget
+    tab_sets: QWidget
+    tab_inspec: QWidget
+    tab_inspec_lay: QVBoxLayout
+
+    def toggle_docker(self):
+        self.dock.toggleViewAction()
 
     def setup_layout(self):
-        PROG_CFG.tabs.addTab(self.widget, self.Tab_main_label)
+        self.dock.setAllowedAreas(Qt.DockWidgetArea.LeftDockWidgetArea | Qt.DockWidgetArea.RightDockWidgetArea)
+        self.dock.setFeatures(
+            QDockWidget.DockWidgetFeature.DockWidgetMovable |
+            QDockWidget.DockWidgetFeature.DockWidgetFloatable |
+            QDockWidget.DockWidgetFeature.DockWidgetClosable
+        )
+        self.dock.setWidget(self.widget)
+        PROG_CFG.window.addDockWidget(Qt.DockWidgetArea.LeftDockWidgetArea, self.dock)
+        PROG_CFG.window.menu_docks.addAction(self.dock.toggleViewAction())
 
         self.widget.setLayout(self.lay)
 
@@ -282,6 +294,8 @@ def _Create_shortcuts():
 
 
 def _Create_GUI():
+    cfg.dock = QDockWidget(cfg.label, PROG_CFG.window)
+
     cfg.widget = QWidget()
 
     cfg.lay = QVBoxLayout()
@@ -363,4 +377,3 @@ def unregister():
     global cfg
     if cfg.graph:
         cfg.graph.close()
-    del cfg
