@@ -37,6 +37,8 @@ class NODE_MGL_BASIC(BASE.NODE_INTERFACE):
         w.setLayout(l)
 
         self.chBox = QCheckBox()
+        self.chBox.setStyleSheet("color: white;")
+        self.chBox.setText("Standalone Context (Headless only!)")
         l.addWidget(self.chBox)
 
         self.combo = QComboBox()
@@ -53,8 +55,8 @@ class NODE_MGL_BASIC(BASE.NODE_INTERFACE):
         else:
             self.add(STATICc,self.combo.currentText())
 
-        self.I_w.val = t.RES_W
-        self.I_h.val = t.RES_H
+        self.I_w.val = int(t.RES_W)
+        self.I_h.val = int(t.RES_H)
         self.I_vert.val = t.SRC_SCREEN_VERT
         self.I_frag.val = t.SRC_SCREEN_FRAG
         self.I_uniforms.val = None
@@ -72,8 +74,8 @@ class NODE_MGL_BASIC(BASE.NODE_INTERFACE):
         shader = self.shader
         shader.ctx = c.CTX
 
-        shader.w = self.I_w.val
-        shader.h = self.I_h.val
+        shader.w = int(self.I_w.val)
+        shader.h = int(self.I_h.val)
         if isinstance(self.I_vert.val, str):
             shader.src_v = self.I_vert.val
         if isinstance(self.I_frag.val, str):

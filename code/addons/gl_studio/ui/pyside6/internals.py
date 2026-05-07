@@ -1,3 +1,6 @@
+# This file belongs to S00N's PBNPR Blender Add-on
+# all rights reserved (C) 2026 S00N
+
 import sys
 
 from PySide6.QtWidgets import QApplication, QMainWindow, QWidget, QMenuBar, QMenu , QDockWidget
@@ -10,7 +13,7 @@ class Window(QMainWindow):
     def __init__(self):
         super().__init__()
         self.setWindowTitle("GL Studio Editor")
-        self.resize(1000, 800)
+        self.resize(1000, 600)
 
         self.menu_bar = self.menuBar()
 

@@ -2,9 +2,10 @@ import bpy
 import numpy as np
 from gl_studio.examples.nodes import Node_zPattren as BASE
 from gl_studio.util import util_types as t
-from PySide6.QtWidgets import QLabel, QLineEdit, QVBoxLayout, QWidget
+from PySide6.QtWidgets import QLabel, QLineEdit, QVBoxLayout, QWidget, QCheckBox
 
 PRESISTANT = "img_name"
+FLIP_V = "flip_v"
 IMG_FLOAD_FORMAT = "f4"
 
 
@@ -23,13 +24,17 @@ class NODE_IMG_DATA(BASE.NODE_INTERFACE):
 
     def on_gui(self):
         widget = QWidget()
-
         lay = QVBoxLayout()
         widget.setLayout(lay)
 
         self.line = QLineEdit()
+        self.line.setPlaceholderText("Source Image Name...")
         self.line.textChanged.connect(lambda v: self.set(PRESISTANT, v))
         lay.addWidget(self.line)
+
+        self.flip_check = QCheckBox("Flip Vertical")
+        self.flip_check.stateChanged.connect(lambda v: self.set(FLIP_V, self.flip_check.isChecked()))
+        lay.addWidget(self.flip_check)
 
         self.status_label = QLabel()
         lay.addWidget(self.status_label)
@@ -41,6 +46,11 @@ class NODE_IMG_DATA(BASE.NODE_INTERFACE):
             self.line.setText(self.get(PRESISTANT))
         else:
             self.add(PRESISTANT, self.line.text())
+        
+        if self.has(FLIP_V):
+            self.flip_check.setChecked(self.get(FLIP_V))
+        else:
+            self.add(FLIP_V, False)
 
         self.status_label.setText("No image linked")
         self.status_label.setStyleSheet(t.RED)
@@ -51,9 +61,12 @@ class NODE_IMG_DATA(BASE.NODE_INTERFACE):
         self.O_pkg.val = {}
 
     def on_stream(self):
-        img = bpy.data.images.get(self.line.text())
+        img_name = self.line.text()
+        img = bpy.data.images.get(img_name)
         if not img:
-            self.reset()
+            self.status_label.setText(f"Missing: {img_name}")
+            self.status_label.setStyleSheet(t.RED)
+            self.O_pixels.val = 0
             return
 
         self.status_label.setText(f"Linked: {img.name}")
@@ -69,17 +82,18 @@ class NODE_IMG_DATA(BASE.NODE_INTERFACE):
         img.pixels.foreach_get(result)
 
         # 3. Reshape (Must be Height first, then Width)
-        # Also, assign it back to the variable!
         result = result.reshape((h, w, channels))
-        #result = np.flipud(result)
-
+        
+        # 4. Vertical Flip if requested
+        if self.get(FLIP_V):
+            result = np.flipud(result)
 
         self.O_pixels.val = result
         self.O_w.val = w
         self.O_h.val = h
         self.O_Channels.val = channels
         self.O_pkg.val = {
-            self.line.text(): result
+            img_name: result
         }
 
     def on_graph_load(self):

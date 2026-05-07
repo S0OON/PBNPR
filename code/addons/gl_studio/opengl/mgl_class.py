@@ -4,7 +4,7 @@ from gl_studio.util import util_types as t
 
 class MGL:
 
-    def __init__(self, ctx=None):
+    def __init__(self, ctx:gl.Context):
         # Allow passing an existing context, otherwise create a standalone one
         self.ctx = ctx
 
@@ -85,11 +85,21 @@ class MGL:
         for name, tex_obj in textures.items():
             if name in self.prog:
                 if isinstance(tex_obj, np.ndarray):
-                    h, w, c = tex_obj.shape
+                    # Robust unpacking: (Height, Width, [Channels])
+                    if tex_obj.ndim == 3:
+                        h, w, c = tex_obj.shape
+                    elif tex_obj.ndim == 2:
+                        h, w = tex_obj.shape
+                        c = 1
+                    else:
+                        print(f"[MGL CLASS] texture {name} has invalid dimensions: {tex_obj.shape}")
+                        continue
+
                     pixels = tex_obj.tobytes()
                     dtype = 'f4'
 
                     # UPDATE existing texture if shape matches, otherwise RE-CREATE
+                    # ModernGL texture.size is (Width, Height)
                     if name in self.texs and self.texs[name].size == (w, h):
                         self.texs[name].write(pixels)
                     else:
@@ -103,6 +113,8 @@ class MGL:
                     self.texs[name].use(location=texture_location)
                     self.prog[name].value = texture_location
                     texture_location += 1
+                else:
+                    print("[MGL CLASS] texture ", name, " NON np.array!")
 
     def vertex_attributes(self, attributes_dict, force_rebuild=False):
         """Updates existing VBOs with new data. Only rebuilds VAO if topologies change."""

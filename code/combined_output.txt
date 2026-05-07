@@ -80,6 +80,7 @@ class NODE_CAMERA_EVAL(BASE.NODE_INTERFACE):
         self.I_w = self.add_input("Width", type=t.F)
         self.I_h = self.add_input("Height", type=t.F)
 
+        self.O_camP = self.add_output("camera Pos", type=t.F2)
         self.O_view = self.add_output("view_matrix", type=t.F16)
         self.O_proj = self.add_output("proj_matrix", type=t.F16)
 
@@ -96,6 +97,7 @@ class NODE_CAMERA_EVAL(BASE.NODE_INTERFACE):
         self.I_h.val = t.RES_H
         self.O_view.val = None
         self.O_proj.val = None
+        self.O_camP.val = None
         self.O_pkg.val = {}
         self.status_label.setText("No Camera linked")
         self.status_label.setStyleSheet(t.RED)
@@ -131,10 +133,13 @@ class NODE_CAMERA_EVAL(BASE.NODE_INTERFACE):
         )
         proj = np.array(proj_matrix.transposed(), dtype=np.float32).flatten()
 
+        loc = cam.location
+
         self.O_view.val = view
         self.O_proj.val = proj
+        self.O_camP.val = loc
 
-        self.O_pkg.val = {"view_matrix": view, "proj_matrix": proj}
+        self.O_pkg.val = {"view_matrix": view, "proj_matrix": proj, "camera_pos":loc}
 
     def on_graph_load(self):
         self.reset()
@@ -146,9 +151,10 @@ import bpy
 import numpy as np
 from gl_studio.examples.nodes import Node_zPattren as BASE
 from gl_studio.util import util_types as t
-from PySide6.QtWidgets import QLabel, QLineEdit, QVBoxLayout, QWidget
+from PySide6.QtWidgets import QLabel, QLineEdit, QVBoxLayout, QWidget, QCheckBox
 
 PRESISTANT = "img_name"
+FLIP_V = "flip_v"
 IMG_FLOAD_FORMAT = "f4"
 
 
@@ -167,13 +173,17 @@ class NODE_IMG_DATA(BASE.NODE_INTERFACE):
 
     def on_gui(self):
         widget = QWidget()
-
         lay = QVBoxLayout()
         widget.setLayout(lay)
 
         self.line = QLineEdit()
+        self.line.setPlaceholderText("Source Image Name...")
         self.line.textChanged.connect(lambda v: self.set(PRESISTANT, v))
         lay.addWidget(self.line)
+
+        self.flip_check = QCheckBox("Flip Vertical")
+        self.flip_check.stateChanged.connect(lambda v: self.set(FLIP_V, self.flip_check.isChecked()))
+        lay.addWidget(self.flip_check)
 
         self.status_label = QLabel()
         lay.addWidget(self.status_label)
@@ -185,6 +195,11 @@ class NODE_IMG_DATA(BASE.NODE_INTERFACE):
             self.line.setText(self.get(PRESISTANT))
         else:
             self.add(PRESISTANT, self.line.text())
+        
+        if self.has(FLIP_V):
+            self.flip_check.setChecked(self.get(FLIP_V))
+        else:
+            self.add(FLIP_V, False)
 
         self.status_label.setText("No image linked")
         self.status_label.setStyleSheet(t.RED)
@@ -195,9 +210,12 @@ class NODE_IMG_DATA(BASE.NODE_INTERFACE):
         self.O_pkg.val = {}
 
     def on_stream(self):
-        img = bpy.data.images.get(self.line.text())
+        img_name = self.line.text()
+        img = bpy.data.images.get(img_name)
         if not img:
-            self.reset()
+            self.status_label.setText(f"Missing: {img_name}")
+            self.status_label.setStyleSheet(t.RED)
+            self.O_pixels.val = 0
             return
 
         self.status_label.setText(f"Linked: {img.name}")
@@ -213,17 +231,18 @@ class NODE_IMG_DATA(BASE.NODE_INTERFACE):
         img.pixels.foreach_get(result)
 
         # 3. Reshape (Must be Height first, then Width)
-        # Also, assign it back to the variable!
         result = result.reshape((h, w, channels))
-        #result = np.flipud(result)
-
+        
+        # 4. Vertical Flip if requested
+        if self.get(FLIP_V):
+            result = np.flipud(result)
 
         self.O_pixels.val = result
         self.O_w.val = w
         self.O_h.val = h
         self.O_Channels.val = channels
         self.O_pkg.val = {
-            self.line.text(): result
+            img_name: result
         }
 
     def on_graph_load(self):
@@ -236,10 +255,11 @@ import bpy
 import numpy as np
 from gl_studio.examples.nodes import Node_zPattren as BASE
 from gl_studio.util import util_types as t
-from PySide6.QtWidgets import QLabel, QLineEdit, QVBoxLayout, QWidget
+from PySide6.QtWidgets import QLabel, QLineEdit, QVBoxLayout, QWidget, QCheckBox
 
 
 PRESISTANT = "img_name"
+FLIP_V = "flip_v"
 
 class NODE_IMG_WRITE(BASE.NODE_INTERFACE):
     NODE_NAME = "Image Write"
@@ -248,6 +268,7 @@ class NODE_IMG_WRITE(BASE.NODE_INTERFACE):
     def __init__(self):
         super().__init__()
         self.I_pixels = self.add_input(name="Pixels", type=t.RGBA)
+        self.O_pixels = self.add_output("Pixels", type=t.RGBA)
         self.reset()
 
     def on_gui(self):
@@ -260,6 +281,10 @@ class NODE_IMG_WRITE(BASE.NODE_INTERFACE):
         self.line.textChanged.connect(lambda v: self.set(PRESISTANT, v))
         lay.addWidget(self.line)
 
+        self.flip_check = QCheckBox("Flip Vertical")
+        self.flip_check.stateChanged.connect(lambda v: self.set(FLIP_V, self.flip_check.isChecked()))
+        lay.addWidget(self.flip_check)
+
         self.status_label = QLabel()
         lay.addWidget(self.status_label)
 
@@ -271,10 +296,16 @@ class NODE_IMG_WRITE(BASE.NODE_INTERFACE):
         else:
             self.add(PRESISTANT, self.line.text())
 
+        if self.has(FLIP_V):
+            self.flip_check.setChecked(self.get(FLIP_V))
+        else:
+            self.add(FLIP_V, False)
+
         self.status_label.setText("No target image")
         self.status_label.setStyleSheet(t.RED)
 
     def on_stream(self):
+        self.on_sync_port_values()
         img_name = self.line.text()
         if not img_name:
             self.status_label.setText("Enter image name")
@@ -288,6 +319,7 @@ class NODE_IMG_WRITE(BASE.NODE_INTERFACE):
             return
 
         pixels_data = self.I_pixels.val
+        self.O_pixels.val = pixels_data
 
         # Check if input has valid data
         if pixels_data is None or (isinstance(pixels_data, (int, float)) and pixels_data == 0):
@@ -296,15 +328,39 @@ class NODE_IMG_WRITE(BASE.NODE_INTERFACE):
             return
 
         try:
+            # 1. Ensure it's a Numpy Array
             if not isinstance(pixels_data, np.ndarray):
-                pixels_data = np.array(pixels_data, dtype=np.float32)
+                pixels_data = np.array(pixels_data)
 
-            # Flatten to 1D as required by Blender's foreach_set
+            # 2. Handle Normalization if uint8
+            if pixels_data.dtype == np.uint8:
+                pixels_data = pixels_data.astype(np.float32) / 255.0
+            elif pixels_data.dtype != np.float32:
+                pixels_data = pixels_data.astype(np.float32)
+
+            # 3. Shape Validation
+            # Expected shape in (Height, Width, Channels) or (Height, Width)
+            target_h, target_w = img.size[1], img.size[0]
+            target_c = img.channels
+
+            # If it's a flat array, we can only check total size
+            if pixels_data.ndim > 1:
+                in_h, in_w = pixels_data.shape[0], pixels_data.shape[1]
+                in_c = pixels_data.shape[2] if pixels_data.ndim > 2 else 1
+
+                if in_h != target_h or in_w != target_w or in_c != target_c:
+                    self.status_label.setText(f"Shape Mismatch: {pixels_data.shape} vs ({target_h}, {target_w}, {target_c})")
+                    self.status_label.setStyleSheet(t.RED)
+                    return
+
+            # 4. Vertical Flip if requested
+            if self.get(FLIP_V) and pixels_data.ndim >= 2:
+                pixels_data = np.flipud(pixels_data)
+
+            # 5. Final Flatten and Write
             pixels_flat = pixels_data.ravel()
 
-            # Verify dimensions match
-            expected_size = img.size[0] * img.size[1] * img.channels
-
+            expected_size = target_w * target_h * target_c
             if len(pixels_flat) != expected_size:
                 self.status_label.setText(f"Size Error: {len(pixels_flat)} vs {expected_size}")
                 self.status_label.setStyleSheet(t.RED)
@@ -1039,7 +1095,7 @@ from gl_studio.util import export_cloud as c
 from PySide6.QtWidgets import QWidget, QVBoxLayout, QPushButton, QCheckBox, QSlider, QLabel
 from PySide6.QtCore import Qt
 
-#PRESISTANT_P = 'should_print' 
+#PRESISTANT_P = 'should_print'
 #PRESISTANT_I = 'interval_seconds'
 
 class NODE_PULSE(BASE.NODE_INTERFACE):
@@ -1047,7 +1103,7 @@ class NODE_PULSE(BASE.NODE_INTERFACE):
     CATEGORY = "Output"
 
     is_active = False
-    should_print = True
+    should_print = False
     interval_seconds = 1.0
     last_exec_time = 0.0
 
@@ -1071,7 +1127,7 @@ class NODE_PULSE(BASE.NODE_INTERFACE):
         layout.addWidget(self.cb_print)
 
         # 1. Button for Manual Print
-        self.btn_manual = QPushButton("Manual Print")
+        self.btn_manual = QPushButton("Evaluate Connected Nodes")
         self.btn_manual.setStyleSheet("color: black;")
         self.btn_manual.clicked.connect(self.on_manual_click)
         layout.addWidget(self.btn_manual)
@@ -1111,11 +1167,11 @@ class NODE_PULSE(BASE.NODE_INTERFACE):
         self.lbl_slider.setText(f"Interval: {self.interval_seconds:.1f}s")
 
     def on_manual_click(self):
-        # Force one-time execution by adding it to globals temporarily 
+        # Force one-time execution by adding it to globals temporarily
         c.OUTPUT_NODES[self] = True
 
     # --- Node Logic ---
-    def reset(self): 
+    def reset(self):
         if not self.is_active:
             c.OUTPUT_NODES.pop(self, None)
 
@@ -2018,90 +2074,139 @@ E:\soon\projects\PBNPR\code\addons\gl_studio\examples\opengl\RayMarchF.glsl
 ========================================
 #version 330
 
-in vec3 position;
-
-out vec4 fragColor;
-
-uniform mat4 view_matrix;
-uniform vec3 camera_pos;
-uniform float time;
-
 /*
-// Mesh data (e.g., spheres/primitives) provided via buffer
-// This allows you to update "mesh" positions every frame from the CPU
-layout(set = 0, binding = 1) readonly buffer MeshData {
-    vec4 primitives[]; // xyz = position, w = radius/scale
-};]
+    Data-Driven Raymarching Template
+    --------------------------------
+    This shader accepts "Mesh Data" (vertex positions) via a Texture.
+    It raymarches the distance to these vertices, creating a "Metaball"
+    or "Cloud" effect that follows the shape of the actual mesh.
 */
 
-const int MAX_STEPS = 100;
-const float MAX_DIST = 100.0;
-const float SURF_DIST = 0.001;
+in vec3 N;
+in vec2 UVS;
+in vec3 W_POS;
+in vec3 L_POS;
 
-// Signed Distance Function for a sphere
-float sdSphere(vec3 p, vec3 center, float s) {
-    return length(p - center) - s;
-}
+out vec4 FragColor;
 
-// Global Scene Distance function
-float GetDist(vec3 p) {
-    float d = p.y + 1.0; // Infinite floor plane
+uniform vec2 resolution;
+uniform vec3 camera_pos;
 
-    // Loop through mesh data provided via uniforms/buffers
-    for (int i = 0; i < primitives.length(); i++) {
-        float primitiveDist = sdSphere(p, primitives[i].xyz, primitives[i].w);
-        d = min(d, primitiveDist); // Union of all objects
+// MESH DATA UNIFORMS
+uniform sampler2D mesh_data; // A texture where each pixel is a (vec3) vertex position
+uniform int vertex_count; // How many vertices to check (keep this low for performance)
+uniform float blob_radius; // Size of the influence around each vertex
+
+// RAYMARCHING SETTINGS
+uniform int samples = 64;
+uniform float max_distance = 100.0;
+
+// Map function now iterates through the "Mesh Data"
+float map(vec3 p) {
+    float d = 1e10; // Start with a very large distance
+
+    // Ensure we don't loop too many times (performance limit)
+    int count = min(vertex_count, 128);
+
+    for (int i = 0; i < count; i++) {
+        // Fetch vertex position from the texture
+        // We assume the texture is 1D (or we just use the first row)
+        vec3 v = texelFetch(mesh_data, ivec2(i, 0), 0).xyz;
+
+        // Calculate distance to this vertex
+        float dist_to_vertex = length(p - v) - blob_radius;
+
+        // Smooth union (Metaball effect)
+        // This makes the separate spheres "melt" together into a single surface
+        float k = 0.2;
+        float h = clamp(0.5 + 0.5 * (d - dist_to_vertex) / k, 0.0, 1.0);
+        d = mix(d, dist_to_vertex, h) - k * h * (1.0 - h);
     }
 
     return d;
 }
 
-// Primary Raymarching Loop
-float RayMarch(vec3 ro, vec3 rd) {
-    float dO = 0.0;
-    for (int i = 0; i < MAX_STEPS; i++) {
-        vec3 p = ro + rd * dO;
-        float dS = GetDist(p);
-        dO += dS;
-        if (dO > MAX_DIST || abs(dS) < SURF_DIST) break;
-    }
-    return dO;
-}
-
-// Calculate Surface Normals via Gradient Estimation
-vec3 GetNormal(vec3 p) {
-    float d = GetDist(p);
-    vec2 e = vec2(0.01, 0);
+// Calculate normals by sampling the SDF around the hit point
+vec3 getNormal(vec3 p) {
+    float d = map(p);
+    vec2 e = vec2(0.01, 0.0);
     vec3 n = d - vec3(
-                GetDist(p - e.xyy),
-                GetDist(p - e.yxy),
-                GetDist(p - e.yyx)
+                map(p - e.xyy),
+                map(p - e.yxy),
+                map(p - e.yyx)
             );
     return normalize(n);
 }
 
 void main() {
-    // Screen coordinates (normalized -0.5 to 0.5)
-    vec2 uv = (gl_FragCoord.xy - 0.5 * vec2(800, 600)) / 600.0;
+    // 1. Setup the Ray
+    vec3 ro = camera_pos;
+    vec3 rd = normalize(W_POS - camera_pos);
 
-    // Ray Origin and Direction
-    vec3 ro = camPos;
-    vec3 rd = normalize(vec3(uv.x, uv.y, 1.0));
+    // 2. March the Ray
+    float t = 0.0;
+    bool hit = false;
+    vec3 p;
 
-    float d = RayMarch(ro, rd);
+    for (int i = 0; i < samples; i++) {
+        p = ro + rd * t;
+        float d = map(p);
 
-    if (d < MAX_DIST) {
-        vec3 p = ro + rd * d;
-        vec3 n = GetNormal(p);
+        if (d < 0.001) {
+            hit = true;
+            break;
+        }
 
-        // Basic Diffuse Lighting
-        float diff = dot(n, normalize(vec3(1, 2, 3))) * 0.5 + 0.5;
-        fragColor = vec4(vec3(diff), 1.0);
+        t += d;
+        if (t > max_distance) break;
     }
-    else {
-        // Background color
-        fragColor = vec4(0.1, 0.1, 0.1, 1.0);
+
+    // 3. Shading
+    if (hit) {
+        vec3 normal = getNormal(p);
+
+        // Basic diffuse lighting (simple sun lamp)
+        vec3 light_dir = normalize(vec3(1.0, 2.0, 3.0));
+        float diff = max(dot(normal, light_dir), 0.0);
+
+        // Final color: normal-based coloring + lighting
+        vec3 color = (normal * 0.5 + 0.5) * (diff + 0.2);
+        FragColor = vec4(color, 1.0);
+    } else {
+        // Discard if we hit nothing
+        discard;
     }
+}
+
+========================================
+E:\soon\projects\PBNPR\code\addons\gl_studio\examples\opengl\RayMarchV.glsl
+========================================
+#version 330
+
+in vec3 positions;
+in vec3 normals;
+in vec2 UVMap;
+
+out vec2 UVS;
+out vec3 N;
+out vec3 W_POS;
+out vec3 L_POS;
+
+uniform mat4 world_matrix;
+uniform mat4 view_matrix;
+uniform mat4 proj_matrix;
+
+void main() {
+    UVS = UVMap;
+    L_POS = positions;
+
+    // Transform normals to world space
+    N = normalize((world_matrix * vec4(normals, 0.0)).xyz);
+
+    vec4 wp = world_matrix * vec4(positions, 1.0);
+    W_POS = wp.xyz;
+
+    gl_Position = proj_matrix * view_matrix * wp;
 }
 
 ========================================
@@ -2560,53 +2665,68 @@ def unregister():
 ========================================
 E:\soon\projects\PBNPR\code\addons\gl_studio\ui\pyside6\editor_nodeGraph.py
 ========================================
+# This file belongs to S00N's PBNPR Blender Add-on
+# all rights reserved (C) 2026 S00N
+
 import importlib.util
 import inspect
 import os
 import traceback
 from typing import cast
-
-from gl_studio.examples.nodes.Node_zPattren import NODE_INTERFACE as NODE
-from gl_studio.ui.pyside6.internals import cfg as PROG_CFG
-from gl_studio.util import util_types as t
-from gl_studio.util import export_cloud as c
-from OdenGraphQt import BaseNode, NodeGraph, Port
-from PySide6 import QtCore
-from PySide6.QtGui import QKeySequence, QShortcut
 from PySide6.QtWidgets import (
     QFileDialog,
     QMenu,
     QMenuBar,
     QSizePolicy,
     QSplitter,
+    QDockWidget,
     QTabWidget,
     QVBoxLayout,
     QWidget,
 )
+from PySide6.QtCore import Qt
+from PySide6 import QtCore
+from PySide6.QtGui import QKeySequence, QShortcut
+from OdenGraphQt import BaseNode, NodeGraph, Port
+
+from gl_studio.examples.nodes.Node_zPattren import NODE_INTERFACE as NODE
+from gl_studio.ui.pyside6.internals import cfg as PROG_CFG
+from gl_studio.util import export_cloud as c
 
 
 class INTERFACE:
-    Tab_main_label = "Node Editor"
+    label = "Node Editor"
     Tab_settings_label = "Settings"
     Tab_Inspec_label = "Inspect"
 
-    def __init__(self):
-        self.widget: QWidget
-        self.lay: QVBoxLayout
+    dock:QDockWidget
+    widget: QWidget
+    lay: QVBoxLayout
 
-        self.menu_bar: QMenuBar
-        self.menu_add_node: QMenu
-        self.menu_Graph: QMenu
+    menu_bar: QMenuBar
+    menu_add_node: QMenu
+    menu_Graph: QMenu
 
-        self.splitter: QWidget
-        self.graph: NodeGraph
-        self.side_panel: QTabWidget
-        self.tab_sets: QWidget
-        self.tab_inspec: QWidget
-        self.tab_inspec_lay: QVBoxLayout
+    splitter: QWidget
+    graph: NodeGraph
+    side_panel: QTabWidget
+    tab_sets: QWidget
+    tab_inspec: QWidget
+    tab_inspec_lay: QVBoxLayout
+
+    def toggle_docker(self):
+        self.dock.toggleViewAction()
 
     def setup_layout(self):
-        PROG_CFG.tabs.addTab(self.widget, self.Tab_main_label)
+        self.dock.setAllowedAreas(Qt.DockWidgetArea.LeftDockWidgetArea | Qt.DockWidgetArea.RightDockWidgetArea)
+        self.dock.setFeatures(
+            QDockWidget.DockWidgetFeature.DockWidgetMovable |
+            QDockWidget.DockWidgetFeature.DockWidgetFloatable |
+            QDockWidget.DockWidgetFeature.DockWidgetClosable
+        )
+        self.dock.setWidget(self.widget)
+        PROG_CFG.window.addDockWidget(Qt.DockWidgetArea.LeftDockWidgetArea, self.dock)
+        PROG_CFG.window.menu_docks.addAction(self.dock.toggleViewAction())
 
         self.widget.setLayout(self.lay)
 
@@ -2844,6 +2964,8 @@ def _Create_shortcuts():
 
 
 def _Create_GUI():
+    cfg.dock = QDockWidget(cfg.label, PROG_CFG.window)
+
     cfg.widget = QWidget()
 
     cfg.lay = QVBoxLayout()
@@ -2929,14 +3051,33 @@ def unregister():
 ========================================
 E:\soon\projects\PBNPR\code\addons\gl_studio\ui\pyside6\editor_runtimeInfo.py
 ========================================
-from PySide6.QtWidgets import QWidget
+# This file belongs to S00N's PBNPR Blender Add-on
+# all rights reserved (C) 2026 S00N
 
+from PySide6.QtWidgets import QWidget, QDockWidget
+from PySide6.QtCore import Qt
 # ========== SELF LEVEL
 from gl_studio.ui.pyside6.internals import cfg as CFG
 
 class INTERFACE:
-    Tab_label = "Runtime Info"
-    Tab:QWidget = None
+    label = "Runtime Info"
+
+    dock:  QDockWidget
+    widget:QWidget
+
+    def toggle_docker(self):
+        self.dock.toggleViewAction()
+
+    def setup_layout(self):
+        self.dock.setAllowedAreas(Qt.DockWidgetArea.LeftDockWidgetArea | Qt.DockWidgetArea.RightDockWidgetArea)
+        self.dock.setFeatures(
+            QDockWidget.DockWidgetFeature.DockWidgetMovable |
+            QDockWidget.DockWidgetFeature.DockWidgetFloatable |
+            QDockWidget.DockWidgetFeature.DockWidgetClosable
+        )
+        self.dock.setWidget(self.widget)
+        CFG.window.menu_docks.addAction(self.dock.toggleViewAction())
+        CFG.window.addDockWidget(Qt.DockWidgetArea.RightDockWidgetArea, self.dock)
 
 cfg = INTERFACE()
 # ========== APPLICATION LAYER LEVEL
@@ -2950,15 +3091,16 @@ def _Create_shortcuts():
 
 
 def _Create_GUI():
-    cfg.Tab = QWidget()
+    cfg.dock = QDockWidget(cfg.label,CFG.window)
 
+    cfg.widget = QWidget()
+
+    cfg.setup_layout()
 
 def register():
     _PreProcess()
     _Create_GUI()
     _Create_shortcuts()
-    # crete own tab
-    CFG.tabs.addTab(cfg.Tab, cfg.Tab_label)
 
 
 def unregister():
@@ -2975,26 +3117,36 @@ def process_frame():
 ========================================
 E:\soon\projects\PBNPR\code\addons\gl_studio\ui\pyside6\internals.py
 ========================================
+# This file belongs to S00N's PBNPR Blender Add-on
+# all rights reserved (C) 2026 S00N
+
 import sys
 
-from PySide6.QtWidgets import QApplication, QMainWindow, QTabWidget
-
-
-class INTERFACE:
-    running = False
-    app: QApplication = None
-    window: QMainWindow = None
-    tabs: QTabWidget = None
-
+from PySide6.QtWidgets import QApplication, QMainWindow, QWidget, QMenuBar, QMenu , QDockWidget
+from PySide6.QtCore import Qt
 
 class Window(QMainWindow):
+    menu_bar : QMenuBar
+    menu_docks : QMenu
+
     def __init__(self):
         super().__init__()
         self.setWindowTitle("GL Studio Editor")
-        self.resize(1000, 800)
-        self.Tabs = QTabWidget()
-        self.setCentralWidget(self.Tabs)
+        self.resize(1000, 600)
 
+        self.menu_bar = self.menuBar()
+
+        self.menu_docks = self.menu_bar.addMenu("&View")
+
+        self.CentralW = QWidget()
+        self.setCentralWidget(self.CentralW)
+
+class INTERFACE:
+
+    app: QApplication
+    window: Window
+
+    running = False
 
 cfg = INTERFACE()
 
@@ -3025,9 +3177,6 @@ def register():
     cfg.running = True
 
     cfg.window = Window()
-
-    cfg.tabs = cfg.window.Tabs
-
     cfg.window.show()
 
 
@@ -3046,6 +3195,9 @@ def process_frame():
 ========================================
 E:\soon\projects\PBNPR\code\addons\gl_studio\ui\pyside6\main.py
 ========================================
+# This file belongs to S00N's PBNPR Blender Add-on
+# all rights reserved (C) 2026 S00N
+
 from gl_studio.ui.pyside6 import (
     editor_runtimeInfo,
     editor_nodeGraph,

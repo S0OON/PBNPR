@@ -1,5 +1,6 @@
 from gl_studio.examples.nodes import Node_zPattren as BASE
 from gl_studio.util import util_types as t
+import numpy as np
 
 
 class NODE_RGBA_DISPLAY(BASE.NODE_INTERFACE):
@@ -17,9 +18,20 @@ class NODE_RGBA_DISPLAY(BASE.NODE_INTERFACE):
         self.on_sync_port_values()
         pixels = self.I_rgba.val
 
-        w,h,c = pixels.shape
+        if pixels is None or not isinstance(pixels, np.ndarray):
+            return
+
+        # Correct unpacking: (Height, Width, Channels)
+        if pixels.ndim == 3:
+            h, w, c = pixels.shape
+        elif pixels.ndim == 2:
+            h, w = pixels.shape
+        else:
+            return
+
         self.overlay.prepareGeometryChange()
-        self.overlay._rect = t.QRectF(0,0,w,h)
+        # QRectF expects (x, y, Width, Height)
+        self.overlay._rect = t.QRectF(0, 0, w, h)
 
         self.overlay.set_image(pixels)
 

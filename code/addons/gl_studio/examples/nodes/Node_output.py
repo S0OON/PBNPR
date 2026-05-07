@@ -5,7 +5,7 @@ from gl_studio.util import export_cloud as c
 from PySide6.QtWidgets import QWidget, QVBoxLayout, QPushButton, QCheckBox, QSlider, QLabel
 from PySide6.QtCore import Qt
 
-#PRESISTANT_P = 'should_print' 
+#PRESISTANT_P = 'should_print'
 #PRESISTANT_I = 'interval_seconds'
 
 class NODE_PULSE(BASE.NODE_INTERFACE):
@@ -13,7 +13,7 @@ class NODE_PULSE(BASE.NODE_INTERFACE):
     CATEGORY = "Output"
 
     is_active = False
-    should_print = True
+    should_print = False
     interval_seconds = 1.0
     last_exec_time = 0.0
 
@@ -37,7 +37,7 @@ class NODE_PULSE(BASE.NODE_INTERFACE):
         layout.addWidget(self.cb_print)
 
         # 1. Button for Manual Print
-        self.btn_manual = QPushButton("Manual Print")
+        self.btn_manual = QPushButton("Evaluate Connected Nodes")
         self.btn_manual.setStyleSheet("color: black;")
         self.btn_manual.clicked.connect(self.on_manual_click)
         layout.addWidget(self.btn_manual)
@@ -77,11 +77,11 @@ class NODE_PULSE(BASE.NODE_INTERFACE):
         self.lbl_slider.setText(f"Interval: {self.interval_seconds:.1f}s")
 
     def on_manual_click(self):
-        # Force one-time execution by adding it to globals temporarily 
+        # Force one-time execution by adding it to globals temporarily
         c.OUTPUT_NODES[self] = True
 
     # --- Node Logic ---
-    def reset(self): 
+    def reset(self):
         if not self.is_active:
             c.OUTPUT_NODES.pop(self, None)
 

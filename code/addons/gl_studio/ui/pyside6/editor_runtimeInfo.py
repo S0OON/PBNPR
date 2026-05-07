@@ -1,3 +1,6 @@
+# This file belongs to S00N's PBNPR Blender Add-on
+# all rights reserved (C) 2026 S00N
+
 from PySide6.QtWidgets import QWidget, QDockWidget
 from PySide6.QtCore import Qt
 # ========== SELF LEVEL

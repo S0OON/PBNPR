@@ -1,3 +1,6 @@
+# This file belongs to S00N's PBNPR Blender Add-on
+# all rights reserved (C) 2026 S00N
+
 import importlib.util
 import inspect
 import os
