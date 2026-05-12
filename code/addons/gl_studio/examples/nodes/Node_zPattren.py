@@ -181,11 +181,17 @@ class NODE_INTERFACE(BaseNode):
     def on_delete(self) -> None:
         """Called by Qt shortcuts, when the node is selcted and deleted"""
 
+    def on_selection(self):
+        pass
+
     def on_sync_port_values(self) -> None:
         """Utlity function, Clones values from inputs to outputs at type matching or input is type of "ANY", so data steam is handled per node if overiden"""
         for i_p in self.input_ports():
-            o_ps = i_p.connected_ports()
-            if o_ps:
-                o_p = o_ps[0]
-                if i_p.Type == t.ANY or (i_p.Type == o_p.Type):
-                    i_p.val = o_p.val
+            # Get the connected output port (if any)
+            connected_ports = i_p.connected_ports()
+            if connected_ports:
+                # In NodeGraphQt, an input can usually only have one connection
+                out_port = connected_ports[0]
+                # Sync value if types match or ANY
+                if i_p.Type == t.ANY or i_p.Type == out_port.Type:
+                    i_p.val = out_port.val

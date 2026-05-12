@@ -33,6 +33,10 @@ class MGL:
     def compile(self):
         needs_rebuild = False
 
+        # Ensure dimensions are valid positive integers
+        self.w = max(1, int(self.w))
+        self.h = max(1, int(self.h))
+
         # 1. Smart Shader Compilation
         if self.src_v != self._cached_v or self.src_f != self._cached_f:
             if self.prog:
@@ -170,6 +174,9 @@ class MGL:
 
     def clear(self):
         """Safely destroys all GPU objects. Call ONLY when deleting the node."""
+        if not self.ctx:
+            return
+
         for tex_name, tex in self.texs.items():
             tex.release()
         self.texs.clear()

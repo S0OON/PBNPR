@@ -5,6 +5,7 @@ from gl_studio.util import util_types as t
 from PySide6.QtWidgets import QLabel, QLineEdit, QVBoxLayout, QWidget, QCheckBox
 
 PRESISTANT = "img_name"
+NAMED_AS = "named_as"
 FLIP_V = "flip_v"
 IMG_FLOAD_FORMAT = "f4"
 
@@ -32,8 +33,14 @@ class NODE_IMG_DATA(BASE.NODE_INTERFACE):
         self.line.textChanged.connect(lambda v: self.set(PRESISTANT, v))
         lay.addWidget(self.line)
 
+        self.line_named = QLineEdit()
+        self.line_named.setPlaceholderText("Named as (Optional)...")
+        self.line_named.textChanged.connect(lambda v: self.set(NAMED_AS, v))
+        lay.addWidget(self.line_named)
+
         self.flip_check = QCheckBox("Flip Vertical")
         self.flip_check.stateChanged.connect(lambda v: self.set(FLIP_V, self.flip_check.isChecked()))
+        self.flip_check.setStyleSheet("color: white;")
         lay.addWidget(self.flip_check)
 
         self.status_label = QLabel()
@@ -46,7 +53,12 @@ class NODE_IMG_DATA(BASE.NODE_INTERFACE):
             self.line.setText(self.get(PRESISTANT))
         else:
             self.add(PRESISTANT, self.line.text())
-        
+
+        if self.has(NAMED_AS):
+            self.line_named.setText(self.get(NAMED_AS))
+        else:
+            self.add(NAMED_AS, self.line_named.text())
+
         if self.has(FLIP_V):
             self.flip_check.setChecked(self.get(FLIP_V))
         else:
@@ -83,17 +95,20 @@ class NODE_IMG_DATA(BASE.NODE_INTERFACE):
 
         # 3. Reshape (Must be Height first, then Width)
         result = result.reshape((h, w, channels))
-        
+
         # 4. Vertical Flip if requested
         if self.get(FLIP_V):
             result = np.flipud(result)
+
+        # 5. Determine the key for the output dictionary
+        pkg_key = self.line_named.text() if self.line_named.text() else img_name
 
         self.O_pixels.val = result
         self.O_w.val = w
         self.O_h.val = h
         self.O_Channels.val = channels
         self.O_pkg.val = {
-            img_name: result
+            pkg_key: result
         }
 
     def on_graph_load(self):

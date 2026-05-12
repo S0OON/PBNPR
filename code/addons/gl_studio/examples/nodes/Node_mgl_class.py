@@ -55,6 +55,7 @@ class NODE_MGL_BASIC(BASE.NODE_INTERFACE):
         else:
             self.add(STATICc,self.combo.currentText())
 
+        # Reset port values to defaults
         self.I_w.val = int(t.RES_W)
         self.I_h.val = int(t.RES_H)
         self.I_vert.val = t.SRC_SCREEN_VERT
@@ -68,7 +69,9 @@ class NODE_MGL_BASIC(BASE.NODE_INTERFACE):
         self.on_sync_port_values()
 
         if c.CTX is None:
-            c.CTX = mgl_class.gl.create_context(standalone=self.chBox.isChecked())
+            # Check if standalone is requested (default to False if GUI not initialized)
+            standalone = self.chBox.isChecked() if self.chBox else False
+            c.CTX = mgl_class.gl.create_context(standalone=standalone)
             c.CTX.gc_mode = 'context_gc'
 
         shader = self.shader

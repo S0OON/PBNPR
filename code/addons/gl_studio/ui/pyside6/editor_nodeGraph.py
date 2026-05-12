@@ -267,6 +267,8 @@ def view_pos_to_node_internals():
         y = pos.y()
         node.set_pos(x, y)
 
+def on_node_selection(x):
+    x.on_selection()
 ## ========== APPLICATION LAYER LEVEL============== ##
 
 def _PreProcess():
@@ -373,7 +375,7 @@ def register():
     _PreProcess()
     _Create_GUI()
     _Create_shortcuts()
-    c.INSPECTOR = cfg.tab_inspec
+    cfg.graph.node_selected.connect(on_node_selection)
 
 
 def unregister():

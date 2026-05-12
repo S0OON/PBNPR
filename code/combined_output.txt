@@ -154,6 +154,7 @@ from gl_studio.util import util_types as t
 from PySide6.QtWidgets import QLabel, QLineEdit, QVBoxLayout, QWidget, QCheckBox
 
 PRESISTANT = "img_name"
+NAMED_AS = "named_as"
 FLIP_V = "flip_v"
 IMG_FLOAD_FORMAT = "f4"
 
@@ -181,8 +182,14 @@ class NODE_IMG_DATA(BASE.NODE_INTERFACE):
         self.line.textChanged.connect(lambda v: self.set(PRESISTANT, v))
         lay.addWidget(self.line)
 
+        self.line_named = QLineEdit()
+        self.line_named.setPlaceholderText("Named as (Optional)...")
+        self.line_named.textChanged.connect(lambda v: self.set(NAMED_AS, v))
+        lay.addWidget(self.line_named)
+
         self.flip_check = QCheckBox("Flip Vertical")
         self.flip_check.stateChanged.connect(lambda v: self.set(FLIP_V, self.flip_check.isChecked()))
+        self.flip_check.setStyleSheet("color: white;")
         lay.addWidget(self.flip_check)
 
         self.status_label = QLabel()
@@ -195,7 +202,12 @@ class NODE_IMG_DATA(BASE.NODE_INTERFACE):
             self.line.setText(self.get(PRESISTANT))
         else:
             self.add(PRESISTANT, self.line.text())
-        
+
+        if self.has(NAMED_AS):
+            self.line_named.setText(self.get(NAMED_AS))
+        else:
+            self.add(NAMED_AS, self.line_named.text())
+
         if self.has(FLIP_V):
             self.flip_check.setChecked(self.get(FLIP_V))
         else:
@@ -232,18 +244,409 @@ class NODE_IMG_DATA(BASE.NODE_INTERFACE):
 
         # 3. Reshape (Must be Height first, then Width)
         result = result.reshape((h, w, channels))
-        
+
         # 4. Vertical Flip if requested
         if self.get(FLIP_V):
             result = np.flipud(result)
+
+        # 5. Determine the key for the output dictionary
+        pkg_key = self.line_named.text() if self.line_named.text() else img_name
 
         self.O_pixels.val = result
         self.O_w.val = w
         self.O_h.val = h
         self.O_Channels.val = channels
         self.O_pkg.val = {
-            img_name: result
+            pkg_key: result
         }
+
+    def on_graph_load(self):
+        self.reset()
+
+========================================
+E:\soon\projects\PBNPR\code\addons\gl_studio\examples\nodes\Node_bpy_imgReadRender.py
+========================================
+import bpy
+import numpy as np
+import os
+from gl_studio.examples.nodes import Node_zPattren as BASE
+from gl_studio.util import util_types as t
+from PySide6.QtWidgets import QLabel, QLineEdit, QVBoxLayout, QWidget, QCheckBox, QDoubleSpinBox
+
+SOURCE_IMG = "source_img"
+FILE_PATH = "file_path"
+NAMED_AS = "named_as"
+FLIP_V = "flip_v"
+COMPONENTS = "components"
+
+class NODE_RENDER_SAVE(BASE.NODE_INTERFACE):
+    NODE_NAME = "Render Save"
+    CATEGORY = "Blender"
+
+    def __init__(self):
+        super().__init__()
+        self.O_pixels = self.add_output(name="Pixels", type=t.RGBA)
+        self.O_w = self.add_output(name="Width", type=t.F)
+        self.O_h = self.add_output(name="Height", type=t.F)
+        self.O_Channels = self.add_output(name="Channels", type=t.F)
+        self.O_pkg = self.add_output("Packed data", type=t.DICT)
+        self.reset()
+
+    def on_gui(self):
+        widget = QWidget()
+        lay = QVBoxLayout()
+        widget.setLayout(lay)
+
+        self.line_path = QLineEdit()
+        self.line_path.setPlaceholderText("Absolute path (e.g. C:/renders/render.png)")
+        self.line_path.textChanged.connect(lambda v: self.set(FILE_PATH, v))
+        lay.addWidget(self.line_path)
+
+        self.line_img = QLineEdit()
+        self.line_img.setPlaceholderText("Source: Render Result")
+        self.line_img.textChanged.connect(lambda v: self.set(SOURCE_IMG, v))
+        lay.addWidget(self.line_img)
+
+        self.line_named = QLineEdit()
+        self.line_named.setPlaceholderText("Output Key (Optional)...")
+        self.line_named.textChanged.connect(lambda v: self.set(NAMED_AS, v))
+        lay.addWidget(self.line_named)
+
+        self.comp_slider = QDoubleSpinBox()
+        self.comp_slider.setRange(0, 4)
+        self.comp_slider.setDecimals(0)
+        self.comp_slider.setPrefix("Force Components: ")
+        self.comp_slider.valueChanged.connect(lambda v: self.set(COMPONENTS, v))
+        lay.addWidget(self.comp_slider)
+
+        self.flip_check = QCheckBox("Flip Vertical")
+        self.flip_check.stateChanged.connect(lambda v: self.set(FLIP_V, self.flip_check.isChecked()))
+        self.flip_check.setStyleSheet("color: white;")
+        lay.addWidget(self.flip_check)
+
+        self.status_label = QLabel()
+        lay.addWidget(self.status_label)
+
+        return widget
+
+    def reset(self, v=None):
+        if self.has(FILE_PATH):
+            self.line_path.setText(self.get(FILE_PATH))
+        else:
+            self.add(FILE_PATH, "")
+
+        if self.has(SOURCE_IMG):
+            self.line_img.setText(self.get(SOURCE_IMG))
+        else:
+            self.add(SOURCE_IMG, "Render Result")
+            self.line_img.setText("Render Result")
+
+        if self.has(NAMED_AS):
+            self.line_named.setText(self.get(NAMED_AS))
+        else:
+            self.add(NAMED_AS, "")
+
+        if self.has(COMPONENTS):
+            self.comp_slider.setValue(self.get(COMPONENTS))
+        else:
+            self.add(COMPONENTS, 0.0)
+
+        if self.has(FLIP_V):
+            self.flip_check.setChecked(self.get(FLIP_V))
+        else:
+            self.add(FLIP_V, False)
+
+        self.status_label.setText("Ready")
+        self.status_label.setStyleSheet(t.WHITE)
+
+    def on_stream(self):
+        self.on_sync_port_values()
+        save_path = self.line_path.text()
+        img_name = self.line_img.text()
+
+        if not save_path:
+            self.status_label.setText("Target path is empty")
+            self.status_label.setStyleSheet(t.RED)
+            return
+
+        img = bpy.data.images.get(img_name)
+        if not img:
+            self.status_label.setText(f"Missing Source: {img_name}")
+            self.status_label.setStyleSheet(t.RED)
+            return
+
+        try:
+            # 1. Prepare Directory
+            abs_path = os.path.abspath(bpy.path.abspath(save_path))
+            os.makedirs(os.path.dirname(abs_path), exist_ok=True)
+
+            # 2. Save Logic
+            if img.type == 'RENDER_RESULT':
+                img.save_render(abs_path)
+            else:
+                img.filepath_raw = abs_path
+                img.save()
+
+            # 3. Data Extraction (FROM DISK using PIL)
+            from PIL import Image
+            
+            if not os.path.exists(abs_path):
+                self.status_label.setText("File not found after save")
+                self.status_label.setStyleSheet(t.RED)
+                return
+
+            with Image.open(abs_path) as pil_img:
+                # Convert to a standard format if needed, but let's see what it has
+                w, h = pil_img.size
+                
+                # Convert to numpy and normalize (0.0 to 1.0)
+                result = np.array(pil_img, dtype=np.float32) / 255.0
+                
+                # Handle grayscale (2D -> 3D)
+                if result.ndim == 2:
+                    result = result[:, :, np.newaxis]
+                
+                img_channels = result.shape[2]
+
+            target_channels = int(self.get(COMPONENTS))
+            if target_channels <= 0:
+                target_channels = img_channels
+
+            # Component Adjustment
+            if target_channels != img_channels:
+                if target_channels < img_channels:
+                    result = result[:, :, :target_channels]
+                else:
+                    # Pad with 1.0 (Alpha/White)
+                    padding_shape = (h, w, target_channels - img_channels)
+                    padding = np.ones(padding_shape, dtype=np.float32)
+                    result = np.concatenate([result, padding], axis=2)
+
+            if self.get(FLIP_V):
+                result = np.flipud(result)
+
+            # Dictionary Key
+            pkg_key = self.line_named.text() if self.line_named.text() else img_name
+
+            self.O_pixels.val = result
+            self.O_w.val = w
+            self.O_h.val = h
+            self.O_Channels.val = target_channels
+            self.O_pkg.val = {pkg_key: result}
+
+            self.status_label.setText(f"File Saved & Verified: {os.path.basename(abs_path)}")
+            self.status_label.setStyleSheet(t.GREEN)
+
+        except Exception as e:
+            self.status_label.setText(f"Error: {str(e)}")
+            self.status_label.setStyleSheet(t.RED)
+
+    def on_graph_load(self):
+        self.reset()
+
+========================================
+E:\soon\projects\PBNPR\code\addons\gl_studio\examples\nodes\Node_bpy_imgSave.py
+========================================
+import bpy
+import numpy as np
+import os
+from gl_studio.examples.nodes import Node_zPattren as BASE
+from gl_studio.util import util_types as t
+from PySide6.QtWidgets import QLabel, QLineEdit, QVBoxLayout, QWidget, QCheckBox, QDoubleSpinBox
+
+SOURCE_IMG = "source_img"
+FILE_DIR = "file_dir"
+FILE_NAME = "file_name"
+NAMED_AS = "named_as"
+FLIP_V = "flip_v"
+COMPONENTS = "components"
+
+class NODE_IMG_SAVE(BASE.NODE_INTERFACE):
+    NODE_NAME = "Image Save"
+    CATEGORY = "Blender"
+
+    def __init__(self):
+        super().__init__()
+        # Inputs
+        self.I_name = self.add_input("Name", type=t.STR)
+        self.I_pixels = self.add_input("Pixels", type=t.RGBA)
+        self.I_w = self.add_input("Width", type=t.F)
+        self.I_h = self.add_input("Height", type=t.F)
+        self.I_channels = self.add_input("Channels", type=t.F)
+        self.I_pkg = self.add_input("Pkg", type=t.DICT)
+
+        # Outputs
+        self.O_pixels = self.add_output(name="Pixels", type=t.RGBA)
+        self.O_w = self.add_output(name="Width", type=t.F)
+        self.O_h = self.add_output(name="Height", type=t.F)
+        self.O_Channels = self.add_output(name="Channels", type=t.F)
+        self.O_pkg = self.add_output("Packed data", type=t.DICT)
+        self.reset()
+
+    def on_gui(self):
+        widget = QWidget()
+        lay = QVBoxLayout()
+        widget.setLayout(lay)
+
+        self.line_dir = QLineEdit()
+        self.line_dir.setPlaceholderText("Directory (e.g. C:/renders/)")
+        self.line_dir.textChanged.connect(lambda v: self.set(FILE_DIR, v))
+        lay.addWidget(self.line_dir)
+
+        self.line_name = QLineEdit()
+        self.line_name.setPlaceholderText("Filename (if Name port empty)")
+        self.line_name.textChanged.connect(lambda v: self.set(FILE_NAME, v))
+        lay.addWidget(self.line_name)
+
+        self.line_img = QLineEdit()
+        self.line_img.setPlaceholderText("Source: Render Result")
+        self.line_img.textChanged.connect(lambda v: self.set(SOURCE_IMG, v))
+        lay.addWidget(self.line_img)
+
+        self.line_named = QLineEdit()
+        self.line_named.setPlaceholderText("Output Key (Optional)...")
+        self.line_named.textChanged.connect(lambda v: self.set(NAMED_AS, v))
+        lay.addWidget(self.line_named)
+
+        self.comp_slider = QDoubleSpinBox()
+        self.comp_slider.setRange(0, 4)
+        self.comp_slider.setDecimals(0)
+        self.comp_slider.setPrefix("Force Components: ")
+        self.comp_slider.valueChanged.connect(lambda v: self.set(COMPONENTS, v))
+        lay.addWidget(self.comp_slider)
+
+        self.flip_check = QCheckBox("Flip Vertical")
+        self.flip_check.stateChanged.connect(lambda v: self.set(FLIP_V, self.flip_check.isChecked()))
+        self.flip_check.setStyleSheet("color: white;")
+        lay.addWidget(self.flip_check)
+
+        self.status_label = QLabel()
+        lay.addWidget(self.status_label)
+
+        return widget
+
+    def reset(self, v=None):
+        if self.has(FILE_DIR):
+            self.line_dir.setText(self.get(FILE_DIR))
+        else:
+            self.add(FILE_DIR, "C:/renders/")
+            self.line_dir.setText("C:/renders/")
+
+        if self.has(FILE_NAME):
+            self.line_name.setText(self.get(FILE_NAME))
+        else:
+            self.add(FILE_NAME, "render.png")
+            self.line_name.setText("render.png")
+
+        if self.has(SOURCE_IMG):
+            self.line_img.setText(self.get(SOURCE_IMG))
+        else:
+            self.add(SOURCE_IMG, "Render Result")
+            self.line_img.setText("Render Result")
+
+        if self.has(NAMED_AS):
+            self.line_named.setText(self.get(NAMED_AS))
+        else:
+            self.add(NAMED_AS, "")
+
+        if self.has(COMPONENTS):
+            self.comp_slider.setValue(self.get(COMPONENTS))
+        else:
+            self.add(COMPONENTS, 0.0)
+
+        if self.has(FLIP_V):
+            self.flip_check.setChecked(self.get(FLIP_V))
+        else:
+            self.add(FLIP_V, False)
+
+        self.status_label.setText("Ready")
+        self.status_label.setStyleSheet(t.WHITE)
+
+    def on_stream(self):
+        self.on_sync_port_values()
+        
+        # Determine Directory and Filename
+        directory = self.get(FILE_DIR)
+        filename = self.I_name.val if self.I_name.val is not None and self.I_name.val != "" else self.get(FILE_NAME)
+        
+        if not directory or not filename:
+            self.safe_set_status("Path components missing", t.RED)
+            return
+
+        # Ensure directory ends with slash for join
+        if not (directory.endswith("/") or directory.endswith("\\")):
+            directory += "/"
+
+        # Combine and sanitize path
+        abs_path = os.path.join(directory, filename)
+        abs_path = os.path.abspath(bpy.path.abspath(abs_path))
+        
+        img_name = self.get(SOURCE_IMG)
+        img = bpy.data.images.get(img_name)
+
+        if not img:
+            self.safe_set_status(f"Missing Source: {img_name}", t.RED)
+            return
+
+        try:
+            # 1. Prepare Directory
+            os.makedirs(os.path.dirname(abs_path), exist_ok=True)
+
+            # 2. Save Logic
+            # Note: Blender's save methods overwrite by default if the path is the same.
+            if img.type == 'RENDER_RESULT':
+                img.save_render(abs_path)
+            else:
+                img.filepath_raw = abs_path
+                img.save()
+
+            # 3. Data Extraction (FROM DISK using PIL)
+            from PIL import Image
+
+            if not os.path.exists(abs_path):
+                self.safe_set_status("File not found after save", t.RED)
+                return
+
+            with Image.open(abs_path) as pil_img:
+                w, h = pil_img.size
+                result = np.array(pil_img, dtype=np.float32) / 255.0
+
+                if result.ndim == 2:
+                    result = result[:, :, np.newaxis]
+
+                img_channels = result.shape[2]
+
+            target_channels = int(self.get(COMPONENTS))
+            if target_channels <= 0:
+                target_channels = img_channels
+
+            # Component Adjustment
+            if target_channels != img_channels:
+                if target_channels < img_channels:
+                    result = result[:, :, :target_channels]
+                else:
+                    # Pad with 1.0 (Alpha/White)
+                    padding_shape = (h, w, target_channels - img_channels)
+                    padding = np.ones(padding_shape, dtype=np.float32)
+                    result = np.concatenate([result, padding], axis=2)
+
+            if self.get(FLIP_V):
+                result = np.flipud(result)
+
+            # Dictionary Key
+            pkg_key = self.line_named.text() if self.line_named.text() else img_name
+
+            # Set outputs from verified disk data
+            self.O_pixels.val = result
+            self.O_w.val = float(w)
+            self.O_h.val = float(h)
+            self.O_Channels.val = float(target_channels)
+            self.O_pkg.val = {pkg_key: result}
+
+            self.safe_set_status(f"File Saved & Verified: {os.path.basename(abs_path)}", t.GREEN)
+
+        except Exception as e:
+            self.safe_set_status(f"Error: {str(e)}", t.RED)
 
     def on_graph_load(self):
         self.reset()
@@ -498,6 +901,104 @@ class NODE_OBJECT_EVAL(BASE.NODE_INTERFACE):
         self.reset()
 
 ========================================
+E:\soon\projects\PBNPR\code\addons\gl_studio\examples\nodes\Node_bpy_timeline.py
+========================================
+import bpy
+from gl_studio.examples.nodes import Node_zPattren as BASE
+from gl_studio.util import util_types as t
+from PySide6.QtWidgets import QLabel, QLineEdit, QVBoxLayout, QWidget
+
+SCENE_NAME = "scene_name"
+
+class NODE_TIMELINE(BASE.NODE_INTERFACE):
+    NODE_NAME = "Timeline"
+    CATEGORY = "Blender"
+
+    def __init__(self):
+        super().__init__()
+        # Inputs
+        self.I_scene = self.add_input("Scene Name", type=t.STR)
+        
+        # Outputs
+        self.O_current = self.add_output(name="Current", type=t.F)
+        self.O_start = self.add_output(name="Start", type=t.F)
+        self.O_end = self.add_output(name="End", type=t.F)
+        self.O_progress = self.add_output(name="Progress", type=t.F)
+        self.O_fps = self.add_output(name="FPS", type=t.F)
+        
+        self.reset()
+
+    def on_gui(self):
+        widget = QWidget()
+        lay = QVBoxLayout()
+        widget.setLayout(lay)
+
+        self.line_scene = QLineEdit()
+        self.line_scene.setPlaceholderText("Scene Name (Leave blank for Active)")
+        self.line_scene.textChanged.connect(lambda v: self.set(SCENE_NAME, v))
+        lay.addWidget(self.line_scene)
+
+        self.status_label = QLabel()
+        lay.addWidget(self.status_label)
+
+        return widget
+
+    def reset(self, v=None):
+        if self.has(SCENE_NAME):
+            self.line_scene.setText(self.get(SCENE_NAME))
+        else:
+            self.add(SCENE_NAME, "")
+
+        self.status_label.setText("Ready")
+        self.status_label.setStyleSheet(t.WHITE)
+
+    def on_stream(self):
+        self.on_sync_port_values()
+        
+        # 1. Determine Target Scene
+        scene_name = self.I_scene.val if self.I_scene.val is not None and self.I_scene.val != "" else self.get(SCENE_NAME)
+        
+        scene = None
+        if scene_name:
+            scene = bpy.data.scenes.get(scene_name)
+            if not scene:
+                self.status_label.setText(f"Scene '{scene_name}' not found")
+                self.status_label.setStyleSheet(t.RED)
+        
+        # Fallback to active scene
+        if not scene:
+            scene = bpy.context.scene
+            if scene_name == "":
+                self.safe_set_status(f"Active Scene: {scene.name}", t.WHITE)
+            else:
+                self.safe_set_status(f"Fallback to Active: {scene.name}", t.WHITE)
+        else:
+            self.safe_set_status(f"Using Scene: {scene.name}", t.GREEN)
+
+        # 2. Extract Timeline Info
+        f_current = float(scene.frame_current)
+        f_start = float(scene.frame_start)
+        f_end = float(scene.frame_end)
+        fps = float(scene.render.fps) / float(scene.render.fps_base)
+        
+        # Calculate Progress (0.0 to 1.0)
+        range_len = f_end - f_start
+        if range_len != 0:
+            progress = (f_current - f_start) / range_len
+        else:
+            progress = 0.0
+            
+        # 3. Set Outputs
+        self.O_current.val = f_current
+        self.O_start.val = f_start
+        self.O_end.val = f_end
+        self.O_progress.val = progress
+        self.O_fps.val = fps
+
+    def on_graph_load(self):
+        self.reset()
+
+========================================
 E:\soon\projects\PBNPR\code\addons\gl_studio\examples\nodes\Node_dict_dynamic.py
 ========================================
 from gl_studio.examples.nodes import Node_zPattren as BASE
@@ -614,6 +1115,105 @@ class NODE_IO_DYNAMIC(BASE.NODE_INTERFACE):
             result[key_name] = port.value
 
         self.O_dict.value = result
+
+========================================
+E:\soon\projects\PBNPR\code\addons\gl_studio\examples\nodes\Node_dict_editKey.py
+========================================
+from gl_studio.examples.nodes import Node_zPattren as BASE
+from gl_studio.util import util_types as t
+from PySide6.QtWidgets import QLineEdit, QVBoxLayout, QWidget, QLabel
+
+TARGET_KEY = "target_key"
+NEW_KEY = "new_key"
+
+class NODE_DICT_EDIT_KEY(BASE.NODE_INTERFACE):
+    NODE_NAME = "Dict Edit Key"
+    CATEGORY = "Containers"
+
+    def __init__(self):
+        super().__init__()
+        self.I_dict = self.add_input("Dict", type=t.DICT)
+        self.O_dict = self.add_output("Dict", type=t.DICT)
+        self.reset()
+
+    def on_gui(self):
+        widget = QWidget()
+        lay = QVBoxLayout()
+        widget.setLayout(lay)
+
+        self.line_target = QLineEdit()
+        self.line_target.setPlaceholderText("Target Key (to change)...")
+        self.line_target.textChanged.connect(lambda v: self.set(TARGET_KEY, v))
+        lay.addWidget(self.line_target)
+
+        self.line_new = QLineEdit()
+        self.line_new.setPlaceholderText("New Key Name...")
+        self.line_new.textChanged.connect(lambda v: self.set(NEW_KEY, v))
+        lay.addWidget(self.line_new)
+
+        self.status = QLabel("Ready")
+        lay.addWidget(self.status)
+
+        return widget
+
+    def reset(self):
+        if self.has(TARGET_KEY):
+            self.line_target.setText(self.get(TARGET_KEY))
+        else:
+            self.add(TARGET_KEY, "")
+
+        if self.has(NEW_KEY):
+            self.line_new.setText(self.get(NEW_KEY))
+        else:
+            self.add(NEW_KEY, "")
+
+    def on_stream(self):
+        self.on_sync_port_values()
+        
+        in_dict = self.I_dict.val
+        if not isinstance(in_dict, dict):
+            self.O_dict.val = {}
+            self.status.setText("Input is not a Dict")
+            return
+
+        target = self.get(TARGET_KEY)
+        new_name = self.get(NEW_KEY)
+
+        if not new_name:
+            self.O_dict.val = in_dict
+            self.status.setText("New Key is empty")
+            return
+
+        # Create a new dict with the renamed key
+        out_dict = {}
+        found = False
+
+        # Logic: 
+        # 1. If 'target' is specified, only rename that one.
+        # 2. If 'target' is empty AND dict has only 1 key, rename that 1 key.
+        
+        keys = list(in_dict.keys())
+        
+        if not target and len(keys) == 1:
+            out_dict[new_name] = in_dict[keys[0]]
+            found = True
+        else:
+            for k, v in in_dict.items():
+                if k == target:
+                    out_dict[new_name] = v
+                    found = True
+                else:
+                    out_dict[k] = v
+
+        self.O_dict.val = out_dict
+        
+        if found:
+            self.status.setText(f"Renamed to '{new_name}'")
+        else:
+            self.status.setText(f"Key '{target}' not found")
+
+    def on_graph_load(self):
+        self.reset()
 
 ========================================
 E:\soon\projects\PBNPR\code\addons\gl_studio\examples\nodes\Node_dict_index.py
@@ -872,6 +1472,120 @@ class NODE_FLOAT_MATH(BASE.NODE_INTERFACE):
         self.reset()
 
 ========================================
+E:\soon\projects\PBNPR\code\addons\gl_studio\examples\nodes\Node_imgEdit.py
+========================================
+import numpy as np
+from gl_studio.examples.nodes import Node_zPattren as BASE
+from gl_studio.util import util_types as t
+from PySide6.QtWidgets import QLabel, QVBoxLayout, QWidget, QDoubleSpinBox, QCheckBox
+
+COMPONENTS = "components"
+PAD_VAL = "pad_val"
+
+class NODE_NP_ARRAY_EDIT(BASE.NODE_INTERFACE):
+    NODE_NAME = "Array Edit (Numpy)"
+    CATEGORY = "Containers"
+
+    def __init__(self):
+        super().__init__()
+        # Ports
+        self.I_arr = self.add_input("Array", type=t.RGBA)
+        self.O_arr = self.add_output("Array", type=t.RGBA)
+        self.reset()
+
+    def on_gui(self):
+        widget = QWidget()
+        lay = QVBoxLayout()
+        widget.setLayout(lay)
+
+        self.comp_slider = QDoubleSpinBox()
+        self.comp_slider.setRange(0, 4)
+        self.comp_slider.setDecimals(0)
+        self.comp_slider.setPrefix("Target Channels: ")
+        self.comp_slider.valueChanged.connect(lambda v: self.set(COMPONENTS, v))
+        lay.addWidget(self.comp_slider)
+
+        self.pad_check = QCheckBox("Pad with 1.0 (Alpha)")
+        self.pad_check.stateChanged.connect(lambda v: self.set(PAD_VAL, self.pad_check.isChecked()))
+        self.pad_check.setStyleSheet("color: white;")
+        lay.addWidget(self.pad_check)
+
+        self.status_label = QLabel()
+        self.status_label.setStyleSheet(t.WHITE)
+        lay.addWidget(self.status_label)
+
+        return widget
+
+    def reset(self, v=None):
+        if self.has(COMPONENTS):
+            self.comp_slider.setValue(self.get(COMPONENTS))
+        else:
+            self.add(COMPONENTS, 4.0)
+            self.comp_slider.setValue(4.0)
+
+        if self.has(PAD_VAL):
+            self.pad_check.setChecked(self.get(PAD_VAL))
+        else:
+            self.add(PAD_VAL, True)
+            self.pad_check.setChecked(True)
+
+        self.status_label.setText("Ready")
+
+    def on_stream(self):
+        self.on_sync_port_values()
+        arr = self.I_arr.val
+        
+        if arr is None:
+            self.safe_set_status("Waiting for input...", t.WHITE)
+            return
+
+        if not isinstance(arr, np.ndarray):
+            try:
+                arr = np.array(arr)
+            except Exception as e:
+                self.safe_set_status("Invalid Input Type", t.RED)
+                return
+
+        target_c = int(self.get(COMPONENTS))
+        if target_c <= 0:
+            self.O_arr.val = arr
+            self.safe_set_status(f"Pass-through: {arr.shape}", t.WHITE)
+            return
+
+        shape = arr.shape
+        # Handle (H, W) -> (H, W, 1)
+        if len(shape) == 2:
+            h, w = shape
+            curr_c = 1
+            arr = arr[:, :, np.newaxis]
+        elif len(shape) == 3:
+            h, w, curr_c = shape
+        else:
+            self.safe_set_status(f"Unsupported shape: {shape}", t.RED)
+            return
+
+        if curr_c == target_c:
+            self.O_arr.val = arr
+            self.safe_set_status(f"Keep: {arr.shape}", t.GREEN)
+            return
+
+        if target_c < curr_c:
+            # Slice channels
+            result = arr[:, :, :target_c]
+        else:
+            # Pad channels
+            pad_val = 1.0 if self.get(PAD_VAL) else 0.0
+            padding_shape = (h, w, target_c - curr_c)
+            padding = np.full(padding_shape, pad_val, dtype=arr.dtype)
+            result = np.concatenate([arr, padding], axis=2)
+
+        self.O_arr.val = result
+        self.safe_set_status(f"Reshaped: {curr_c} -> {target_c} {result.shape}", t.GREEN)
+
+    def on_graph_load(self):
+        self.reset()
+
+========================================
 E:\soon\projects\PBNPR\code\addons\gl_studio\examples\nodes\Node_mgl_class.py
 ========================================
 from gl_studio.examples.nodes import Node_zPattren as BASE
@@ -913,6 +1627,8 @@ class NODE_MGL_BASIC(BASE.NODE_INTERFACE):
         w.setLayout(l)
 
         self.chBox = QCheckBox()
+        self.chBox.setStyleSheet("color: white;")
+        self.chBox.setText("Standalone Context (Headless only!)")
         l.addWidget(self.chBox)
 
         self.combo = QComboBox()
@@ -929,8 +1645,9 @@ class NODE_MGL_BASIC(BASE.NODE_INTERFACE):
         else:
             self.add(STATICc,self.combo.currentText())
 
-        self.I_w.val = t.RES_W
-        self.I_h.val = t.RES_H
+        # Reset port values to defaults
+        self.I_w.val = int(t.RES_W)
+        self.I_h.val = int(t.RES_H)
         self.I_vert.val = t.SRC_SCREEN_VERT
         self.I_frag.val = t.SRC_SCREEN_FRAG
         self.I_uniforms.val = None
@@ -942,14 +1659,16 @@ class NODE_MGL_BASIC(BASE.NODE_INTERFACE):
         self.on_sync_port_values()
 
         if c.CTX is None:
-            c.CTX = mgl_class.gl.create_context(standalone=self.chBox.isChecked())
+            # Check if standalone is requested (default to False if GUI not initialized)
+            standalone = self.chBox.isChecked() if self.chBox else False
+            c.CTX = mgl_class.gl.create_context(standalone=standalone)
             c.CTX.gc_mode = 'context_gc'
 
         shader = self.shader
         shader.ctx = c.CTX
 
-        shader.w = self.I_w.val
-        shader.h = self.I_h.val
+        shader.w = int(self.I_w.val)
+        shader.h = int(self.I_h.val)
         if isinstance(self.I_vert.val, str):
             shader.src_v = self.I_vert.val
         if isinstance(self.I_frag.val, str):
@@ -1210,6 +1929,7 @@ E:\soon\projects\PBNPR\code\addons\gl_studio\examples\nodes\Node_RGBAdisplay.py
 ========================================
 from gl_studio.examples.nodes import Node_zPattren as BASE
 from gl_studio.util import util_types as t
+import numpy as np
 
 
 class NODE_RGBA_DISPLAY(BASE.NODE_INTERFACE):
@@ -1227,9 +1947,20 @@ class NODE_RGBA_DISPLAY(BASE.NODE_INTERFACE):
         self.on_sync_port_values()
         pixels = self.I_rgba.val
 
-        w,h,c = pixels.shape
+        if pixels is None or not isinstance(pixels, np.ndarray):
+            return
+
+        # Correct unpacking: (Height, Width, Channels)
+        if pixels.ndim == 3:
+            h, w, c = pixels.shape
+        elif pixels.ndim == 2:
+            h, w = pixels.shape
+        else:
+            return
+
         self.overlay.prepareGeometryChange()
-        self.overlay._rect = t.QRectF(0,0,w,h)
+        # QRectF expects (x, y, Width, Height)
+        self.overlay._rect = t.QRectF(0, 0, w, h)
 
         self.overlay.set_image(pixels)
 
@@ -1282,8 +2013,7 @@ class NODE_RGBA_VIEWER(BASE.NODE_INTERFACE):
         self.I_h.val = t.RES_H
         self.I_rgba.val = None
         self.O_rgba.val = None
-        self.status_label.setText(txt)
-        self.status_label.setStyleSheet(t.RED)
+        self.safe_set_status(txt, t.RED)
 
     def on_stream(self):
         self.on_sync_port_values()
@@ -1294,8 +2024,7 @@ class NODE_RGBA_VIEWER(BASE.NODE_INTERFACE):
 
         # 3. Update UI
         if current_pixels is not None:
-            self.status_label.setText("Status: Data Ready")
-            self.status_label.setStyleSheet(t.GREEN)
+            self.safe_set_status("Status: Data Ready", t.GREEN)
         else:
             self.reset()
             return
@@ -1328,6 +2057,10 @@ class NODE_RGBA_VIEWER(BASE.NODE_INTERFACE):
 
     def on_graph_load(self):
         self.reset()
+
+========================================
+E:\soon\projects\PBNPR\code\addons\gl_studio\examples\nodes\Node_Screen.py
+========================================
 
 ========================================
 E:\soon\projects\PBNPR\code\addons\gl_studio\examples\nodes\Node_str.py
@@ -1364,6 +2097,9 @@ class NODE_STRING(BASE.NODE_INTERFACE):
 
     def on_graph_load(self):
         self.reset()
+
+    def on_selection(self):
+        print("Hello")
 
 ========================================
 E:\soon\projects\PBNPR\code\addons\gl_studio\examples\nodes\Node_str_block.py
@@ -1746,440 +2482,46 @@ class NODE_INTERFACE(BaseNode):
     def on_delete(self) -> None:
         """Called by Qt shortcuts, when the node is selcted and deleted"""
 
+    def on_selection(self):
+        pass
+
     def on_sync_port_values(self) -> None:
         """Utlity function, Clones values from inputs to outputs at type matching or input is type of "ANY", so data steam is handled per node if overiden"""
         for i_p in self.input_ports():
-            o_ps = i_p.connected_ports()
-            if o_ps:
-                o_p = o_ps[0]
-                if i_p.Type == t.ANY or (i_p.Type == o_p.Type):
-                    i_p.val = o_p.val
+            # Get the connected output port (if any)
+            connected_ports = i_p.connected_ports()
+            if connected_ports:
+                # In NodeGraphQt, an input can usually only have one connection
+                out_port = connected_ports[0]
+                # Sync value if types match or ANY
+                if i_p.Type == t.ANY or i_p.Type == out_port.Type:
+                    i_p.val = out_port.val
 
 ========================================
-E:\soon\projects\PBNPR\code\addons\gl_studio\examples\opengl\CircleF.glsl
+E:\soon\projects\PBNPR\code\addons\gl_studio\examples\opengl\CANDIDATE_RM_GLITCH.glsl
 ========================================
-#version 330
-
-in vec2 UV;
-
-out vec4 fragCol;
-
-uniform vec2 resolution;
-
-
-void main(){
-
-vec3 circle = vec3(distance(UV,vec2(0.5,0.5)));
-
-fragCol=vec4(vec3(circle),1.0);
-}
 
 ========================================
-E:\soon\projects\PBNPR\code\addons\gl_studio\examples\opengl\CircleV.glsl
+E:\soon\projects\PBNPR\code\addons\gl_studio\examples\opengl\CANDIDATE_RM_OUTLINES.glsl
+========================================
+
+========================================
+E:\soon\projects\PBNPR\code\addons\gl_studio\examples\opengl\default_mvpF.glsl
 ========================================
 #version 330
 
-in vec2 positions;
-in vec2 UVMap;
-
-out vec2 UV;
-
-void main() {
-    UV = UVMap;
-    gl_Position = vec4(positions,0.0, 1.0);
-}
-
-========================================
-E:\soon\projects\PBNPR\code\addons\gl_studio\examples\opengl\defaultF.glsl
-========================================
-#version 330
-
-out vec4 f_color;
-
-void main() {
-    f_color = vec4(1.0);
-}
-
-========================================
-E:\soon\projects\PBNPR\code\addons\gl_studio\examples\opengl\defaultV.glsl
-========================================
-#version 330
-
-uniform mat4 mOBJ;
-uniform mat4 mVIEW;
-uniform mat4 mPROJ;
-
-in vec3 in_vert;
-
-void main() {
-    gl_Position = mPROJ * mVIEW * mOBJ * vec4(in_vert, 1.0);
-}
-
-========================================
-E:\soon\projects\PBNPR\code\addons\gl_studio\examples\opengl\dotF.glsl
-========================================
-#version 330
-
-in vec3 N;
-
-out vec4 f_color;
-
-void main() {
-    float F = dot(N, vec3(1.0, 1.0, 1.0));
-
-    f_color = vec4(vec3(F), 1.0);
-}
-
-========================================
-E:\soon\projects\PBNPR\code\addons\gl_studio\examples\opengl\dotV.glsl
-========================================
-#version 330
-
-uniform mat4 mOBJ;
-uniform mat4 mVIEW;
-uniform mat4 mPROJ;
-
-in vec3 in_vert;
-in vec3 in_norm;
-out vec3 N;
-
-void main() {
-    N = in_norm;
-
-    gl_Position = mPROJ * mVIEW * mOBJ * vec4(in_vert, 1.0);
-}
-
-========================================
-E:\soon\projects\PBNPR\code\addons\gl_studio\examples\opengl\EdgeDetect_raymarch_F.glsl
-========================================
-// Raymarch Edge Detection by HLorenzi!
-// Detects whether a ray that comes too close to a surface goes away.
-
-#define EDGE_WIDTH 0.5
-#define RAYMARCH_ITERATIONS 40
-
-// The traditional method to finding raymarching edges
-// Of course, mine has a different purpose (to outline in cartoonish style)
-//#define TRADITIONAL
-
-
-
-
-// This should prevent lines from getting thicker when close to the camera
-// But it didn't work. Ugh.
-//#define PERSPECTIVE_FIX
-
-
-
-
-
-// Distance functions by iquilezles.org
-float fSubtraction(float a, float b) {return max(-a,b);}
-float fIntersection(float d1, float d2) {return max(d1,d2);}
-void fUnion(inout float d1, float d2) {d1 = min(d1,d2);}
-float pSphere(vec3 p, float s) {return length(p)-s;}
-float pRoundBox(vec3 p, vec3 b, float r) {return length(max(abs(p)-b,0.0))-r;}
-float pTorus(vec3 p, vec2 t) {vec2 q = vec2(length(p.xz)-t.x,p.y); return length(q)-t.y;}
-float pCapsule(vec3 p, vec3 a, vec3 b, float r) {vec3 pa = p - a, ba = b - a;
-	float h = clamp( dot(pa,ba)/dot(ba,ba), 0.0, 1.0 ); return length( pa - ba*h ) - r;}
-
-float distf(vec3 p)
-{
-	float d = 100000.0;
-	
-	fUnion(d, pRoundBox(vec3(0,0,10) + p, vec3(11,11,1), 1.0));
-	fUnion(d, pRoundBox(vec3(0,0,-2) + p, vec3(5,5,12), 1.0));
-	fUnion(d, pSphere(vec3(10,10,0) + p, 8.0));
-	fUnion(d, pTorus(vec3(-10,-12,0) + p, vec2(9,5)));
-	fUnion(d, pCapsule(p, vec3(-15,15,10), vec3(15,-15,-5), 1.5));
-	fUnion(d, -pSphere(p, 80.0));
-	
-	return d;
-}
-
-
-vec4 raymarch(vec3 from, vec3 increment)
-{
-	const float maxDist = 200.0;
-	const float minDist = 0.001;
-	const int maxIter = RAYMARCH_ITERATIONS;
-	
-	float dist = 0.0;
-	
-	float lastDistEval = 1e10;
-#ifdef TRADITIONAL
-	float edge = 1.0;
-#else
-	float edge = 0.0;
-#endif
-	
-	for(int i = 0; i < maxIter; i++) {
-		vec3 pos = (from + increment * dist);
-		float distEval = distf(pos);
-		
-#ifdef TRADITIONAL
-		if (distEval < minDist) {
-			if (i > RAYMARCH_ITERATIONS - 5) edge = 0.0;
-			// Probably should put a break here, but it's not working with GL ES...
-		}
-#else
-	#ifdef PERSPECTIVE_FIX
-		// Could not figure out the math :P
-		if (lastDistEval < (EDGE_WIDTH / dist) * 20.0 && distEval > lastDistEval + 0.001) {
-			edge = 1.0;
-		}
-	#else
-		if (lastDistEval < EDGE_WIDTH && distEval > lastDistEval + 0.001) {
-			edge = 1.0;
-			// Also should put a break here, but it's not working with GL ES...
-		}
-	#endif
-		if (distEval < minDist) {
-			break;
-		}
-#endif
-		
-		dist += distEval;
-		if (distEval < lastDistEval) lastDistEval = distEval;
-	}
-	
-	return vec4(dist, 0.0, edge, 0);
-}
-
-vec4 getPixel(vec3 from, vec3 increment)
-{
-	vec4 c = raymarch(from, increment);
-	return mix(vec4(1,1,1,1),vec4(0,0,0,1),c.z);
-}
-
-void mainImage( out vec4 fragColor, in vec2 fragCoord )
-{	
-	// pixel position	
-	vec2 q = fragCoord.xy/iResolution.xy;
-    vec2 p = -1.0+2.0*q;
-	p.x *= -iResolution.x/iResolution.y;
-	
-	// mouse
-    vec2 mo = iMouse.xy/iResolution.xy;
-	vec2 m = iMouse.xy / iResolution.xy;
-	if (iMouse.x == 0.0 && iMouse.y == 0.0) {
-		m = vec2(iTime * 0.06 + 2.86, 0.38);	
-	}
-	m = -1.0 + 2.0 * m;
-	m *= vec2(4.0,-1.5);
-
-	// camera position
-	float dist = 50.0;
-	vec3 ta = vec3(0,0,0);
-	vec3 ro = vec3(cos(m.x) * cos(m.y) * dist, sin(m.x) * cos(m.y) * dist, sin(m.y) * dist);
-	
-	// camera direction
-	vec3 cw = normalize( ta-ro );
-	vec3 cp = vec3( 0.0, 0.0, 1.0 );
-	vec3 cu = normalize( cross(cw,cp) );
-	vec3 cv = normalize( cross(cu,cw) );
-	vec3 rd = normalize( p.x*cu + p.y*cv + 2.5*cw );
-
-	// calculate color
-	vec4 col = getPixel(ro, rd);
-	fragColor = col;
-	
-}
-========================================
-E:\soon\projects\PBNPR\code\addons\gl_studio\examples\opengl\GlitchF.glsl
-========================================
-#version 330
-
-in vec3 N;
-in vec2 UVs;
-
-out vec4 FragColor;
-
-uniform vec2 resolution;
-
-void main() {
-    float d = dot(N,vec3(1.0,1.0,1.0));
-    d = step(0.5,d);
-    FragColor = vec4(vec3(d),1.0);
-}
-
-========================================
-E:\soon\projects\PBNPR\code\addons\gl_studio\examples\opengl\GlitchV.glsl
-========================================
-#version 330
-
-in vec3 positions;
-in vec3 normals;
-in vec2 UVMap;
-
-out vec2 UVs;
-out vec3 N;
-
-uniform mat4 world_matrix;
-uniform mat4 view_matrix;
-uniform mat4 proj_matrix;
-
-void main() {
-    UVs = UVMap;
-    N = normalize(normals);
-
-    gl_Position = proj_matrix * view_matrix * world_matrix * vec4(positions, 1.0);
-}
-
-========================================
-E:\soon\projects\PBNPR\code\addons\gl_studio\examples\opengl\outlineF.glsl
-========================================
-#version 330
-
-in vec3 N;
-in vec2 UVs;
-
-out vec4 FragColor;
-
-uniform vec2 resolution;
-
-void main() {
-    float edge = 1.0 - abs(dot(normalize(N), vec3(0, 0, 1)));
-    edge = smoothstep(0.7, 1.0, edge);
-
-    FragColor = vec4(vec3(edge), 1.0);
-    FragColor = vec4(UVs, 0.0, 1.0);
-}
-
-========================================
-E:\soon\projects\PBNPR\code\addons\gl_studio\examples\opengl\outlineV.glsl
-========================================
-#version 330
-
-in vec3 positions;
-in vec3 normals;
-in vec2 UVMap;
-
-out vec2 UVs;
-out vec3 N;
-
-uniform mat4 world_matrix;
-uniform mat4 view_matrix;
-uniform mat4 proj_matrix;
-
-void main() {
-    UVs = UVMap;
-    N = normals;
-
-    gl_Position = proj_matrix * view_matrix * world_matrix * vec4(positions, 1.0);
-}
-
-========================================
-E:\soon\projects\PBNPR\code\addons\gl_studio\examples\opengl\RayMarchF.glsl
-========================================
-#version 330
-
-/*
-    Data-Driven Raymarching Template
-    --------------------------------
-    This shader accepts "Mesh Data" (vertex positions) via a Texture.
-    It raymarches the distance to these vertices, creating a "Metaball"
-    or "Cloud" effect that follows the shape of the actual mesh.
-*/
-
-in vec3 N;
 in vec2 UVS;
-in vec3 W_POS;
-in vec3 L_POS;
 
 out vec4 FragColor;
 
-uniform vec2 resolution;
-uniform vec3 camera_pos;
-
-// MESH DATA UNIFORMS
-uniform sampler2D mesh_data; // A texture where each pixel is a (vec3) vertex position
-uniform int vertex_count; // How many vertices to check (keep this low for performance)
-uniform float blob_radius; // Size of the influence around each vertex
-
-// RAYMARCHING SETTINGS
-uniform int samples = 64;
-uniform float max_distance = 100.0;
-
-// Map function now iterates through the "Mesh Data"
-float map(vec3 p) {
-    float d = 1e10; // Start with a very large distance
-
-    // Ensure we don't loop too many times (performance limit)
-    int count = min(vertex_count, 128);
-
-    for (int i = 0; i < count; i++) {
-        // Fetch vertex position from the texture
-        // We assume the texture is 1D (or we just use the first row)
-        vec3 v = texelFetch(mesh_data, ivec2(i, 0), 0).xyz;
-
-        // Calculate distance to this vertex
-        float dist_to_vertex = length(p - v) - blob_radius;
-
-        // Smooth union (Metaball effect)
-        // This makes the separate spheres "melt" together into a single surface
-        float k = 0.2;
-        float h = clamp(0.5 + 0.5 * (d - dist_to_vertex) / k, 0.0, 1.0);
-        d = mix(d, dist_to_vertex, h) - k * h * (1.0 - h);
-    }
-
-    return d;
-}
-
-// Calculate normals by sampling the SDF around the hit point
-vec3 getNormal(vec3 p) {
-    float d = map(p);
-    vec2 e = vec2(0.01, 0.0);
-    vec3 n = d - vec3(
-                map(p - e.xyy),
-                map(p - e.yxy),
-                map(p - e.yyx)
-            );
-    return normalize(n);
-}
+uniform sampler2D A;
 
 void main() {
-    // 1. Setup the Ray
-    vec3 ro = camera_pos;
-    vec3 rd = normalize(W_POS - camera_pos);
-
-    // 2. March the Ray
-    float t = 0.0;
-    bool hit = false;
-    vec3 p;
-
-    for (int i = 0; i < samples; i++) {
-        p = ro + rd * t;
-        float d = map(p);
-
-        if (d < 0.001) {
-            hit = true;
-            break;
-        }
-
-        t += d;
-        if (t > max_distance) break;
-    }
-
-    // 3. Shading
-    if (hit) {
-        vec3 normal = getNormal(p);
-
-        // Basic diffuse lighting (simple sun lamp)
-        vec3 light_dir = normalize(vec3(1.0, 2.0, 3.0));
-        float diff = max(dot(normal, light_dir), 0.0);
-
-        // Final color: normal-based coloring + lighting
-        vec3 color = (normal * 0.5 + 0.5) * (diff + 0.2);
-        FragColor = vec4(color, 1.0);
-    } else {
-        // Discard if we hit nothing
-        discard;
-    }
+    FragColor = texture(A, UVS);
 }
 
 ========================================
-E:\soon\projects\PBNPR\code\addons\gl_studio\examples\opengl\RayMarchV.glsl
+E:\soon\projects\PBNPR\code\addons\gl_studio\examples\opengl\default_mvpV.glsl
 ========================================
 #version 330
 
@@ -2188,9 +2530,6 @@ in vec3 normals;
 in vec2 UVMap;
 
 out vec2 UVS;
-out vec3 N;
-out vec3 W_POS;
-out vec3 L_POS;
 
 uniform mat4 world_matrix;
 uniform mat4 view_matrix;
@@ -2198,19 +2537,12 @@ uniform mat4 proj_matrix;
 
 void main() {
     UVS = UVMap;
-    L_POS = positions;
 
-    // Transform normals to world space
-    N = normalize((world_matrix * vec4(normals, 0.0)).xyz);
-
-    vec4 wp = world_matrix * vec4(positions, 1.0);
-    W_POS = wp.xyz;
-
-    gl_Position = proj_matrix * view_matrix * wp;
+    gl_Position = proj_matrix * view_matrix * world_matrix * vec4(positions, 1.0);
 }
 
 ========================================
-E:\soon\projects\PBNPR\code\addons\gl_studio\examples\opengl\screenF.glsl
+E:\soon\projects\PBNPR\code\addons\gl_studio\examples\opengl\default_screenF.glsl
 ========================================
 #version 330
 
@@ -2225,7 +2557,7 @@ void main() {
 }
 
 ========================================
-E:\soon\projects\PBNPR\code\addons\gl_studio\examples\opengl\screenV.glsl
+E:\soon\projects\PBNPR\code\addons\gl_studio\examples\opengl\default_screenV.glsl
 ========================================
 #version 330
 
@@ -2236,25 +2568,108 @@ out vec2 UV;
 
 void main() {
     UV = UVMap;
-    gl_Position = vec4(positions,0.0, 1.0);
+    gl_Position = vec4(positions, 0.0, 1.0);
 }
 
 ========================================
-E:\soon\projects\PBNPR\code\addons\gl_studio\examples\opengl\texF.glsl
+E:\soon\projects\PBNPR\code\addons\gl_studio\examples\opengl\RayMarchOutlineF.glsl
 ========================================
 #version 330
 
-in vec2 UVs;
+/*
+    Direct Raymarching with Uniform Data
+    ------------------------------------
+    This version uses a direct Uniform Array instead of a texture.
+    It's easier to understand and works directly with "RGBA" (vec4)
+    vertex data passed from Python.
+*/
+
+in vec3 world_pos;
+in vec3 local_pos;
 out vec4 FragColor;
 
-uniform sampler2D CH_0_Steve;
+uniform vec3 camera_pos;
+
+// DATA UNIFORMS (Direct Arrays)
+// We use vec4 because the user is passing "RGBA" data.
+uniform vec4 mesh_data[64];
+uniform int vertex_count = 64;
+uniform float blob_radius = 0.5;
+
+// EFFECT PARAMETERS
+uniform float edge_width = 0.1;
+uniform vec3 base_color = vec3(0.5, 0.8, 1.0);
+uniform vec3 outline_color = vec3(0.0, 0.0, 0.0);
+
+// Map function (The Scene)
+float map(vec3 p) {
+    float d = 1e10;
+
+    // Iterate through the uniform array directly
+    int count = clamp(vertex_count, 0, 64);
+
+    for (int i = 0; i < count; i++) {
+        // Use the first 3 components (XYZ) of the RGBA data
+        vec3 v = mesh_data[i].xyz;
+
+        float dist_to_vertex = length(p - v) - blob_radius;
+
+        // Smooth union (Metaball effect)
+        float k = 0.2;
+        float h = clamp(0.5 + 0.5 * (d - dist_to_vertex) / k, 0.0, 1.0);
+        d = mix(d, dist_to_vertex, h) - k * h * (1.0 - h);
+    }
+    return d;
+}
 
 void main() {
-    FragColor = texture(CH_0_Steve, UVs);
+    vec3 ro = camera_pos;
+    vec3 rd = normalize(world_pos - camera_pos);
+
+    float t = 0.0;
+    float max_dist = 100.0;
+    float last_d = 1e10;
+
+    bool hit = false;
+    bool is_edge = false;
+
+    // Raymarching Loop
+    for (int i = 0; i < 64; i++) {
+        vec3 p = ro + rd * t;
+        float d = map(p);
+
+        // Edge Detection
+        if (last_d < edge_width && d > last_d + 0.001) {
+            is_edge = true;
+            break;
+        }
+
+        if (d < 0.001) {
+            hit = true;
+            break;
+        }
+
+        last_d = d;
+        t += d;
+        if (t > max_dist) break;
+    }
+
+    // Final Shading
+    vec3 final_col;
+    if (is_edge) {
+        final_col = outline_color;
+    } else if (hit) {
+        final_col = base_color;
+        final_col *= (1.0 - t * 0.02); // Simple distance fog
+    } else {
+        discard;
+    }
+
+    FragColor = vec4(final_col, 1.0);
 }
 
 ========================================
-E:\soon\projects\PBNPR\code\addons\gl_studio\examples\opengl\texV.glsl
+E:\soon\projects\PBNPR\code\addons\gl_studio\examples\opengl\RayMarchOutlineV.glsl
 ========================================
 #version 330
 
@@ -2262,16 +2677,20 @@ in vec3 positions;
 in vec3 normals;
 in vec2 UVMap;
 
-out vec2 UVs;
+out vec3 W_POS;
+out vec3 L_POS;
 
 uniform mat4 world_matrix;
 uniform mat4 view_matrix;
 uniform mat4 proj_matrix;
 
 void main() {
-    UVs = UVMap;
+    L_POS = positions;
 
-    gl_Position = proj_matrix * view_matrix * world_matrix * vec4(positions, 1.0);
+    vec4 wp = world_matrix * vec4(positions, 1.0);
+    W_POS = wp.xyz;
+
+    gl_Position = proj_matrix * view_matrix * wp;
 }
 
 ========================================
@@ -2363,7 +2782,7 @@ from gl_studio.util import util_types as t
 
 class MGL:
 
-    def __init__(self, ctx=None):
+    def __init__(self, ctx:gl.Context):
         # Allow passing an existing context, otherwise create a standalone one
         self.ctx = ctx
 
@@ -2391,6 +2810,10 @@ class MGL:
 
     def compile(self):
         needs_rebuild = False
+
+        # Ensure dimensions are valid positive integers
+        self.w = max(1, int(self.w))
+        self.h = max(1, int(self.h))
 
         # 1. Smart Shader Compilation
         if self.src_v != self._cached_v or self.src_f != self._cached_f:
@@ -2444,11 +2867,21 @@ class MGL:
         for name, tex_obj in textures.items():
             if name in self.prog:
                 if isinstance(tex_obj, np.ndarray):
-                    h, w, c = tex_obj.shape
+                    # Robust unpacking: (Height, Width, [Channels])
+                    if tex_obj.ndim == 3:
+                        h, w, c = tex_obj.shape
+                    elif tex_obj.ndim == 2:
+                        h, w = tex_obj.shape
+                        c = 1
+                    else:
+                        print(f"[MGL CLASS] texture {name} has invalid dimensions: {tex_obj.shape}")
+                        continue
+
                     pixels = tex_obj.tobytes()
                     dtype = 'f4'
 
                     # UPDATE existing texture if shape matches, otherwise RE-CREATE
+                    # ModernGL texture.size is (Width, Height)
                     if name in self.texs and self.texs[name].size == (w, h):
                         self.texs[name].write(pixels)
                     else:
@@ -2462,6 +2895,8 @@ class MGL:
                     self.texs[name].use(location=texture_location)
                     self.prog[name].value = texture_location
                     texture_location += 1
+                else:
+                    print("[MGL CLASS] texture ", name, " NON np.array!")
 
     def vertex_attributes(self, attributes_dict, force_rebuild=False):
         """Updates existing VBOs with new data. Only rebuilds VAO if topologies change."""
@@ -2517,6 +2952,9 @@ class MGL:
 
     def clear(self):
         """Safely destroys all GPU objects. Call ONLY when deleting the node."""
+        if not self.ctx:
+            return
+
         for tex_name, tex in self.texs.items():
             tex.release()
         self.texs.clear()
@@ -2934,6 +3372,8 @@ def view_pos_to_node_internals():
         y = pos.y()
         node.set_pos(x, y)
 
+def on_node_selection(x):
+    x.on_selection()
 ## ========== APPLICATION LAYER LEVEL============== ##
 
 def _PreProcess():
@@ -3040,7 +3480,7 @@ def register():
     _PreProcess()
     _Create_GUI()
     _Create_shortcuts()
-    c.INSPECTOR = cfg.tab_inspec
+    cfg.graph.node_selected.connect(on_node_selection)
 
 
 def unregister():
@@ -3232,11 +3672,70 @@ def process_frame():
 ========================================
 E:\soon\projects\PBNPR\code\addons\gl_studio\util\export_cloud.py
 ========================================
-from PySide6.QtWidgets import QVBoxLayout 
+from PySide6.QtWidgets import QVBoxLayout, QWidget
 
+class InspectorManager:
+    def __init__(self):
+        self.layout: QVBoxLayout = None
+        self._current_widgets = []
 
-INSPECTOR:QVBoxLayout
-# Ouput nodes list,
+    def set_layout(self, layout: QVBoxLayout):
+        self.layout = layout
+
+    def clear(self):
+        if not self.layout:
+            return
+        while self.layout.count():
+            item = self.layout.takeAt(0)
+            widget = item.widget()
+            if widget:
+                widget.setParent(None)
+                widget.deleteLater()
+            # Also handle spacers/layouts if any
+        self._current_widgets.clear()
+
+    def update_selection(self, nodes):
+        self.clear()
+        if not self.layout:
+            return
+            
+        for node in nodes:
+            # Check if it has the required interface
+            node_name = getattr(node, "NODE_NAME", node.type_)
+            
+            # Create a container for this node's inspection
+            container = QWidget()
+            v_lay = QVBoxLayout()
+            container.setLayout(v_lay)
+            
+            # Label for the node name
+            from PySide6.QtWidgets import QLabel
+            name_label = QLabel(f"<b>{node_name}</b>")
+            name_label.setStyleSheet("background-color: #444; padding: 5px; color: #eee; border-radius: 3px;")
+            v_lay.addWidget(name_label)
+            
+            if hasattr(node, "on_gui"):
+                try:
+                    w = node.on_gui()
+                    if w:
+                        v_lay.addWidget(w)
+                        # Initialize the GUI with current property values
+                        if hasattr(node, "reset"):
+                            node.reset()
+                except Exception as e:
+                    error_label = QLabel(f"Error loading GUI: {e}")
+                    error_label.setStyleSheet("color: red;")
+                    v_lay.addWidget(error_label)
+            
+            self.layout.addWidget(container)
+            self._current_widgets.append(container)
+        
+        # Add a spacer at the end to keep widgets at the top
+        self.layout.addStretch()
+
+INSPECTOR = InspectorManager()
+
+# Output nodes list,
 # itterated by PAG to evaluate the branches's nodes.
 # lifetime is managed by node itself
 OUTPUT_NODES = {}

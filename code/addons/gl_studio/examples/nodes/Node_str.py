@@ -30,3 +30,6 @@ class NODE_STRING(BASE.NODE_INTERFACE):
 
     def on_graph_load(self):
         self.reset()
+
+    def on_selection(self):
+        print("Hello")

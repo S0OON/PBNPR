@@ -42,8 +42,7 @@ class NODE_RGBA_VIEWER(BASE.NODE_INTERFACE):
         self.I_h.val = t.RES_H
         self.I_rgba.val = None
         self.O_rgba.val = None
-        self.status_label.setText(txt)
-        self.status_label.setStyleSheet(t.RED)
+        self.safe_set_status(txt, t.RED)
 
     def on_stream(self):
         self.on_sync_port_values()
@@ -54,8 +53,7 @@ class NODE_RGBA_VIEWER(BASE.NODE_INTERFACE):
 
         # 3. Update UI
         if current_pixels is not None:
-            self.status_label.setText("Status: Data Ready")
-            self.status_label.setStyleSheet(t.GREEN)
+            self.safe_set_status("Status: Data Ready", t.GREEN)
         else:
             self.reset()
             return
