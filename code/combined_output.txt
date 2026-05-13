@@ -1,5 +1,9 @@
 
 ========================================
+E:\soon\projects\PBNPR\code\combined_output.txt
+========================================
+
+========================================
 E:\soon\projects\PBNPR\code\export_to_txt.py
 ========================================
 
@@ -1615,6 +1619,7 @@ class NODE_MGL_BASIC(BASE.NODE_INTERFACE):
         self.I_attrs = self.add_input("Attributes", type=t.DICT)
 
         self.I_textures = self.add_input("Textures", type=t.DICT)
+        self.I_flags = self.add_input("Context Flags", type=t.DICT)
 
         # --- Outputs ---
         self.O_pixels = self.add_output("Pixels_RGBA", type=t.RGBA)
@@ -1680,9 +1685,23 @@ class NODE_MGL_BASIC(BASE.NODE_INTERFACE):
         shader.uniforms_textures(self.I_textures.val)
         shader.vertex_attributes(self.I_attrs.val,force_rebuild=rebuild)
 
-        shader.ctx.enable(t.Flags.context.depth_test)
+        # --- Handle Dynamic Flags ---
+        flags_dict = self.I_flags.val if isinstance(self.I_flags.val, dict) else {}
+        enabled_list = []
 
+        for flag_name, state in flags_dict.items():
+            if state:
+                mgl_flag = t.flag_context_enable.get(flag_name)
+                if mgl_flag:
+                    shader.ctx.enable(mgl_flag)
+                    enabled_list.append(mgl_flag)
+
+        # Execute Render
         a,d = shader.render(t.flag_primitive_modes[self.get(STATICc)])
+
+        # --- Cleanup: Disable all flags used in this call ---
+        for f in enabled_list:
+            shader.ctx.disable(f)
 
         A = np.frombuffer(a,dtype=np.float32)
         A = A.reshape((shader.h,shader.w,4))
@@ -1703,6 +1722,74 @@ class NODE_MGL_BASIC(BASE.NODE_INTERFACE):
 ========================================
 E:\soon\projects\PBNPR\code\addons\gl_studio\examples\nodes\Node_mgl_flags.py
 ========================================
+from gl_studio.examples.nodes import Node_zPattren as BASE
+from gl_studio.util import util_types as t
+from PySide6.QtWidgets import QCheckBox, QVBoxLayout, QWidget
+
+class NODE_MGL_FLAGS(BASE.NODE_INTERFACE):
+    NODE_NAME = "mgl Flags"
+    CATEGORY = "OpenGL"
+
+    def __init__(self):
+        super().__init__()
+        self.ports = {}
+        self.checks = {}
+
+
+
+        self.O_flags = self.add_output("Flags", type=t.DICT)
+        self.reset()
+
+    def on_gui(self):
+        widget = QWidget()
+        lay = QVBoxLayout()
+        widget.setLayout(lay)
+
+        # We skip NOTHING as it's a null flag/placeholder
+        self.FLAGS_TO_MANAGE = [k for k in t.flag_context_enable.keys() if k != "NOTHING"]
+
+        for flag in self.FLAGS_TO_MANAGE:
+            # Add input port for each flag
+            self.ports[flag] = self.add_input(flag, type=t.BOOL)
+
+        for flag in self.FLAGS_TO_MANAGE:
+            cb = QCheckBox(flag)
+            cb.setStyleSheet("color: white;")
+            # Map checkbox change to property
+            cb.stateChanged.connect(lambda v, f=flag: self.set(f, v > 0))
+            lay.addWidget(cb)
+            self.checks[flag] = cb
+
+        return widget
+
+    def reset(self, v=None):
+        for flag in self.FLAGS_TO_MANAGE:
+            val = self.get(flag) if self.has(flag) else False
+            if not self.has(flag):
+                self.add(flag, False)
+
+            # Sync GUI
+            if flag in self.checks:
+                self.checks[flag].blockSignals(True)
+                self.checks[flag].setChecked(val)
+                self.checks[flag].blockSignals(False)
+
+    def on_stream(self):
+        self.on_sync_port_values()
+
+        results = {}
+        for flag in self.FLAGS_TO_MANAGE:
+            # Priority: Port Value (if connected) > GUI Property
+            port_val = self.ports[flag].val
+
+            # port_val is None if the port has no connection (and no default was pushed)
+            val = port_val if port_val is not None else self.get(flag)
+            results[flag] = bool(val)
+
+        self.O_flags.val = results
+
+    def on_graph_load(self):
+        self.reset()
 
 ========================================
 E:\soon\projects\PBNPR\code\addons\gl_studio\examples\nodes\Node_mgl_template.py
@@ -2097,9 +2184,6 @@ class NODE_STRING(BASE.NODE_INTERFACE):
 
     def on_graph_load(self):
         self.reset()
-
-    def on_selection(self):
-        print("Hello")
 
 ========================================
 E:\soon\projects\PBNPR\code\addons\gl_studio\examples\nodes\Node_str_block.py
