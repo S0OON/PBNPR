@@ -25,6 +25,7 @@ class NODE_MGL_BASIC(BASE.NODE_INTERFACE):
         self.I_attrs = self.add_input("Attributes", type=t.DICT)
 
         self.I_textures = self.add_input("Textures", type=t.DICT)
+        self.I_flags = self.add_input("Context Flags", type=t.DICT)
 
         # --- Outputs ---
         self.O_pixels = self.add_output("Pixels_RGBA", type=t.RGBA)
@@ -90,9 +91,23 @@ class NODE_MGL_BASIC(BASE.NODE_INTERFACE):
         shader.uniforms_textures(self.I_textures.val)
         shader.vertex_attributes(self.I_attrs.val,force_rebuild=rebuild)
 
-        shader.ctx.enable(t.Flags.context.depth_test)
+        # --- Handle Dynamic Flags ---
+        flags_dict = self.I_flags.val if isinstance(self.I_flags.val, dict) else {}
+        enabled_list = []
 
+        for flag_name, state in flags_dict.items():
+            if state:
+                mgl_flag = t.flag_context_enable.get(flag_name)
+                if mgl_flag:
+                    shader.ctx.enable(mgl_flag)
+                    enabled_list.append(mgl_flag)
+
+        # Execute Render
         a,d = shader.render(t.flag_primitive_modes[self.get(STATICc)])
+
+        # --- Cleanup: Disable all flags used in this call ---
+        for f in enabled_list:
+            shader.ctx.disable(f)
 
         A = np.frombuffer(a,dtype=np.float32)
         A = A.reshape((shader.h,shader.w,4))
